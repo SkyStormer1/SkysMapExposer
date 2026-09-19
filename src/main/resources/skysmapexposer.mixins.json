@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.skystormer.skysmapexposer.mixin",
+  "compatibilityLevel": "JAVA_${java_version}",
+  "client": [
+    "GuiMapMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+out/
+classes/
+
+# Loom
+.fabric/
+run/
+remappedSrc/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Local only: working notes, logs, and anything a test run leaves behind
+CLAUDE.md
+logs/
+*.log
+*.hprof
