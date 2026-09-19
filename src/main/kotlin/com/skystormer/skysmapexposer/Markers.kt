@@ -54,6 +54,9 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
     private val playersAskedAt = HashMap<String, Long>()
     private val icons = ConcurrentHashMap<String, IconSlot>()
 
+    @Volatile
+    private var closed = false
+
     private class IconSlot {
         @Volatile
         var image: NativeImage? = null
@@ -129,8 +132,14 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         return Triple(texture.textureView, slot.width, slot.height)
     }
 
+    /** Frees every icon: uploaded textures, and pictures downloaded but not yet uploaded. */
     fun close() {
-        icons.values.forEach { it.texture?.close() }
+        closed = true
+        icons.values.forEach { slot ->
+            slot.texture?.close()
+            slot.image?.close()
+            slot.image = null
+        }
         icons.clear()
     }
 
@@ -142,7 +151,8 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
             for (y in 0 until decoded.height) {
                 for (x in 0 until decoded.width) image.setPixel(x, y, decoded.getRGB(x, y))
             }
-            slot.image = image
+            // Left the server while this was downloading: nothing will ever upload it.
+            if (closed) image.close() else slot.image = image
         } catch (e: Exception) {
             slot.failed = true
         }

@@ -188,10 +188,14 @@ object MarkerElements {
         is Markers.Point -> 0xFF55FFFF.toInt()
     }
 
-    /** How big a pin is drawn, in the element's units: players' faces 2.5 times a marker's 8. */
-    fun sizeOf(pin: Markers.Pin): Float = if (pin is Markers.Player) 20f else 12f
+    /**
+     * How big a pin is drawn on the world map, in the element's units: players' faces start at 20,
+     * markers at 12, each times its own size setting.
+     */
+    fun sizeOf(pin: Markers.Pin): Float =
+        if (pin is Markers.Player) 20f * Config.playerHeadScale else 12f * Config.worldMapMarkerScale
 
-    fun halfOf(pin: Markers.Pin): Int = (sizeOf(pin) / 2).toInt()
+    fun halfOf(pin: Markers.Pin): Int = (sizeOf(pin) / 2).toInt().coerceAtLeast(2)
 
     const val HALF = 6
     private const val TITLE_BACKGROUND = 0xFF2A4A6A.toInt()

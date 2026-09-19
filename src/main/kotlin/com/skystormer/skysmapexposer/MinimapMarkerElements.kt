@@ -92,7 +92,7 @@ object MinimapMarkerElements {
             val pose = graphics.pose()
             pose.pushPose()
             pose.translate(partialX, partialY, 0.0)
-            val size = scaleFor(pin)
+            val size = scaleFor(pin) * Config.minimapMarkerScale
             pose.scale(scale * size, scale * size, 1f)
             val icon = MarkerElements.iconFor(pin)
             val renderer = context.iconRenderer

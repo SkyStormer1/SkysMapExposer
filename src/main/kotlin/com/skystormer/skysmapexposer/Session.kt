@@ -65,6 +65,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
         tiles.clear()
         markers.close()
         workers.shutdownNow()
+        blueMap.close()
         io.shutdown() // not Now: let the last visit save finish
     }
 

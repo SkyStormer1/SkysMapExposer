@@ -22,7 +22,7 @@ import java.time.Duration
  * These are facts about the files a BlueMap server publishes, checked against a live server; no
  * BlueMap code is used.
  */
-class BlueMap(baseUrl: String) {
+class BlueMap(baseUrl: String) : AutoCloseable {
 
     /** The web address with exactly one trailing slash. */
     val base: String = baseUrl.trimEnd('/') + "/"
@@ -121,6 +121,14 @@ class BlueMap(baseUrl: String) {
     fun file(path: String): ByteArray? {
         val response = get(path.trimStart('/'), HttpResponse.BodyHandlers.ofByteArray())
         return if (response.statusCode() == 200) response.body() else null
+    }
+
+    /**
+     * Stops the web client and its background thread now, rather than whenever the garbage
+     * collector gets to it. Nothing can be fetched afterwards.
+     */
+    override fun close() {
+        client.shutdownNow()
     }
 
     private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
