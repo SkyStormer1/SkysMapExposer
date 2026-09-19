@@ -65,7 +65,9 @@ fun xaeroLibJar(): File {
     val worldMap = configurations.detachedConfiguration(
         dependencies.create("maven.modrinth:xaeros-world-map:${property("xaero_worldmap_version")}")
     ).apply { isTransitive = false }.singleFile
-    val target = layout.buildDirectory.file("xaerolib/xaerolib.jar").get().asFile
+    // Kept in .gradle/ rather than build/, so that `clean` in the same run cannot delete it
+    // between Gradle reading this script and compiling against it.
+    val target = layout.projectDirectory.file(".gradle/xaerolib/xaerolib.jar").asFile
     if (!target.exists() || target.lastModified() < worldMap.lastModified()) {
         target.parentFile.mkdirs()
         ZipFile(worldMap).use { zip ->
