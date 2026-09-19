@@ -46,6 +46,15 @@ object Config {
      */
     var minimapShrinkChunks: Int = 32
 
+    /** Size of BlueMap's markers on the world map, as a multiple of the normal size. */
+    var worldMapMarkerScale: Float = 1f
+
+    /** Size of other players' heads on the world map, independent of the markers. */
+    var playerHeadScale: Float = 1f
+
+    /** Size of BlueMap's markers on the minimap, on top of their shrinking with distance. */
+    var minimapMarkerScale: Float = 1f
+
     /** How often a tile on screen is checked for changes on the server. */
     var tileRefreshSeconds: Int = 60
 
@@ -115,6 +124,9 @@ object Config {
             json.get("showOutlines")?.let { showOutlines = it.asBoolean }
             json.get("showPlayers")?.let { showPlayers = it.asBoolean }
             json.get("staleDays")?.let { staleDays = it.asDouble }
+            json.get("worldMapMarkerScale")?.let { worldMapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
+            json.get("playerHeadScale")?.let { playerHeadScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
+            json.get("minimapMarkerScale")?.let { minimapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
             json.get("minimapShrinkChunks")?.let { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
             json.get("tileRefreshSeconds")?.let { tileRefreshSeconds = it.asInt.coerceAtLeast(10) }
             json.get("markerRefreshSeconds")?.let { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
@@ -148,6 +160,9 @@ object Config {
         json.addProperty("showOutlines", showOutlines)
         json.addProperty("showPlayers", showPlayers)
         json.addProperty("staleDays", staleDays)
+        json.addProperty("worldMapMarkerScale", worldMapMarkerScale)
+        json.addProperty("playerHeadScale", playerHeadScale)
+        json.addProperty("minimapMarkerScale", minimapMarkerScale)
         json.addProperty("minimapShrinkChunks", minimapShrinkChunks)
         json.addProperty("tileRefreshSeconds", tileRefreshSeconds)
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
@@ -178,6 +193,9 @@ object Config {
             Log.error("Could not write $file", e)
         }
     }
+
+    const val MIN_SCALE = 0.25f
+    const val MAX_SCALE = 3f
 
     const val MIN_SHRINK_CHUNKS = 4
     const val MAX_SHRINK_CHUNKS = 256

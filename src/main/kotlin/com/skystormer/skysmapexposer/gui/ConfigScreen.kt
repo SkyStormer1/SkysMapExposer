@@ -64,6 +64,9 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     private var showPlayers = Config.showPlayers
     private var staleDays = formatDays(Config.staleDays)
     private var shrinkChunks = Config.minimapShrinkChunks
+    private var worldMapMarkerScale = Config.worldMapMarkerScale
+    private var playerHeadScale = Config.playerHeadScale
+    private var minimapMarkerScale = Config.minimapMarkerScale
     private var message: Component = Component.literal(Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -99,10 +102,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         val fieldWidth = WIDTH - labelWidth
         val switchWidth = 48
         // Everything below fits in 256 scaled pixels, so the whole screen shows at large GUI scales.
-        var y = maxOf(2, (height - 256) / 2)
-
-        addRenderableWidget(StringWidget(left, y, WIDTH, font.lineHeight, title, font))
-        y += font.lineHeight + GAP * 2
+        var y = maxOf(1, (height - 256) / 2)
 
         val quarter = (WIDTH - GAP * 3) / 4
         addRenderableWidget(toggle(left, y, quarter, "Terrain", enabled, "Fill in your map with BlueMap's terrain.") { enabled = it })
@@ -126,7 +126,17 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
             "BlueMap markers show on the minimap only within this distance, smaller the further away they are. The world map still shows them all."
         )))
         addRenderableWidget(slider)
-        y += ROW + GAP * 3
+        y += ROW + GAP
+
+        // Sizes: world map markers, players' heads, minimap markers, each on its own.
+        val third = (WIDTH - GAP * 2) / 3
+        addRenderableWidget(ScaleSlider(left, y, third, "Map icons", worldMapMarkerScale,
+            "Size of BlueMap's markers on the world map.") { worldMapMarkerScale = it })
+        addRenderableWidget(ScaleSlider(left + third + GAP, y, third, "Heads", playerHeadScale,
+            "Size of other players' heads on the world map.") { playerHeadScale = it })
+        addRenderableWidget(ScaleSlider(left + (third + GAP) * 2, y, third, "Minimap", minimapMarkerScale,
+            "Size of BlueMap's markers on the minimap. They still shrink with distance.") { minimapMarkerScale = it })
+        y += ROW + GAP * 2
 
         val choices = drafts.indices.toList() + NEW
         addRenderableWidget(
@@ -181,9 +191,8 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
 
         messageWidget = MultiLineTextWidget(left, y + 1, message, font).setMaxWidth(WIDTH).setMaxRows(2)
         addRenderableWidget(messageWidget)
-        y += font.lineHeight * 2 + GAP * 2
+        y += font.lineHeight * 2 + GAP
 
-        val third = (WIDTH - GAP * 2) / 3
         addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, third, ROW).build())
         addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + third + GAP, y, third, ROW).build())
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + (third + GAP) * 2, y, third, ROW).build())
@@ -212,6 +221,35 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         companion object {
             fun toSlider(chunks: Int): Double =
                 (chunks - Config.MIN_SHRINK_CHUNKS).toDouble() / (Config.MAX_SHRINK_CHUNKS - Config.MIN_SHRINK_CHUNKS)
+        }
+    }
+
+    /** A size from 25% to 300%, in steps of 5%. */
+    private class ScaleSlider(
+        x: Int, y: Int, width: Int, private val name: String, initial: Float, explanation: String,
+        private val onChange: (Float) -> Unit,
+    ) : AbstractSliderButton(x, y, width, ROW, Component.empty(), toSlider(initial)) {
+
+        init {
+            updateMessage()
+            setTooltip(Tooltip.create(Component.literal(explanation)))
+        }
+
+        private val scale: Float
+            get() {
+                val raw = Config.MIN_SCALE + value.toFloat() * (Config.MAX_SCALE - Config.MIN_SCALE)
+                return (raw * 20).roundToInt() / 20f
+            }
+
+        override fun updateMessage() {
+            message = Component.literal("$name ${(scale * 100).roundToInt()}%")
+        }
+
+        override fun applyValue() = onChange(scale)
+
+        companion object {
+            fun toSlider(scale: Float): Double =
+                ((scale - Config.MIN_SCALE) / (Config.MAX_SCALE - Config.MIN_SCALE)).toDouble()
         }
     }
 
@@ -272,7 +310,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         }
         show("Asking $url…")
         Thread({
-            val result = runCatching { BlueMap(url).maps() }
+            val result = runCatching { BlueMap(url).use { it.maps() } }
             minecraft.execute {
                 result.onSuccess { maps ->
                     val overworld = mapBoxes[Config.OVERWORLD]
@@ -298,6 +336,9 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         Config.showOutlines = showOutlines
         Config.showPlayers = showPlayers
         Config.minimapShrinkChunks = shrinkChunks
+        Config.worldMapMarkerScale = worldMapMarkerScale
+        Config.playerHeadScale = playerHeadScale
+        Config.minimapMarkerScale = minimapMarkerScale
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
