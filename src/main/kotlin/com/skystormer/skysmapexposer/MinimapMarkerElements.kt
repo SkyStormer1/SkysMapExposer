@@ -91,7 +91,8 @@ object MinimapMarkerElements {
             val pose = graphics.pose()
             pose.pushPose()
             pose.translate(partialX, partialY, 0.0)
-            pose.scale(scale, scale, 1f)
+            val size = if (outOfBounds) edgeScale(pin) else 1f
+            pose.scale(scale * size, scale * size, 1f)
             val icon = MarkerElements.iconFor(pin)
             val renderer = context.iconRenderer
             if (icon != null && renderer != null) {
@@ -104,6 +105,23 @@ object MinimapMarkerElements {
             return true
         }
     }
+
+    /**
+     * How big a marker pinned to the minimap's edge is drawn: smaller the further away it really
+     * is, down to [SMALLEST] at [Config.minimapShrinkChunks] and beyond. It never disappears, so
+     * distant shops and banners still show which way they are.
+     */
+    fun edgeScale(pin: Markers.Pin): Float {
+        val player = Minecraft.getInstance().player ?: return 1f
+        val dx = pin.x - player.x
+        val dz = pin.z - player.z
+        val far = Config.minimapShrinkChunks * 16.0
+        val t = (Math.sqrt(dx * dx + dz * dz) / far).coerceIn(0.0, 1.0).toFloat()
+        return 1f - t * (1f - SMALLEST)
+    }
+
+    /** The size a far-away marker on the minimap's edge settles at, relative to a near one. */
+    const val SMALLEST = 0.35f
 
     fun register(): Boolean {
         val handler = HudMod.INSTANCE?.minimap?.overMapRendererHandler ?: return false

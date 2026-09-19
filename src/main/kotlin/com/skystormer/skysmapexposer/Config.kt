@@ -40,6 +40,13 @@ object Config {
      */
     var staleDays: Double = 7.0
 
+    /**
+     * How far away (in chunks) a BlueMap marker must be before it reaches its smallest size on the
+     * edge of the minimap. Markers pinned to the edge shrink with distance up to this, then stay
+     * small rather than disappear.
+     */
+    var minimapShrinkChunks: Int = 32
+
     /** How often a tile on screen is checked for changes on the server. */
     var tileRefreshSeconds: Int = 60
 
@@ -109,6 +116,7 @@ object Config {
             json.get("showOutlines")?.let { showOutlines = it.asBoolean }
             json.get("showPlayers")?.let { showPlayers = it.asBoolean }
             json.get("staleDays")?.let { staleDays = it.asDouble }
+            json.get("minimapShrinkChunks")?.let { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
             json.get("tileRefreshSeconds")?.let { tileRefreshSeconds = it.asInt.coerceAtLeast(10) }
             json.get("markerRefreshSeconds")?.let { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
             json.get("maxLoadedTiles")?.let { maxLoadedTiles = it.asInt.coerceIn(8, 1024) }
@@ -141,6 +149,7 @@ object Config {
         json.addProperty("showOutlines", showOutlines)
         json.addProperty("showPlayers", showPlayers)
         json.addProperty("staleDays", staleDays)
+        json.addProperty("minimapShrinkChunks", minimapShrinkChunks)
         json.addProperty("tileRefreshSeconds", tileRefreshSeconds)
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
         json.addProperty("maxLoadedTiles", maxLoadedTiles)
@@ -170,6 +179,9 @@ object Config {
             Log.error("Could not write $file", e)
         }
     }
+
+    const val MIN_SHRINK_CHUNKS = 4
+    const val MAX_SHRINK_CHUNKS = 128
 
     const val OVERWORLD = "minecraft:overworld"
     const val NETHER = "minecraft:the_nether"

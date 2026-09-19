@@ -6,11 +6,13 @@ import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.Overlay
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.components.AbstractSliderButton
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.CycleButton
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
+import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
@@ -18,6 +20,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 /**
  * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file.
@@ -60,6 +63,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     private var showOutlines = Config.showOutlines
     private var showPlayers = Config.showPlayers
     private var staleDays = formatDays(Config.staleDays)
+    private var shrinkChunks = Config.minimapShrinkChunks
     private var message: Component = Component.literal(Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -90,23 +94,38 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
 
     override fun init() {
         val left = width / 2 - WIDTH / 2
-        val labelWidth = 104
+        val labelWidth = 96
         val fieldLeft = left + labelWidth
         val fieldWidth = WIDTH - labelWidth
-        var y = maxOf(4, height / 2 - 150)
+        val switchWidth = 48
+        // Everything below fits in 256 scaled pixels, so the whole screen shows at large GUI scales.
+        var y = maxOf(2, (height - 256) / 2)
 
-        addRenderableWidget(StringWidget(left, y, WIDTH, ROW, title, font))
-        y += ROW + GAP
+        addRenderableWidget(StringWidget(left, y, WIDTH, font.lineHeight, title, font))
+        y += font.lineHeight + GAP * 2
 
         val quarter = (WIDTH - GAP * 3) / 4
-        addRenderableWidget(toggle(left, y, quarter, "Terrain", enabled) { enabled = it })
-        addRenderableWidget(toggle(left + (quarter + GAP), y, quarter, "Markers", showMarkers) { showMarkers = it })
-        addRenderableWidget(toggle(left + (quarter + GAP) * 2, y, quarter, "Borders", showOutlines) { showOutlines = it })
-        addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", showPlayers) { showPlayers = it })
+        addRenderableWidget(toggle(left, y, quarter, "Terrain", enabled, "Fill in your map with BlueMap's terrain.") { enabled = it })
+        addRenderableWidget(toggle(left + (quarter + GAP), y, quarter, "Markers", showMarkers, "Show BlueMap's markers (shops, banners…) on the world map and minimap.") { showMarkers = it })
+        addRenderableWidget(toggle(left + (quarter + GAP) * 2, y, quarter, "Borders", showOutlines, "Draw BlueMap's world border and zones on both maps.") { showOutlines = it })
+        addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", showPlayers, "Show other players on the world map, in their own dimension.") { showPlayers = it })
         y += ROW + GAP
 
-        label(left, y, labelWidth, "Replace after (days)")
-        staleBox = field(fieldLeft, y, fieldWidth, staleDays, "7")
+        // Two settings side by side: how old your map may get, and how far edge markers shrink.
+        val staleLabel = 80
+        val staleBoxWidth = 28
+        label(left, y, staleLabel, "Replace after")
+        staleBox = field(left + staleLabel, y, staleBoxWidth, staleDays, "7")
+        staleBox.setTooltip(Tooltip.create(Component.literal(
+            "Days before your own map counts as out of date. After that, BlueMap's picture replaces it wherever BlueMap has changed since you were last there."
+        )))
+        label(left + staleLabel + staleBoxWidth + 4, y, 26, "days")
+        val sliderLeft = left + staleLabel + staleBoxWidth + 32
+        val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, shrinkChunks) { shrinkChunks = it }
+        slider.setTooltip(Tooltip.create(Component.literal(
+            "BlueMap markers stuck on the edge of the minimap get smaller the further away they are, reaching their smallest at this distance. They never disappear."
+        )))
+        addRenderableWidget(slider)
         y += ROW + GAP * 3
 
         val choices = drafts.indices.toList() + NEW
@@ -118,50 +137,87 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         y += ROW + GAP
 
         val draft = drafts[selected]
-        label(left, y, labelWidth, "Addresses")
-        addressBox = field(fieldLeft, y, fieldWidth, draft.addresses, "mc.example.com, 1.2.3.4")
+        label(left, y, labelWidth, "Server address")
+        addressBox = field(fieldLeft, y, fieldWidth, draft.addresses, "play.example.com, 1.2.3.4")
+        addressBox.setTooltip(Tooltip.create(Component.literal(
+            "Every name you join this server by, as typed in your server list, separated by commas."
+        )))
         y += ROW + GAP
         label(left, y, labelWidth, "BlueMap address")
-        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "http://example.com:8100/")
+        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/")
+        urlBox.setTooltip(Tooltip.create(Component.literal(
+            "The web address of the server's BlueMap: the page you open in a browser to see the map."
+        )))
         y += ROW + GAP
 
         mapBoxes.clear()
-        val switchWidth = 56
         for ((dimension, name) in DIMENSIONS) {
             label(left, y, labelWidth, "$name map")
-            mapBoxes[dimension] = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.maps[dimension] ?: "", "blank = none")
-            addRenderableWidget(
-                CycleButton.onOffBuilder(dimension !in draft.off)
-                    .displayOnlyValue()
-                    .create(left + WIDTH - switchWidth, y, switchWidth, ROW, Component.literal("$name terrain")) { _, on ->
-                        if (on) draft.off.remove(dimension) else draft.off.add(dimension)
-                    }
-            )
+            val box = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.maps[dimension] ?: "", "blank = none")
+            box.setTooltip(Tooltip.create(Component.literal(
+                "Which BlueMap map shows the $name. Find maps lists them. Its border, markers and players show even with its terrain off."
+            )))
+            mapBoxes[dimension] = box
+            val terrain = CycleButton.onOffBuilder(dimension !in draft.off)
+                .displayOnlyValue()
+                .create(left + WIDTH - switchWidth, y, switchWidth, ROW, Component.literal("$name terrain")) { _, on ->
+                    if (on) draft.off.remove(dimension) else draft.off.add(dimension)
+                }
+            terrain.setTooltip(Tooltip.create(Component.literal("Fill in the $name with this map's terrain.")))
+            addRenderableWidget(terrain)
             y += ROW + GAP
         }
 
-        label(left, y, labelWidth, "Cover overworld before")
+        label(left, y, labelWidth, "Cover map before")
         coverBox = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.coverOverworld, "blank = never")
+        coverBox.setTooltip(Tooltip.create(Component.literal(
+            "Your overworld map from before this date and time (yyyy-MM-dd HH:mm) is covered by BlueMap however recent it is. For a map left over from a previous season."
+        )))
         addRenderableWidget(
             Button.builder(Component.literal("Now")) { coverBox.value = formatTime(System.currentTimeMillis()) }
                 .bounds(left + WIDTH - switchWidth, y, switchWidth, ROW).build()
         )
         y += ROW + GAP
 
-        val half = (WIDTH - GAP) / 2
-        addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, half, ROW).build())
-        addRenderableWidget(Button.builder(Component.literal("Remove this server")) { removeSelected() }.bounds(left + half + GAP, y, half, ROW).build())
-        y += ROW + GAP
-
-        messageWidget = MultiLineTextWidget(left, y, message, font).setMaxWidth(WIDTH).setMaxRows(3)
+        messageWidget = MultiLineTextWidget(left, y + 1, message, font).setMaxWidth(WIDTH).setMaxRows(2)
         addRenderableWidget(messageWidget)
-        y += font.lineHeight * 3 + GAP
+        y += font.lineHeight * 2 + GAP * 2
 
-        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left, y, WIDTH, ROW).build())
+        val third = (WIDTH - GAP * 2) / 3
+        addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, third, ROW).build())
+        addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + third + GAP, y, third, ROW).build())
+        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + (third + GAP) * 2, y, third, ROW).build())
     }
 
-    private fun toggle(x: Int, y: Int, width: Int, name: String, value: Boolean, onChange: (Boolean) -> Unit): CycleButton<Boolean> =
+    /**
+     * The distance, in chunks, at which markers on the minimap's edge reach their smallest size.
+     * Snaps to whole chunks.
+     */
+    private class ChunkSlider(x: Int, y: Int, width: Int, initial: Int, private val onChange: (Int) -> Unit) :
+        AbstractSliderButton(x, y, width, ROW, Component.empty(), toSlider(initial)) {
+
+        init {
+            updateMessage()
+        }
+
+        private val chunks: Int
+            get() = (Config.MIN_SHRINK_CHUNKS + value * (Config.MAX_SHRINK_CHUNKS - Config.MIN_SHRINK_CHUNKS)).roundToInt()
+
+        override fun updateMessage() {
+            message = Component.literal("Edge markers: $chunks chunks")
+        }
+
+        override fun applyValue() = onChange(chunks)
+
+        companion object {
+            fun toSlider(chunks: Int): Double =
+                (chunks - Config.MIN_SHRINK_CHUNKS).toDouble() / (Config.MAX_SHRINK_CHUNKS - Config.MIN_SHRINK_CHUNKS)
+        }
+    }
+
+    private fun toggle(x: Int, y: Int, width: Int, name: String, value: Boolean, explanation: String, onChange: (Boolean) -> Unit): CycleButton<Boolean> =
         CycleButton.onOffBuilder(value).create(x, y, width, ROW, Component.literal(name)) { _, on -> onChange(on) }
+            .also { it.setTooltip(Tooltip.create(Component.literal(explanation))) }
 
     private fun label(x: Int, y: Int, width: Int, text: String) {
         addRenderableWidget(StringWidget(x, y + 6, width, font.lineHeight, Component.literal(text), font))
@@ -241,6 +297,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         Config.showMarkers = showMarkers
         Config.showOutlines = showOutlines
         Config.showPlayers = showPlayers
+        Config.minimapShrinkChunks = shrinkChunks
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
