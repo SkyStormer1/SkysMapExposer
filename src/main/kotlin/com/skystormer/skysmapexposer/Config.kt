@@ -41,9 +41,8 @@ object Config {
     var staleDays: Double = 7.0
 
     /**
-     * How far away (in chunks) a BlueMap marker must be before it reaches its smallest size on the
-     * edge of the minimap. Markers pinned to the edge shrink with distance up to this, then stay
-     * small rather than disappear.
+     * How far away (in chunks) BlueMap markers are shown on the minimap. Within it they shrink with
+     * distance; beyond it they are hidden from the minimap (the world map still shows them).
      */
     var minimapShrinkChunks: Int = 32
 
@@ -181,7 +180,7 @@ object Config {
     }
 
     const val MIN_SHRINK_CHUNKS = 4
-    const val MAX_SHRINK_CHUNKS = 128
+    const val MAX_SHRINK_CHUNKS = 256
 
     const val OVERWORLD = "minecraft:overworld"
     const val NETHER = "minecraft:the_nether"

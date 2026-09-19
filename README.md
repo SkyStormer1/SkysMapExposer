@@ -66,7 +66,7 @@ Hover over any setting in the game for an explanation.
 |:--|:--|
 | **Terrain / Markers / Borders / Players** | Switch each part on or off, for every server. |
 | **Replace after … days** | How old your own map must be before BlueMap's newer picture replaces it. |
-| **Edge markers** | How far away (in chunks) a marker on the edge of the minimap must be before it is at its smallest. See below. |
+| **Markers within … chunks** | How far away BlueMap markers are shown on the minimap, from 4 to 256 chunks (32 by default). See below. |
 | **Server** | Which server you are editing. Click through to switch, or to add one. |
 | **Server address** | Every name you join this server by, separated by commas, e.g. `play.example.com, 203.0.113.7`. |
 | **BlueMap address** | The web page of the server's BlueMap. |
@@ -81,15 +81,13 @@ still show. Switch it on if your server's nether map shows the inside.
 
 ## Markers on the minimap
 
-A server can have hundreds of markers. Xaero pins markers that are off the minimap to its edge,
-which can crowd it. Sky's Map Exposer makes those edge markers smaller the further away they
-really are, down to their smallest size at the **Edge markers** distance (32 chunks by default),
-and keeps them that size beyond it, so distant places still show their direction without
-cluttering the edge. Markers inside the minimap are drawn at half size when you are standing on
-one, growing to full size about 4 chunks away, so a marker you walk up to doesn't cover what is
-around it.
+A server can have hundreds of markers, and Xaero pins the ones off the minimap to its edge, which
+can crowd it. So the minimap only shows BlueMap markers within the **Markers within … chunks** distance
+(32 chunks by default). They are largest when you are standing on them and get smaller the
+further away they are; beyond that distance they are hidden from the minimap. The world map
+always shows every marker.
 
-![A minimap with every edge marker full size, next to one where edge markers shrink the further away they are](docs/minimap-edge.png)
+![A minimap crowded with every marker at full size, next to one showing only nearby markers, smaller the further away they are](docs/minimap-edge.png)
 
 ## Saving a marker as a waypoint
 

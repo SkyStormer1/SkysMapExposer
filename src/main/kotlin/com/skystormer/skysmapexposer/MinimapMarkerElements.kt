@@ -15,8 +15,9 @@ import xaero.lib.client.graphics.XaeroBufferProvider
 
 /**
  * BlueMap's markers on Xaero's minimap, through the minimap's own element system, drawn over the
- * minimap the way its waypoints are. Players are left out: the minimap's radar already shows the
- * ones near you.
+ * minimap the way its waypoints are. Only markers within [Config.minimapShrinkChunks] are shown,
+ * smaller the further away they are, so a server's hundreds of markers do not crowd the minimap's
+ * edge. Players are left out: the minimap's radar already shows the ones near you.
  *
  * Only touched when Xaero's Minimap is installed.
  */
@@ -31,7 +32,7 @@ object MinimapMarkerElements {
     class Provider : MinimapElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: MinimapElementRenderLocation, context: Context) {
             context.pins = if (Config.showMarkers) {
-                MarkerElements.pinsForWorldMap().filterIsInstance<Markers.Point>()
+                MarkerElements.pinsForWorldMap().filter { it is Markers.Point && inRange(it) }
             } else {
                 emptyList()
             }
@@ -91,7 +92,7 @@ object MinimapMarkerElements {
             val pose = graphics.pose()
             pose.pushPose()
             pose.translate(partialX, partialY, 0.0)
-            val size = if (outOfBounds) edgeScale(pin) else nearScale(pin)
+            val size = scaleFor(pin)
             pose.scale(scale * size, scale * size, 1f)
             val icon = MarkerElements.iconFor(pin)
             val renderer = context.iconRenderer
@@ -106,39 +107,34 @@ object MinimapMarkerElements {
         }
     }
 
-    /**
-     * How big a marker pinned to the minimap's edge is drawn: smaller the further away it really
-     * is, down to [SMALLEST] at [Config.minimapShrinkChunks] and beyond. It never disappears, so
-     * distant shops and banners still show which way they are.
-     */
-    fun edgeScale(pin: Markers.Pin): Float {
-        val player = Minecraft.getInstance().player ?: return 1f
-        val dx = pin.x - player.x
-        val dz = pin.z - player.z
-        val far = Config.minimapShrinkChunks * 16.0
-        val t = (Math.sqrt(dx * dx + dz * dz) / far).coerceIn(0.0, 1.0).toFloat()
-        return 1f - t * (1f - SMALLEST)
+    /** How far from you, in blocks, a marker is. */
+    private fun distanceTo(pin: Markers.Pin): Double? {
+        val player = Minecraft.getInstance().player ?: return null
+        return Math.hypot(pin.x - player.x, pin.z - player.z)
+    }
+
+    /** Whether a marker is close enough to show on the minimap at all: within [Config.minimapShrinkChunks]. */
+    fun inRange(pin: Markers.Pin): Boolean {
+        val distance = distanceTo(pin) ?: return true
+        return distance <= Config.minimapShrinkChunks * 16.0
     }
 
     /**
-     * How big a marker inside the minimap is drawn: half size when you are standing on it, growing
-     * to full size [NEAR_BLOCKS] away, so a marker you walk up to does not cover what is around it.
+     * How big a marker is drawn on the minimap, inside it or pinned to its edge alike: largest
+     * ([NEAREST]) when you are standing on it, then only smaller with distance, down to [FARTHEST]
+     * at [Config.minimapShrinkChunks]. Beyond that it is not shown ([inRange]).
      */
-    fun nearScale(pin: Markers.Pin): Float {
-        val player = Minecraft.getInstance().player ?: return 1f
-        val distance = Math.hypot(pin.x - player.x, pin.z - player.z)
-        val t = (distance / NEAR_BLOCKS).coerceIn(0.0, 1.0).toFloat()
-        return CLOSEST + t * (1f - CLOSEST)
+    fun scaleFor(pin: Markers.Pin): Float {
+        val distance = distanceTo(pin) ?: return NEAREST
+        val t = (distance / (Config.minimapShrinkChunks * 16.0)).coerceIn(0.0, 1.0).toFloat()
+        return NEAREST + t * (FARTHEST - NEAREST)
     }
 
-    /** The size of a marker you are standing on, relative to one further off. */
-    const val CLOSEST = 0.5f
+    /** A marker's size when you are standing on it, relative to the world map's. */
+    const val NEAREST = 0.5f
 
-    /** How far away, in blocks, a marker inside the minimap reaches its full size. */
-    const val NEAR_BLOCKS = 64.0
-
-    /** The size a far-away marker on the minimap's edge settles at, relative to a near one. */
-    const val SMALLEST = 0.35f
+    /** A marker's size at the edge of its range, relative to the world map's. */
+    const val FARTHEST = 0.2f
 
     fun register(): Boolean {
         val handler = HudMod.INSTANCE?.minimap?.overMapRendererHandler ?: return false

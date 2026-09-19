@@ -123,7 +123,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         val sliderLeft = left + staleLabel + staleBoxWidth + 32
         val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, shrinkChunks) { shrinkChunks = it }
         slider.setTooltip(Tooltip.create(Component.literal(
-            "BlueMap markers stuck on the edge of the minimap get smaller the further away they are, reaching their smallest at this distance. They never disappear."
+            "BlueMap markers show on the minimap only within this distance, smaller the further away they are. The world map still shows them all."
         )))
         addRenderableWidget(slider)
         y += ROW + GAP * 3
@@ -190,7 +190,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     }
 
     /**
-     * The distance, in chunks, at which markers on the minimap's edge reach their smallest size.
+     * How far away, in chunks, BlueMap markers are shown on the minimap.
      * Snaps to whole chunks.
      */
     private class ChunkSlider(x: Int, y: Int, width: Int, initial: Int, private val onChange: (Int) -> Unit) :
@@ -204,7 +204,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
             get() = (Config.MIN_SHRINK_CHUNKS + value * (Config.MAX_SHRINK_CHUNKS - Config.MIN_SHRINK_CHUNKS)).roundToInt()
 
         override fun updateMessage() {
-            message = Component.literal("Edge markers: $chunks chunks")
+            message = Component.literal("Markers within $chunks chunks")
         }
 
         override fun applyValue() = onChange(chunks)
