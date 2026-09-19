@@ -7,10 +7,7 @@ World Map** and **Xaero's Minimap**.
 
 **[Download the latest version](https://github.com/SkyStormer1/SkysMapExposer/releases/latest)**
 
-![Xaero's World Map zoomed out over a whole server with Sky's Map Exposer: the land filled in from BlueMap, the red world border, coloured banner markers, and other players' heads where they are standing](docs/world-map.png)
-
-<sub>The whole world, from one player's world map: filled in from the server's BlueMap, with its
-world border, its markers, and everyone online.</sub>
+![Xaero's World Map on its own, with black unexplored areas, next to the same map with Sky's Map Exposer: the gaps filled from BlueMap, a red world border, shop and banner markers, a hover label and a player's head](docs/world-map.png)
 
 ## What it does
 
@@ -88,16 +85,12 @@ still show. Switch it on if your server's nether map shows the inside.
 The minimap only shows BlueMap markers near you, so a busy server doesn't crowd its edge. The
 world map always shows every marker.
 
-<p align="center"><img src="docs/minimap.png" width="520" alt="Xaero's minimap near a village, with a few small BlueMap markers close by and none crowding the edge"></p>
+![A minimap crowded with every marker at full size, next to one showing only nearby markers, smaller the further away they are](docs/minimap-edge.png)
 
 ## Saving a marker as a waypoint
 
 On the world map, hover over a BlueMap marker to see its name, right-click it, and choose
-**Save as waypoint**.
-
-<p align="center"><img src="docs/hover.png" width="520" alt="Right-clicking a BlueMap marker on the world map: a menu with its name, Save as waypoint, and its distance"></p>
-
-It becomes a normal Xaero waypoint in your current waypoint set, with its
+**Save as waypoint**. It becomes a normal Xaero waypoint in your current waypoint set, with its
 name, initials and colour, and stays even if the marker is later removed from BlueMap. Waypoints
 are saved to the dimension you are standing in, so the world map must be showing that dimension.
 
@@ -144,7 +137,8 @@ Written from scratch; no code was copied from any other project.
   only their public method, field and local-variable names were read, to place the mixins and use
   their element and waypoint systems.
 
-All pictures are screenshots from the game.
+The pictures of the maps are illustrations drawn for this page; the settings screen is a real
+screenshot.
 
 ## License
 
