@@ -85,7 +85,9 @@ A server can have hundreds of markers. Xaero pins markers that are off the minim
 which can crowd it. Sky's Map Exposer makes those edge markers smaller the further away they
 really are, down to their smallest size at the **Edge markers** distance (32 chunks by default),
 and keeps them that size beyond it, so distant places still show their direction without
-cluttering the edge. Markers inside the minimap keep their full size.
+cluttering the edge. Markers inside the minimap are drawn at half size when you are standing on
+one, growing to full size about 4 chunks away, so a marker you walk up to doesn't cover what is
+around it.
 
 ![A minimap with every edge marker full size, next to one where edge markers shrink the further away they are](docs/minimap-edge.png)
 

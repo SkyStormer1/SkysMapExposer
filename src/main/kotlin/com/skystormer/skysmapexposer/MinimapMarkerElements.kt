@@ -91,7 +91,7 @@ object MinimapMarkerElements {
             val pose = graphics.pose()
             pose.pushPose()
             pose.translate(partialX, partialY, 0.0)
-            val size = if (outOfBounds) edgeScale(pin) else 1f
+            val size = if (outOfBounds) edgeScale(pin) else nearScale(pin)
             pose.scale(scale * size, scale * size, 1f)
             val icon = MarkerElements.iconFor(pin)
             val renderer = context.iconRenderer
@@ -119,6 +119,23 @@ object MinimapMarkerElements {
         val t = (Math.sqrt(dx * dx + dz * dz) / far).coerceIn(0.0, 1.0).toFloat()
         return 1f - t * (1f - SMALLEST)
     }
+
+    /**
+     * How big a marker inside the minimap is drawn: half size when you are standing on it, growing
+     * to full size [NEAR_BLOCKS] away, so a marker you walk up to does not cover what is around it.
+     */
+    fun nearScale(pin: Markers.Pin): Float {
+        val player = Minecraft.getInstance().player ?: return 1f
+        val distance = Math.hypot(pin.x - player.x, pin.z - player.z)
+        val t = (distance / NEAR_BLOCKS).coerceIn(0.0, 1.0).toFloat()
+        return CLOSEST + t * (1f - CLOSEST)
+    }
+
+    /** The size of a marker you are standing on, relative to one further off. */
+    const val CLOSEST = 0.5f
+
+    /** How far away, in blocks, a marker inside the minimap reaches its full size. */
+    const val NEAR_BLOCKS = 64.0
 
     /** The size a far-away marker on the minimap's edge settles at, relative to a near one. */
     const val SMALLEST = 0.35f
