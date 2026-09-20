@@ -25,6 +25,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     val regionAges = RegionAges(io)
     val tiles = TileStore(blueMap, folder.resolve("tiles"), workers)
     val markers = Markers(blueMap, workers)
+    val locks = Locks(folder.resolve("locks.json"), io)
 
     private val xaeroGaps = HashMap<String, LongOpenHashSet>()
 

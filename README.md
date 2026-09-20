@@ -1,11 +1,25 @@
 <p align="center"><img src="src/main/resources/assets/skysmapexposer/icon.png" width="128" alt="Sky's Map Exposer icon"></p>
 
-# Sky's Map Exposer
+<h1 align="center">Sky's Map Exposer</h1>
 
-A client-side Fabric mod for Minecraft 26.2 that brings a server's **BlueMap** into **Xaero's
-World Map** and **Xaero's Minimap**.
+<p align="center">
+A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b> into
+<b>Xaero's World Map</b> and <b>Xaero's Minimap</b>.
+</p>
 
-**[Download the latest version](https://github.com/SkyStormer1/SkysMapExposer/releases/latest)**
+<p align="center">
+  <a href="https://github.com/SkyStormer1/SkysMapExposer/releases/latest">
+    <img alt="Download the latest version"
+         src="https://img.shields.io/github/v/release/SkyStormer1/SkysMapExposer?style=for-the-badge&label=%E2%AC%87%20DOWNLOAD&labelColor=1f6feb&color=2ea043">
+  </a>
+</p>
+
+<p align="center">
+  <img alt="Minecraft 26.2" src="https://img.shields.io/badge/Minecraft-26.2-blue?style=flat-square">
+  <img alt="Fabric" src="https://img.shields.io/badge/Loader-Fabric-lightgrey?style=flat-square">
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/Licence-MIT-green?style=flat-square"></a>
+  <a href="https://github.com/SkyStormer1/SkysMapExposer/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/SkyStormer1/SkysMapExposer/total?style=flat-square&label=downloads"></a>
+</p>
 
 ![Xaero's World Map on its own, with black unexplored areas, next to the same map with Sky's Map Exposer: the gaps filled from BlueMap, a red world border, shop and banner markers, a hover label and a player's head](docs/world-map.png)
 
@@ -20,7 +34,16 @@ World Map** and **Xaero's Minimap**.
 - **Shows BlueMap's markers.** Shops, banners and the like appear as icons on the world map and
   minimap only, never floating in the world. Hover one for its name. Right-click it on the world
   map and choose **Save as waypoint** to turn it into an ordinary, permanent Xaero waypoint.
-- **Shows other players** on the world map of the dimension they are in, with their face.
+- **Shows other players** on the world map and minimap of the dimension they are in, with their
+  face. BlueMap knows where everyone is, so they stay on your minimap after they walk out of your
+  render distance and Xaero's own radar loses them.
+- **Locks on to a player.** Right-click someone and choose **Lock on**: their pin follows them
+  wherever they go, and their head floats over them in the world like a waypoint, until you unlock
+  them. The head hides itself the moment you can actually see the player.
+- **Lists everyone online.** A **Players** button on the world map opens a screen with search,
+  distance and coordinates, a **Go to** that jumps the map to anyone, and **Lock**.
+- **Copies coordinates.** Right-click anywhere on the world map, or any marker or player, and
+  choose **Copy coordinates**. The dimension comes with them.
 - **Keeps up live.** Terrain on screen is re-checked every minute, markers every 30 seconds,
   players every 2 seconds.
 
@@ -37,7 +60,7 @@ You need:
 - Recommended: **Xaero's Minimap** (for the minimap and for saving waypoints) and **Mod Menu**
   (for the settings screen)
 
-Download the `.jar` from the [latest release](https://github.com/SkyStormer1/SkysMapExposer/releases/latest)
+Then **[download the latest `.jar`](https://github.com/SkyStormer1/SkysMapExposer/releases/latest)**
 and put it in your `mods` folder with the others.
 
 ## Setting up a server
@@ -65,9 +88,11 @@ Hover over any setting in the game for an explanation.
 | Setting | What it does |
 |:--|:--|
 | **Terrain / Markers / Borders / Players** | Switch each part on or off, for every server. |
+| **Minimap players** | Which players the minimap shows: none, only the ones out of your render distance (so Xaero's radar handles the rest and nobody is drawn twice), or all of them. |
+| **Players…** | Opens the player list. |
 | **Replace after … days** | How old your own map must be before BlueMap's newer picture replaces it. |
 | **Markers within … chunks** | How far away BlueMap markers show on the minimap. |
-| **Map icons / Heads / Minimap** | How big markers and players' heads are drawn. |
+| **Map icons / Heads / Minimap** | How big markers and players' heads are drawn. **Heads** covers the world map, the minimap and locked players' heads in the world. |
 | **Server** | Which server you are editing. Click through to switch, or to add one. |
 | **Server address** | Every name you join this server by, separated by commas, e.g. `play.example.com, 203.0.113.7`. |
 | **BlueMap address** | The web page of the server's BlueMap. |
@@ -93,6 +118,63 @@ On the world map, hover over a BlueMap marker to see its name, right-click it, a
 **Save as waypoint**. It becomes a normal Xaero waypoint in your current waypoint set, with its
 name, initials and colour, and stays even if the marker is later removed from BlueMap. Waypoints
 are saved to the dimension you are standing in, so the world map must be showing that dimension.
+
+## Players
+
+Everyone BlueMap can see shows up as their face, on the world map and on the minimap of the
+dimension they are in. The minimap keeps them after they leave your render distance, which is the
+point: zoomed out, you can watch someone cross the map.
+
+By default the minimap only draws the players your game has *not* loaded, because Xaero's own radar
+already draws the near ones and you would otherwise see two heads for the same person. If you have
+that radar switched off, set **Minimap players** to **All players**.
+
+### Locking on
+
+Right-click a player on the world map and choose **Lock on**. From then on:
+
+- their pin keeps following them on both maps, and is pinned to the edge of the minimap when they
+  are off it, the way a waypoint is;
+- their head floats over them in the world, with their name and how far away they are, whenever you
+  look their way;
+- that head disappears as soon as you can genuinely see the player: loaded, visible and with
+  nothing between you. Behind a hill, through a wall, or far out of render distance, it stays.
+
+Locks are remembered per server, so they survive relogging. Right-click them again to unlock, or
+use **Unlock all** in the player list.
+
+### The player list
+
+Open it with the **Players** button in the top-left corner of the world map, from the map's
+right-click menu, from the **Players…** button in the settings, or with `/mapexposer players`.
+Search by name, switch between your dimension and all of them, and for anyone: **Go to** (jumps the
+world map to them) and **Lock** / **Unlock**. Locked players sort to the top, then the nearest.
+
+**Go to** works across dimensions: for someone in the Nether while your map is showing the
+Overworld, the map switches to the Nether to show them, and switches back to what it was on as soon
+as you leave the map.
+
+## Looking at another dimension
+
+The world map can be switched to a dimension you are not standing in. Xaero draws your own arrow,
+your own waypoints and the entities around you there anyway, converted into that dimension's
+coordinates — which is useful for lining a Nether tunnel up with the Overworld, and confusing the
+rest of the time, because none of it is where it appears to be. While the map is showing somewhere
+you are not, this mod:
+
+- hides your player arrow and the entity radar, leaving your own dimension's map untouched;
+- starts you at 0, 0 rather than eight times further out on chunks nobody has mapped;
+- switches on Xaero's own "only display current map waypoints" the first time you join a world, so
+  the waypoints change with the dimension. It is only ever turned on, never off — undo it from the
+  toggle in the world map's waypoint menu, or set `matchWaypointsToDimension` to `false` in
+  `config/skysmapexposer.json` to stop the mod touching it.
+
+## Copying coordinates
+
+Right-click anywhere on the world map for **Copy coordinates**, which puts `-350 200 (Overworld)`
+on your clipboard. On a marker or a player you get their height too, as `-350 72 200 (Overworld)`.
+The numbers come first, the way `/tp` and most chat messages want them, with the dimension after —
+the map can be switched between dimensions, so coordinates without it can mean the wrong place.
 
 ## How "old" is decided
 

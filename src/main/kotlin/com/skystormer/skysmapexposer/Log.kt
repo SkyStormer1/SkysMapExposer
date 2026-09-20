@@ -10,6 +10,8 @@ object Log {
 
     private val LOGGER = LoggerFactory.getLogger("skysmapexposer")
 
+    fun info(message: String, vararg arguments: Any?) = LOGGER.info(prefix(message), *arguments)
+
     fun warn(message: String, vararg arguments: Any?) = LOGGER.warn(prefix(message), *arguments)
 
     fun error(message: String, cause: Throwable) = LOGGER.error(prefix(message), cause)

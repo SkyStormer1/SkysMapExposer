@@ -3,7 +3,10 @@ package com.skystormer.skysmapexposer
 import com.mojang.blaze3d.textures.GpuTextureView
 import com.mojang.blaze3d.vertex.BufferBuilder
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
+import net.minecraft.resources.Identifier
 import org.joml.Matrix4f
 import xaero.lib.client.graphics.XaeroBufferProvider
 import xaero.lib.client.gui.widget.Tooltip
@@ -35,11 +38,21 @@ object MarkerElements {
         var iconRenderer: MultiTextureRenderTypeRenderer? = null
     }
 
-    /** The pins for the dimension Xaero's world map is showing, or none. */
-    fun pinsForWorldMap(): List<Markers.Pin> {
+    /** The dimension Xaero's world map is showing, which need not be the one you are standing in. */
+    fun worldMapDimension(): String? =
+        WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
+
+    /**
+     * The pins for the dimension Xaero's world map is showing, or none. The minimap uses these too:
+     * Xaero draws its minimap terrain from the same `currentDimension`, so the pins follow it
+     * rather than the dimension you happen to be standing in.
+     */
+    fun pinsForWorldMap(): List<Markers.Pin> = pinsFor(worldMapDimension())
+
+    /** The markers and players BlueMap has for [dimension], in that dimension's own coordinates. */
+    fun pinsFor(dimension: String?): List<Markers.Pin> {
         val session = Session.current ?: return emptyList()
-        val dimension = WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension?.dimId
-            ?.identifier()?.toString() ?: return emptyList()
+        if (dimension == null) return emptyList()
         val map = session.server.markersFor(dimension) ?: return emptyList()
         val pins = ArrayList<Markers.Pin>()
         if (Config.showMarkers) session.markers.of(map)?.let { pins.addAll(it.points) }
@@ -97,11 +110,26 @@ object MarkerElements {
             options.add(object : RightClickOption(pin.label, 0, target) {
                 override fun onAction(screen: net.minecraft.client.gui.screens.Screen) {}
             })
-            options.add(object : RightClickOption("Save as waypoint", 1, target) {
-                override fun onAction(screen: net.minecraft.client.gui.screens.Screen) {
-                    Waypoints.save(pin)
+            if (pin is Markers.Player) {
+                val locks = Session.current?.locks
+                val locked = locks?.isLocked(pin.uuid) == true
+                options.add(
+                    MapMenus.option(if (locked) "Unlock ${pin.label}" else "Lock on to ${pin.label}", options.size, target) {
+                        LockedPlayers.toggle(pin)
+                    }.setActive(locks != null)
+                )
+            }
+            options.add(
+                MapMenus.option("Save as waypoint", options.size, target) { Waypoints.save(pin) }
+                    .setActive(Waypoints.available())
+            )
+            // Pins are read from the BlueMap of the dimension the map is showing, so that is the
+            // dimension their coordinates are in.
+            options.add(
+                MapMenus.option("Copy coordinates", options.size, target) {
+                    MapMenus.copy(pin.x, pin.y, pin.z, worldMapDimension())
                 }
-            }.setActive(Waypoints.available()))
+            )
             return options
         }
     }
@@ -112,6 +140,16 @@ object MarkerElements {
         // Xaero renders elements in two passes, shadows first ("pre"); both go through here.
         override fun shouldRender(location: ElementRenderLocation, pre: Boolean): Boolean =
             location == ElementRenderLocation.WORLD_MAP && (Config.showMarkers || Config.showPlayers)
+
+        /**
+         * Xaero divides an element's position by the dimension scale, because its own waypoints are
+         * stored in the coordinates of the dimension you are standing in and have to be converted
+         * to the one the map is showing. These pins are already read from the BlueMap of the
+         * dimension being shown, so there is nothing to convert — and letting Xaero convert them
+         * anyway threw every marker and head eight times too far out whenever the map was switched
+         * to a dimension other than the one you were in.
+         */
+        override fun shouldBeDimScaled(): Boolean = false
 
         override fun preRender(info: ElementRenderInfo, buffers: XaeroBufferProvider, renderers: MultiTextureRenderTypeRendererProvider, pre: Boolean) {
             context.iconRenderer = renderers.getRenderer(CustomRenderTypes.GUI_NEAREST)
@@ -171,7 +209,10 @@ object MarkerElements {
                 .withStyle { it.withColor(0xAAAAAA) }
         )
         is Markers.Player -> Component.literal(pin.label).append(
-            Component.literal("\nPlayer · ${pin.x.toInt()}, ${pin.y.toInt()}, ${pin.z.toInt()}").withStyle { it.withColor(0xAAAAAA) }
+            Component.literal(
+                "\nPlayer · ${pin.x.toInt()}, ${pin.y.toInt()}, ${pin.z.toInt()}" +
+                    if (LockedPlayers.isLocked(pin.uuid)) "\nLocked on: right-click to unlock" else "\nRight-click to lock on"
+            ).withStyle { it.withColor(0xAAAAAA) }
         )
     }
 
@@ -229,4 +270,25 @@ object PinDrawing {
         val view = minecraft.textureManager.getTexture(path).textureView
         return Icon(view, 8f / 64f, 8f / 64f, 16f / 64f, 16f / 64f, 8, 8)
     }
+
+    /** Where a player's skin lives, or null while the client is still fetching it. */
+    fun skin(uuid: java.util.UUID): Identifier? =
+        Minecraft.getInstance().connection?.getPlayerInfo(uuid)?.skin?.body()?.texturePath()
+
+    /**
+     * A player's face, and the hat layer over it, drawn on a screen or the HUD at [size] pixels —
+     * the same two 8×8 patches of the skin the tab list uses. Anyone whose skin has not arrived
+     * gets a plain square, so a row or a marker never silently loses its picture.
+     */
+    fun face(graphics: GuiGraphicsExtractor, uuid: java.util.UUID, x: Int, y: Int, size: Int) {
+        val skin = skin(uuid)
+        if (skin == null) {
+            graphics.fill(x, y, x + size, y + size, NO_SKIN)
+            return
+        }
+        graphics.blit(RenderPipelines.GUI_TEXTURED, skin, x, y, 8f, 8f, size, size, 8, 8, 64, 64, -1)
+        graphics.blit(RenderPipelines.GUI_TEXTURED, skin, x, y, 40f, 8f, size, size, 8, 8, 64, 64, -1)
+    }
+
+    private const val NO_SKIN = 0xFF7F7F7F.toInt()
 }

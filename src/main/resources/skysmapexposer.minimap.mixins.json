@@ -3,6 +3,7 @@
   "package": "com.skystormer.skysmapexposer.mixin.minimap",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
+    "RadarRendererMixin",
     "SupportXaeroWorldmapMixin"
   ],
   "injectors": {

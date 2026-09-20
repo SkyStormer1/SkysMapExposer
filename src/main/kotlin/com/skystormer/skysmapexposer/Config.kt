@@ -31,8 +31,38 @@ object Config {
     /** Whether BlueMap's outlines (world border, zones) are drawn on the world map and minimap. */
     var showOutlines: Boolean = true
 
-    /** Whether the players BlueMap reports are shown on the world map, in their own dimension. */
+    /**
+     * Whether the players BlueMap reports are shown at all: on the world map, on the minimap, and
+     * as a head over the ones you have locked on to.
+     */
     var showPlayers: Boolean = true
+
+    /**
+     * Whether to switch on Xaero's own "only display current map waypoints" the first time a world
+     * is joined, so that changing the world map's dimension changes which waypoints it shows.
+     *
+     * Xaero's option defaults to off and is only reachable from a small toggle in the world map's
+     * waypoint menu. Set this to false to leave it alone; it is never switched back off.
+     */
+    var matchWaypointsToDimension: Boolean = true
+
+    /** Which of those players the minimap shows. */
+    var minimapPlayers: MinimapPlayers = MinimapPlayers.FAR_ONLY
+
+    /**
+     * What the minimap does with BlueMap's players.
+     *
+     * The point of showing them there at all is that BlueMap knows where everyone is, so a zoomed
+     * out minimap can keep showing someone after they leave your render distance — which is when
+     * Xaero's own radar loses them. Near you the two would draw the same player twice, so
+     * [FAR_ONLY] leaves the ones your game has loaded to the radar. Turn that off with [ALWAYS] if
+     * you have Xaero's player radar switched off.
+     */
+    enum class MinimapPlayers(val label: String) {
+        OFF("No players"),
+        FAR_ONLY("Players out of range"),
+        ALWAYS("All players"),
+    }
 
     /**
      * How long after you last had a chunk loaded before the server's BlueMap may replace it on your
@@ -49,7 +79,10 @@ object Config {
     /** Size of BlueMap's markers on the world map, as a multiple of the normal size. */
     var worldMapMarkerScale: Float = 1f
 
-    /** Size of other players' heads on the world map, independent of the markers. */
+    /**
+     * Size of other players' heads, independent of the markers: on the world map, on the minimap,
+     * and over a locked player in the world.
+     */
     var playerHeadScale: Float = 1f
 
     /** Size of BlueMap's markers on the minimap, on top of their shrinking with distance. */
@@ -123,6 +156,10 @@ object Config {
             json.get("showMarkers")?.let { showMarkers = it.asBoolean }
             json.get("showOutlines")?.let { showOutlines = it.asBoolean }
             json.get("showPlayers")?.let { showPlayers = it.asBoolean }
+            json.get("matchWaypointsToDimension")?.let { matchWaypointsToDimension = it.asBoolean }
+            json.get("minimapPlayers")?.let { element ->
+                minimapPlayers = MinimapPlayers.entries.firstOrNull { it.name == element.asString } ?: minimapPlayers
+            }
             json.get("staleDays")?.let { staleDays = it.asDouble }
             json.get("worldMapMarkerScale")?.let { worldMapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
             json.get("playerHeadScale")?.let { playerHeadScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
@@ -159,6 +196,8 @@ object Config {
         json.addProperty("showMarkers", showMarkers)
         json.addProperty("showOutlines", showOutlines)
         json.addProperty("showPlayers", showPlayers)
+        json.addProperty("minimapPlayers", minimapPlayers.name)
+        json.addProperty("matchWaypointsToDimension", matchWaypointsToDimension)
         json.addProperty("staleDays", staleDays)
         json.addProperty("worldMapMarkerScale", worldMapMarkerScale)
         json.addProperty("playerHeadScale", playerHeadScale)

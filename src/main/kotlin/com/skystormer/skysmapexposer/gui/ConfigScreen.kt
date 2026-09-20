@@ -62,6 +62,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     private var showMarkers = Config.showMarkers
     private var showOutlines = Config.showOutlines
     private var showPlayers = Config.showPlayers
+    private var minimapPlayers = Config.minimapPlayers
     private var staleDays = formatDays(Config.staleDays)
     private var shrinkChunks = Config.minimapShrinkChunks
     private var worldMapMarkerScale = Config.worldMapMarkerScale
@@ -101,14 +102,34 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         val fieldLeft = left + labelWidth
         val fieldWidth = WIDTH - labelWidth
         val switchWidth = 48
-        // Everything below fits in 256 scaled pixels, so the whole screen shows at large GUI scales.
-        var y = maxOf(1, (height - 256) / 2)
+        // Everything below fits in 278 scaled pixels, so the whole screen shows at large GUI scales.
+        var y = maxOf(1, (height - 278) / 2)
 
         val quarter = (WIDTH - GAP * 3) / 4
         addRenderableWidget(toggle(left, y, quarter, "Terrain", enabled, "Fill in your map with BlueMap's terrain.") { enabled = it })
         addRenderableWidget(toggle(left + (quarter + GAP), y, quarter, "Markers", showMarkers, "Show BlueMap's markers (shops, banners…) on the world map and minimap.") { showMarkers = it })
         addRenderableWidget(toggle(left + (quarter + GAP) * 2, y, quarter, "Borders", showOutlines, "Draw BlueMap's world border and zones on both maps.") { showOutlines = it })
-        addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", showPlayers, "Show other players on the world map, in their own dimension.") { showPlayers = it })
+        addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", showPlayers, "Show other players BlueMap reports, in their own dimension.") { showPlayers = it })
+        y += ROW + GAP
+
+        // Which players the minimap shows, and the list of everyone online.
+        val halfWidth = (WIDTH - GAP) / 2
+        val minimapChoice = CycleButton.builder<Config.MinimapPlayers>({ Component.literal(it.label) }, minimapPlayers)
+            .withValues(Config.MinimapPlayers.entries.toList())
+            .displayOnlyValue()
+            .create(left, y, halfWidth, ROW, Component.literal("Minimap players")) { _, value -> minimapPlayers = value }
+        minimapChoice.setTooltip(Tooltip.create(Component.literal(
+            "Which players the minimap shows. BlueMap knows where everyone is, so a zoomed out minimap can keep them " +
+                "on screen after they leave your render distance. Out of range leaves the ones near you to Xaero's own " +
+                "radar, so nobody is drawn twice; choose All players if you have that radar switched off."
+        )))
+        addRenderableWidget(minimapChoice)
+        addRenderableWidget(
+            Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
+                .bounds(left + halfWidth + GAP, y, WIDTH - halfWidth - GAP, ROW)
+                .tooltip(Tooltip.create(Component.literal("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates.")))
+                .build()
+        )
         y += ROW + GAP
 
         // Two settings side by side: how old your map may get, and how far edge markers shrink.
@@ -133,7 +154,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         addRenderableWidget(ScaleSlider(left, y, third, "Map icons", worldMapMarkerScale,
             "Size of BlueMap's markers on the world map.") { worldMapMarkerScale = it })
         addRenderableWidget(ScaleSlider(left + third + GAP, y, third, "Heads", playerHeadScale,
-            "Size of other players' heads on the world map.") { playerHeadScale = it })
+            "Size of other players' heads: on the world map, on the minimap, and over a player you have locked on to.") { playerHeadScale = it })
         addRenderableWidget(ScaleSlider(left + (third + GAP) * 2, y, third, "Minimap", minimapMarkerScale,
             "Size of BlueMap's markers on the minimap. They still shrink with distance.") { minimapMarkerScale = it })
         y += ROW + GAP * 2
@@ -335,6 +356,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         Config.showMarkers = showMarkers
         Config.showOutlines = showOutlines
         Config.showPlayers = showPlayers
+        Config.minimapPlayers = minimapPlayers
         Config.minimapShrinkChunks = shrinkChunks
         Config.worldMapMarkerScale = worldMapMarkerScale
         Config.playerHeadScale = playerHeadScale

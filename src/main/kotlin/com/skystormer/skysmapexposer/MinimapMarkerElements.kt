@@ -14,10 +14,18 @@ import xaero.hud.minimap.element.render.MinimapElementRenderer
 import xaero.lib.client.graphics.XaeroBufferProvider
 
 /**
- * BlueMap's markers on Xaero's minimap, through the minimap's own element system, drawn over the
- * minimap the way its waypoints are. Only markers within [Config.minimapShrinkChunks] are shown,
- * smaller the further away they are, so a server's hundreds of markers do not crowd the minimap's
- * edge. Players are left out: the minimap's radar already shows the ones near you.
+ * BlueMap's markers and players on Xaero's minimap, through the minimap's own element system, drawn
+ * over the minimap the way its waypoints are.
+ *
+ * Markers within [Config.minimapShrinkChunks] are shown, smaller the further away they are, so a
+ * server's hundreds of markers do not crowd the minimap's edge.
+ *
+ * Players come from BlueMap, which knows where everyone is, so a zoomed out minimap keeps showing
+ * them after they leave your render distance and Xaero's own radar loses them. Which ones appear is
+ * [Config.minimapPlayers], and they keep their size at any distance, because a head shrunk to a few
+ * pixels tells you nothing. An ordinary one is drawn only while it falls inside the minimap, so the
+ * whole server is not stacked around the edge; one you have locked on to is pinned to the edge like
+ * a waypoint, so you can always see which way they are.
  *
  * Only touched when Xaero's Minimap is installed.
  */
@@ -31,11 +39,10 @@ object MinimapMarkerElements {
 
     class Provider : MinimapElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: MinimapElementRenderLocation, context: Context) {
-            context.pins = if (Config.showMarkers) {
-                MarkerElements.pinsForWorldMap().filter { it is Markers.Point && inRange(it) }
-            } else {
-                emptyList()
-            }
+            // The same dimension Xaero's own minimap terrain uses, which is the world map's
+            // current one rather than the one you are standing in: that is what MinimapOverlay
+            // draws under these pins, so following anything else would put them out of step.
+            context.pins = MarkerElements.pinsForWorldMap().filter(::shows)
             context.next = 0
         }
 
@@ -53,14 +60,14 @@ object MinimapMarkerElements {
         override fun getRenderX(pin: Markers.Pin, context: Context, partialTicks: Float): Double = pin.x
         override fun getRenderY(pin: Markers.Pin, context: Context, partialTicks: Float): Double = pin.y
         override fun getRenderZ(pin: Markers.Pin, context: Context, partialTicks: Float): Double = pin.z
-        override fun getInteractionBoxLeft(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -HALF
-        override fun getInteractionBoxRight(pin: Markers.Pin, context: Context, partialTicks: Float): Int = HALF
-        override fun getInteractionBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -HALF
-        override fun getInteractionBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = HALF
-        override fun getRenderBoxLeft(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -HALF
-        override fun getRenderBoxRight(pin: Markers.Pin, context: Context, partialTicks: Float): Int = HALF
-        override fun getRenderBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -HALF
-        override fun getRenderBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = HALF
+        override fun getInteractionBoxLeft(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin)
+        override fun getInteractionBoxRight(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
+        override fun getInteractionBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin)
+        override fun getInteractionBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
+        override fun getRenderBoxLeft(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin)
+        override fun getRenderBoxRight(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
+        override fun getRenderBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin)
+        override fun getRenderBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
         override fun getLeftSideLength(pin: Markers.Pin, minecraft: Minecraft): Int = minecraft.font.width(pin.label) + 9
         override fun getMenuName(pin: Markers.Pin): String = pin.label
         override fun getFilterName(pin: Markers.Pin): String = pin.label
@@ -73,7 +80,8 @@ object MinimapMarkerElements {
         MinimapElementRenderer<Markers.Pin, Context>(reader, provider, context) {
 
         override fun shouldRender(location: MinimapElementRenderLocation): Boolean =
-            Config.showMarkers && (location == MinimapElementRenderLocation.OVER_MINIMAP || location == MinimapElementRenderLocation.IN_MINIMAP)
+            (Config.showMarkers || playersShown()) &&
+                (location == MinimapElementRenderLocation.OVER_MINIMAP || location == MinimapElementRenderLocation.IN_MINIMAP)
 
         override fun preRender(info: MinimapElementRenderInfo, buffers: XaeroBufferProvider, renderers: MultiTextureRenderTypeRendererProvider) {
             context.iconRenderer = renderers.getRenderer(CustomRenderTypes.GUI_NEAREST)
@@ -89,10 +97,13 @@ object MinimapMarkerElements {
             pin: Markers.Pin, highlighted: Boolean, outOfBounds: Boolean, depth: Double, scale: Float,
             partialX: Double, partialY: Double, info: MinimapElementRenderInfo, graphics: MinimapElementGraphics, buffers: XaeroBufferProvider,
         ): Boolean {
+            // Xaero pins whatever falls outside the minimap to its edge. Only a locked player earns
+            // that; the rest would ring the minimap with the whole server.
+            if (outOfBounds && pin is Markers.Player && !LockedPlayers.isLocked(pin.uuid)) return false
             val pose = graphics.pose()
             pose.pushPose()
             pose.translate(partialX, partialY, 0.0)
-            val size = scaleFor(pin) * Config.minimapMarkerScale
+            val size = sizeOf(pin)
             pose.scale(scale * size, scale * size, 1f)
             val icon = MarkerElements.iconFor(pin)
             val renderer = context.iconRenderer
@@ -106,6 +117,36 @@ object MinimapMarkerElements {
             return true
         }
     }
+
+    /** Whether the minimap is showing any players at all at the moment. */
+    fun playersShown(): Boolean = Config.showPlayers && Config.minimapPlayers != Config.MinimapPlayers.OFF
+
+    /**
+     * Whether [pin] belongs on the minimap: a marker if it is close enough, a player if the settings
+     * want them — and, on [Config.MinimapPlayers.FAR_ONLY], only once your game has let go of them,
+     * so that near you Xaero's radar shows them and this does not put a second head on top of it.
+     * Someone you have locked on to is always shown.
+     */
+    fun shows(pin: Markers.Pin): Boolean = when (pin) {
+        is Markers.Point -> Config.showMarkers && inRange(pin)
+        is Markers.Player -> playersShown() && (
+            LockedPlayers.isLocked(pin.uuid) ||
+                Config.minimapPlayers == Config.MinimapPlayers.ALWAYS ||
+                LockedPlayers.loaded(pin.uuid) == null
+            )
+    }
+
+    /**
+     * How big a pin is drawn on the minimap, as a multiple of its world map size. Markers shrink
+     * with distance; players keep their size, since the point of them is to be read far away.
+     */
+    fun sizeOf(pin: Markers.Pin): Float = when (pin) {
+        is Markers.Player -> PLAYER * Config.playerHeadScale
+        is Markers.Point -> scaleFor(pin) * Config.minimapMarkerScale
+    }
+
+    /** Half a pin's box, in the element's own units, matching what [sizeOf] will draw. */
+    private fun halfOf(pin: Markers.Pin): Int = (HALF * 2 * sizeOf(pin)).toInt().coerceAtLeast(2)
 
     /** How far from you, in blocks, a marker is. */
     private fun distanceTo(pin: Markers.Pin): Double? {
@@ -135,6 +176,9 @@ object MinimapMarkerElements {
 
     /** A marker's size at the edge of its range, relative to the world map's. */
     const val FARTHEST = 0.2f
+
+    /** A player's head on the minimap, relative to the world map's, at any distance. */
+    const val PLAYER = 0.5f
 
     fun register(): Boolean {
         val handler = HudMod.INSTANCE?.minimap?.overMapRendererHandler ?: return false
