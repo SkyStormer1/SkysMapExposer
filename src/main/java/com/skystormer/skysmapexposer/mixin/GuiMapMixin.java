@@ -95,6 +95,21 @@ public abstract class GuiMapMixin implements MapCamera {
         cameraDestinationAnimZ = null;
     }
 
+    /**
+     * Hands the camera back to Xaero, which puts it on the player on its next frame. Used when the
+     * map returns to the dimension you are standing in: Xaero's own reset takes priority over the
+     * shift it applies when the dimension scale changes, so this lands on you rather than at the
+     * shifted position. Unlike a jump it leaves {@code attachedCamera} alone, so a camera that was
+     * following you still is.
+     */
+    @Override
+    public void skysmapexposerFollowPlayer() {
+        shouldResetCameraPos = true;
+        cameraDestination = null;
+        cameraDestinationAnimX = null;
+        cameraDestinationAnimZ = null;
+    }
+
     @Inject(
             method = "extractRenderState",
             at = @At(
@@ -123,13 +138,15 @@ public abstract class GuiMapMixin implements MapCamera {
      * setting is all or nothing, so this takes the boolean Xaero just read out of that setting and
      * turns it off for this case only.
      *
-     * The slice starts at Xaero's single read of the ARROW option, so the first
-     * {@code booleanValue} after it is that option's and nothing else in this very long method can
-     * be caught by accident.
+     * The slice starts at Xaero's single read of the ARROW option and {@code ordinal = 0} takes the
+     * first {@code booleanValue} after it, which is that option's. <b>Both are needed.</b> A slice
+     * only says where to start looking: without the ordinal this matches every {@code booleanValue}
+     * from there to the end of a method thousands of instructions long, which switched off much of
+     * the rest of the map — the coordinate readout along with it.
      */
     @ModifyExpressionValue(
             method = "extractRenderState",
-            at = @At(value = "INVOKE", target = "Ljava/lang/Boolean;booleanValue()Z"),
+            at = @At(value = "INVOKE", target = "Ljava/lang/Boolean;booleanValue()Z", ordinal = 0),
             slice = @Slice(
                     from = @At(
                             value = "FIELD",

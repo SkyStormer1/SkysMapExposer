@@ -42,8 +42,17 @@ object MapView {
      */
     private const val SETTLE = 10
 
-    /** Where to send the camera once the map is showing [dimension]. */
-    private class Move(val dimension: String, val x: Int, val z: Int) {
+    /**
+     * Where to send the camera once the map is showing [dimension]. [toPlayer] means "back onto
+     * you", which is what returning to your own dimension wants.
+     */
+    private class Move(
+        val dimension: String,
+        val x: Int,
+        val z: Int,
+        val toPlayer: Boolean = false,
+        val fromGoTo: Boolean = false,
+    ) {
         var applied = 0
     }
 
@@ -70,6 +79,14 @@ object MapView {
     var radarHookRan = false
         private set
 
+    @Volatile
+    var trackerHookRan = false
+        private set
+
+    @Volatile
+    var wrapperHookRan = false
+        private set
+
     /**
      * Shows ([x], [z]) of [dimension] on the world map, switching the map to that dimension first
      * if it is showing another one. [screen] is the screen the request came from, so that an open
@@ -83,7 +100,7 @@ object MapView {
         if (!switchTo(dimension)) return false
         // The map may not be open yet, and will not be showing the new dimension for a frame or
         // two either way, so the move waits for both.
-        move = Move(dimension, x, z)
+        move = Move(dimension, x, z, fromGoTo = true)
         waited = 0
         if (screen !is MapCamera) MapMenus.openMap()
         return true
@@ -97,29 +114,33 @@ object MapView {
     }
 
     /**
-     * When the map is switched to a dimension you are not standing in, start it at the origin
-     * rather than where Xaero leaves it.
+     * Puts the camera somewhere that means something whenever the map changes dimension.
      *
-     * Xaero slides the camera to your own position converted into the new dimension, which for the
-     * nether means being dropped eight times further out — somewhere nothing has ever been mapped,
-     * so the map looks empty. The origin at least has the world's spawn near it.
-     *
-     * Switching back to your own dimension is left alone: Xaero putting you back on the player is
-     * the right answer there.
+     * Xaero shifts the camera by your own position converted between the two dimensions' scales,
+     * which lands nowhere useful in either direction: switching to the overworld from the nether
+     * drops you eight times further out, on chunks nobody has mapped, and switching back drops you
+     * seven times your own coordinate away from yourself. So going to a dimension you are not in
+     * starts at the origin, near the world's spawn, and coming back to your own goes to you.
      */
     private fun watchDimension(minecraft: Minecraft) {
         val viewed = MarkerElements.worldMapDimension()
         val changed = viewed != null && lastViewed != null && viewed != lastViewed
         lastViewed = viewed
         if (!changed) return
-        // A "Go to" is already on its way somewhere better than the origin.
-        if (move != null) return
-        if (viewed == minecraft.level?.dimension()?.identifier()?.toString()) return
+        // A "Go to" is already on its way somewhere better than the origin. Any other move is
+        // replaced rather than kept: toggling the dimension again before the last one has settled
+        // means the older move is for a dimension that is no longer on screen, and keeping it left
+        // the camera wherever Xaero's shift had dropped it.
+        if (move?.fromGoTo == true) return
         // Only while you are looking at the map. Putting the dimension back when you leave it also
         // counts as a change, and that must not queue a jump for the next time it is opened.
         if (minecraft.gui.screen() !is MapCamera) return
-        // Through the same held move as a "Go to", so that it too survives Xaero's shift.
-        move = Move(viewed, 0, 0)
+        // Both directions need handling, and for the same reason: Xaero's shift leaves the camera
+        // at a translated position that means nothing in the dimension now being shown. Coming back
+        // to your own dimension goes to you; going elsewhere goes to the origin. Both ride the same
+        // held move, so that they survive that shift.
+        val here = minecraft.level?.dimension()?.identifier()?.toString()
+        move = if (viewed == here) Move(viewed, 0, 0, toPlayer = true) else Move(viewed, 0, 0)
         waited = 0
     }
 
@@ -134,6 +155,23 @@ object MapView {
     @JvmStatic
     fun hideRadar(): Boolean {
         radarHookRan = true
+        return viewingAnotherDimension()
+    }
+
+    /**
+     * For `MinimapElementWrapperMixin`: hide everything the minimap draws on the world map, bar
+     * waypoints. This is the gate that has to hold, so its flag is the one worth reading.
+     */
+    @JvmStatic
+    fun hideWrappedMinimapElements(): Boolean {
+        wrapperHookRan = true
+        return viewingAnotherDimension()
+    }
+
+    /** For `PlayerTrackerRendererMixin`: hide Xaero's tracked-player dots on the world map. */
+    @JvmStatic
+    fun hideTracker(): Boolean {
+        trackerHookRan = true
         return viewingAnotherDimension()
     }
 
@@ -173,7 +211,7 @@ object MapView {
         // Jumped, not glided: Xaero's glide is a slowing animation, and over the tens of thousands
         // of blocks between two dimensions' coordinates it crawls. Repeated for [SETTLE] ticks so
         // that it outlives Xaero's own shift on the frame the dimension scale changes.
-        screen.skysmapexposerJumpTo(wanted.x, wanted.z)
+        if (wanted.toPlayer) screen.skysmapexposerFollowPlayer() else screen.skysmapexposerJumpTo(wanted.x, wanted.z)
         if (++wanted.applied >= SETTLE) move = null
     }
 

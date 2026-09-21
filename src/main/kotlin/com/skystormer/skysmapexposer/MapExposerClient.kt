@@ -51,6 +51,18 @@ object MapExposerClient : ClientModInitializer {
         false
     }
 
+    /**
+     * Whether one of this mod's optional injections reached [className]. Every injection here is
+     * `require = 0`, so a Xaero that has moved the code costs the feature and not the game — but
+     * that also means a failed injection is silent. Loading the class and looking for the method
+     * mixin would have added is the only way to tell, and it beats wondering why nothing happened.
+     */
+    private fun injected(className: String, method: String): Boolean = try {
+        Class.forName(className).declaredMethods.any { it.name.contains(method) }
+    } catch (e: Throwable) {
+        false
+    }
+
     override fun onInitializeClient() {
         Config.load()
 
@@ -84,6 +96,22 @@ object MapExposerClient : ClientModInitializer {
                 if (!hookInstalled()) Log.warn("This version of Xaero's World Map is not supported; nothing will be drawn on it")
                 if (FabricLoader.getInstance().isModLoaded("xaerominimap") && !minimapHookInstalled()) {
                     Log.warn("This version of Xaero's Minimap is not supported; nothing will be drawn on it")
+                }
+                if (!injected("xaero.map.gui.GuiMap", "hideArrowInOtherDimension")) {
+                    Log.warn("Could not hook Xaero's player arrow; it will show on another dimension's map")
+                }
+                if (FabricLoader.getInstance().isModLoaded("xaerominimap")) {
+                    val radar = "xaero.hud.minimap.radar.render.element.RadarRenderer"
+                    // The drawing gate is the one that has to hold; the other is only a shortcut.
+                    if (!injected(radar, "hideRadarDot")) {
+                        Log.warn("Could not hook Xaero's entity radar; entities will show on another dimension's map")
+                    } else if (!injected(radar, "hideRadarInOtherDimension")) {
+                        Log.warn("Only half of the entity radar hook applied; entities are still hidden, less cheaply")
+                    }
+                    val tracker = "xaero.hud.minimap.player.tracker.PlayerTrackerMinimapElementRenderer"
+                    if (!injected(tracker, "hideTrackerDot")) {
+                        Log.warn("Could not hook Xaero's tracked players; they will show on another dimension's map")
+                    }
                 }
             }
             addPins()
@@ -223,8 +251,10 @@ object MapExposerClient : ClientModInitializer {
         fun ran(hook: Boolean) = if (hook) "§aworking§r" else "§enot seen yet§r"
         source.sendFeedback(
             Component.literal(
-                "On another dimension's map — arrow hidden: ${ran(MapView.arrowHookRan)}, " +
-                    "entities hidden: ${ran(MapView.radarHookRan)} (open one to check)"
+                "On another dimension's map — arrow: ${ran(MapView.arrowHookRan)}, " +
+                    "minimap elements: ${ran(MapView.wrapperHookRan)}, " +
+                    "entities: ${ran(MapView.radarHookRan)}, " +
+                    "tracked players: ${ran(MapView.trackerHookRan)} (open one to check)"
             )
         )
         if (session == null) {

@@ -3,7 +3,8 @@
   "package": "com.skystormer.skysmapexposer.mixin",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
-    "GuiMapMixin"
+    "GuiMapMixin",
+    "MinimapElementWrapperMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -13,4 +13,10 @@ interface MapCamera {
      * blocks, which is what changing dimension is, gliding would be a long slow crawl over nothing.
      */
     fun skysmapexposerJumpTo(x: Int, z: Int)
+
+    /**
+     * Puts the camera back on you, the way Xaero does when it first opens the map, keeping whether
+     * the camera was following you rather than detaching it.
+     */
+    fun skysmapexposerFollowPlayer()
 }
