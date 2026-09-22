@@ -58,6 +58,22 @@ class MapExposerTest {
     }
 
     @Test
+    fun `remembered Xaero gaps survive a save and a reload`(@TempDir folder: Path) {
+        val direct = java.util.concurrent.Executor { it.run() }
+        val first = GapStore(folder, direct)
+        first.gapsIn("minecraft:overworld").add(Session.chunkKey(-5, 12))
+        first.gapsIn("minecraft:overworld").add(Session.chunkKey(40_000, -40_000))
+        first.gapsIn("minecraft:the_nether").add(Session.chunkKey(1, 1))
+        first.save()
+
+        val second = GapStore(folder, direct)
+        assertTrue(second.gapsIn("minecraft:overworld").contains(Session.chunkKey(-5, 12)))
+        assertTrue(second.gapsIn("minecraft:overworld").contains(Session.chunkKey(40_000, -40_000)))
+        assertTrue(!second.gapsIn("minecraft:overworld").contains(Session.chunkKey(12, -5)))
+        assertEquals(1, second.gapsIn("minecraft:the_nether").size)
+    }
+
+    @Test
     fun `reads the live server's map layout`() {
         val layout = reachable { BlueMap(url).layout("world") }
         assertEquals(500, layout.tileSize)

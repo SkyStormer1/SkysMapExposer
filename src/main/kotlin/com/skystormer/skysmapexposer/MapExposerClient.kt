@@ -69,7 +69,7 @@ object MapExposerClient : ClientModInitializer {
         // Under the chat, so a locked player's head never covers what someone is saying.
         HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, BEACON, PlayerBeacon)
 
-        addPlayersButton()
+        addMapButtons()
 
         ClientPlayConnectionEvents.JOIN.register { _, _, client ->
             Session.start(addressOf(client))
@@ -87,7 +87,6 @@ object MapExposerClient : ClientModInitializer {
             val session = Session.current ?: return@register
             val dimension = dimensionOf(level)
             session.visits.record(dimension, chunk.pos.x(), chunk.pos.z(), Clock.nowMinutes())
-            session.forgetGap(dimension, chunk.pos.x(), chunk.pos.z())
         }
 
         ClientTickEvents.END_CLIENT_TICK.register { client ->
@@ -120,7 +119,11 @@ object MapExposerClient : ClientModInitializer {
             ticks++
             // Chunks you stay near are kept up to date by Xaero, so they stay current here too.
             if (ticks % 400 == 0L) recordLoadedChunks(client, session)
-            if (ticks % 6000 == 0L) session.visits.save()
+            if (ticks % 40 == 0L) learnGaps(client, session)
+            if (ticks % 6000 == 0L) {
+                session.visits.save()
+                session.gaps.save()
+            }
         }
 
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
@@ -142,21 +145,23 @@ object MapExposerClient : ClientModInitializer {
     }
 
     /**
-     * A Players button in the top-left corner of Xaero's world map, under Xaero's own settings
-     * button — the right-click menu has the same thing, but nobody finds a right-click menu.
+     * Two buttons in the top-left corner of Xaero's world map, under Xaero's own settings button:
+     * **Players**, which opens the player list (the right-click menu has the same thing, but nobody
+     * finds a right-click menu), and **Markers**, which shows or hides BlueMap's markers in one
+     * click.
      *
      * Other mods put buttons in that same corner (Sky's Map Shapes puts a Shapes button there), so
-     * rather than guess at a free spot, this looks at what is actually on the screen and takes the
-     * first gap down the left edge. It is placed twice: once as the screen is built, and again on
-     * the first frame after that. The second time is the one that counts — a mod whose own
-     * `AFTER_INIT` runs after this one has added its button by then, and this one steps below it.
+     * rather than guess at a free spot, each looks at what is actually on the screen and takes the
+     * first gap down the left edge. They are placed twice: once as the screen is built, and again
+     * on the first frame after that. The second time is the one that counts — a mod whose own
+     * `AFTER_INIT` runs after this one has added its button by then, and these step below it.
      */
-    private fun addPlayersButton() {
+    private fun addMapButtons() {
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
             if (screen.javaClass.name != "xaero.map.gui.GuiMap") return@register
             try {
                 val widgets = Screens.getWidgets(screen)
-                val button = Button.builder(Component.literal("Players")) {
+                val players = Button.builder(Component.literal("Players")) {
                     Screens.getMinecraft(screen).gui.setScreen(PlayerListScreen(screen))
                 }
                     .bounds(0, freeSlot(widgets, null), MapButtons.WIDTH, MapButtons.HEIGHT)
@@ -164,27 +169,52 @@ object MapExposerClient : ClientModInitializer {
                         "Everyone BlueMap can see: search them, jump the map to them, lock on, or copy their coordinates."
                     )))
                     .build()
-                widgets.add(button)
+                widgets.add(players)
+
+                val markers = Button.builder(markersLabel()) { button ->
+                    Config.showMarkers = !Config.showMarkers
+                    Config.save()
+                    button.message = markersLabel()
+                    button.setTooltip(markersTooltip())
+                }
+                    .bounds(0, freeSlot(widgets, null), MapButtons.WIDTH, MapButtons.HEIGHT)
+                    .tooltip(markersTooltip())
+                    .build()
+                widgets.add(markers)
+
                 var placed = false
                 ScreenEvents.beforeExtract(screen).register { _, _, _, _, _ ->
                     if (!placed) {
                         placed = true
-                        button.y = freeSlot(widgets, button)
+                        // In order, so Markers takes the gap below wherever Players ends up.
+                        players.y = freeSlot(widgets, players, markers)
+                        markers.y = freeSlot(widgets, markers)
                     }
                 }
             } catch (e: Throwable) {
-                Log.error("Could not add the Players button to Xaero's world map", e)
+                Log.error("Could not add the Players and Markers buttons to Xaero's world map", e)
             }
         }
     }
 
+    /** "Markers", struck through and grey while BlueMap's markers are hidden. */
+    private fun markersLabel(): Component =
+        if (Config.showMarkers) Component.literal("Markers")
+        else Component.literal("Markers").withStyle { it.withStrikethrough(true).withColor(0x888888) }
+
+    private fun markersTooltip(): Tooltip = Tooltip.create(Component.literal(
+        if (Config.showMarkers) "BlueMap's markers are shown on the world map and minimap. Click to hide them."
+        else "BlueMap's markers are hidden. Click to show them on the world map and minimap again."
+    ))
+
     /**
-     * Where the Players button goes, given what is already on [widgets]. [mine] is the button being
-     * placed, which does not count as being in its own way. The arithmetic is [MapButtons].
+     * Where a button goes, given what is already on [widgets]. [mine] is the button being placed,
+     * which does not count as being in its own way, and neither does anything in [ignoring] (a
+     * button still to be placed after it). The arithmetic is [MapButtons].
      */
-    private fun freeSlot(widgets: List<AbstractWidget>, mine: AbstractWidget?): Int =
+    private fun freeSlot(widgets: List<AbstractWidget>, mine: AbstractWidget?, vararg ignoring: AbstractWidget): Int =
         MapButtons.firstFreeSlot(
-            widgets.filter { it !== mine && it.visible }.map { intArrayOf(it.x, it.y, it.width, it.height) }
+            widgets.filter { it !== mine && it !in ignoring && it.visible }.map { intArrayOf(it.x, it.y, it.width, it.height) }
         )
 
     /**
@@ -222,6 +252,26 @@ object MapExposerClient : ClientModInitializer {
         client.currentServer?.ip ?: if (client.hasSingleplayerServer()) "singleplayer" else null
 
     private fun dimensionOf(level: ClientLevel): String = level.dimension().identifier().toString()
+
+    /**
+     * Every two seconds, asks Xaero which chunks around you it has actually mapped, so the ones it
+     * has not (the ring at the edge of render distance) stay filled from BlueMap instead of
+     * showing black once you zoom out or walk on.
+     */
+    private fun learnGaps(client: Minecraft, session: Session) {
+        val level = client.level ?: return
+        val player = client.player ?: return
+        val mapProcessor = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor ?: return
+        val dimension = dimensionOf(level)
+        // Only while Xaero is mapping the dimension you are in: its open regions are around you.
+        val mapped = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
+        if (mapped != dimension) return
+        Backfill.learnGapsAround(
+            mapProcessor, session.xaeroGapsIn(dimension),
+            player.chunkPosition().x(), player.chunkPosition().z(),
+            client.options.effectiveRenderDistance + 2,
+        )
+    }
 
     private fun recordLoadedChunks(client: Minecraft, session: Session) {
         val level = client.level ?: return

@@ -27,18 +27,14 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     val markers = Markers(blueMap, workers)
     val locks = Locks(folder.resolve("locks.json"), io)
 
-    private val xaeroGaps = HashMap<String, LongOpenHashSet>()
+    val gaps = GapStore(folder, io)
 
     /**
-     * Chunks Xaero was last seen to have nothing for, per dimension. Remembered because Xaero only
-     * answers while it has the region open, which it does not when zoomed out.
+     * Chunks Xaero was last seen to have nothing for, per dimension. Remembered, on disk too,
+     * because Xaero only answers while it has the region open, which it does not when zoomed out.
      */
-    fun xaeroGapsIn(dimension: String): LongOpenHashSet = xaeroGaps.getOrPut(dimension) { LongOpenHashSet() }
+    fun xaeroGapsIn(dimension: String): LongOpenHashSet = gaps.gapsIn(dimension)
 
-    /** The chunk has just been loaded, so Xaero is about to map it. */
-    fun forgetGap(dimension: String, chunkX: Int, chunkZ: Int) {
-        xaeroGaps[dimension]?.remove(chunkKey(chunkX, chunkZ))
-    }
 
     private val layouts = ConcurrentHashMap<String, BlueMap.MapLayout>()
     private val layoutAskedAt = HashMap<String, Long>()
@@ -63,6 +59,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
 
     private fun close() {
         visits.save()
+        gaps.save()
         tiles.clear()
         markers.close()
         workers.shutdownNow()
