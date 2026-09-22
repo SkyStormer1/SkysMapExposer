@@ -33,7 +33,8 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
   colours, and update when the server changes them.
 - **Shows BlueMap's markers.** Shops, banners and the like appear as icons on the world map and
   minimap only, never floating in the world. Hover one for its name. Right-click it on the world
-  map and choose **Save as waypoint** to turn it into an ordinary, permanent Xaero waypoint.
+  map and choose **Save as waypoint** to turn it into an ordinary, permanent Xaero waypoint. The
+  **Markers** button in the world map's top-left corner hides or shows them all in one click.
 - **Shows other players** on the world map and minimap of the dimension they are in, with their
   face. BlueMap knows where everyone is, so they stay on your minimap after they walk out of your
   render distance and Xaero's own radar loses them.
