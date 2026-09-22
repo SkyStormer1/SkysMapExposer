@@ -87,7 +87,6 @@ object MapExposerClient : ClientModInitializer {
             val session = Session.current ?: return@register
             val dimension = dimensionOf(level)
             session.visits.record(dimension, chunk.pos.x(), chunk.pos.z(), Clock.nowMinutes())
-            session.forgetGap(dimension, chunk.pos.x(), chunk.pos.z())
         }
 
         ClientTickEvents.END_CLIENT_TICK.register { client ->
@@ -120,7 +119,11 @@ object MapExposerClient : ClientModInitializer {
             ticks++
             // Chunks you stay near are kept up to date by Xaero, so they stay current here too.
             if (ticks % 400 == 0L) recordLoadedChunks(client, session)
-            if (ticks % 6000 == 0L) session.visits.save()
+            if (ticks % 40 == 0L) learnGaps(client, session)
+            if (ticks % 6000 == 0L) {
+                session.visits.save()
+                session.gaps.save()
+            }
         }
 
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
@@ -222,6 +225,26 @@ object MapExposerClient : ClientModInitializer {
         client.currentServer?.ip ?: if (client.hasSingleplayerServer()) "singleplayer" else null
 
     private fun dimensionOf(level: ClientLevel): String = level.dimension().identifier().toString()
+
+    /**
+     * Every two seconds, asks Xaero which chunks around you it has actually mapped, so the ones it
+     * has not (the ring at the edge of render distance) stay filled from BlueMap instead of
+     * showing black once you zoom out or walk on.
+     */
+    private fun learnGaps(client: Minecraft, session: Session) {
+        val level = client.level ?: return
+        val player = client.player ?: return
+        val mapProcessor = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor ?: return
+        val dimension = dimensionOf(level)
+        // Only while Xaero is mapping the dimension you are in: its open regions are around you.
+        val mapped = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
+        if (mapped != dimension) return
+        Backfill.learnGapsAround(
+            mapProcessor, session.xaeroGapsIn(dimension),
+            player.chunkPosition().x(), player.chunkPosition().z(),
+            client.options.effectiveRenderDistance + 2,
+        )
+    }
 
     private fun recordLoadedChunks(client: Minecraft, session: Session) {
         val level = client.level ?: return

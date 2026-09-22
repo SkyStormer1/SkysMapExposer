@@ -287,15 +287,32 @@ object Backfill {
      *
      * While Xaero has the chunk's region open this is exact: Xaero keeps a height for every pixel
      * it has mapped, and reports 32767 for one it has not. The answer is remembered, so zooming
-     * out — when Xaero closes its regions and draws from a smaller copy — does not change it.
-     * Loading the chunk in game forgets it again ([Session.forgetGap]), since Xaero is about to
-     * map it.
+     * out — when Xaero closes its regions and draws from a smaller copy — does not change it. It
+     * is only ever changed by asking Xaero again, here or in [learnGapsAround]: a chunk being
+     * loaded is no proof, because Xaero leaves the outermost ring of loaded chunks unmapped until
+     * the chunks beyond them arrive.
      */
     private fun isXaeroGap(mapProcessor: MapProcessor, remembered: LongOpenHashSet, chunkX: Int, chunkZ: Int): Boolean {
         val key = Session.chunkKey(chunkX, chunkZ)
         val live = xaeroHasNothing(mapProcessor, chunkX, chunkZ) ?: return remembered.contains(key)
         if (live) remembered.add(key) else remembered.remove(key)
         return live
+    }
+
+    /**
+     * Asks Xaero about every chunk within [radius] chunks of ([centreChunkX], [centreChunkZ]) and
+     * remembers the answers. Xaero always has the regions around the player open for the minimap,
+     * so this is where it can say which chunks it has really mapped, including the ring at the
+     * edge of render distance that it has not.
+     */
+    fun learnGapsAround(mapProcessor: MapProcessor, remembered: LongOpenHashSet, centreChunkX: Int, centreChunkZ: Int, radius: Int) {
+        for (chunkX in centreChunkX - radius..centreChunkX + radius) {
+            for (chunkZ in centreChunkZ - radius..centreChunkZ + radius) {
+                val live = xaeroHasNothing(mapProcessor, chunkX, chunkZ) ?: continue
+                val key = Session.chunkKey(chunkX, chunkZ)
+                if (live) remembered.add(key) else remembered.remove(key)
+            }
+        }
     }
 
     private fun xaeroHasNothing(mapProcessor: MapProcessor, chunkX: Int, chunkZ: Int): Boolean? {

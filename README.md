@@ -194,7 +194,8 @@ your game folder, and its settings in `config/skysmapexposer.json`.
 
 - Surface only: in Xaero's cave mode only borders and markers are drawn, not terrain.
 - Gaps inside explored areas are found by asking Xaero, which only knows while that area is
-  loaded on its map. Once seen, a gap is remembered until you leave the server.
+  loaded on its map, which it always is around you and when you zoom in. Once seen, a gap is
+  remembered, including after you rejoin.
 - Typing `/mapexposer` shows a status line if something is not drawing. It stays on your computer
   and is never sent to the server.
 
