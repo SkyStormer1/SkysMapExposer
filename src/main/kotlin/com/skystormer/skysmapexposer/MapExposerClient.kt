@@ -1,6 +1,8 @@
 package com.skystormer.skysmapexposer
 
 import com.mojang.brigadier.arguments.DoubleArgumentType
+import com.mojang.brigadier.arguments.IntegerArgumentType
+import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import net.fabricmc.api.ClientModInitializer
@@ -79,6 +81,7 @@ object MapExposerClient : ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
             Session.end()
             MapView.forget()
+            MapBackup.forget()
         }
 
         // A chunk arriving from the server is what makes Xaero redraw it, so this is the moment
@@ -134,6 +137,23 @@ object MapExposerClient : ClientModInitializer {
                     .then(ClientCommands.literal("off").executes { setEnabled(it, false) })
                     .then(ClientCommands.literal("reload").executes(::reload))
                     .then(ClientCommands.literal("players").executes(::players))
+                    .then(ClientCommands.literal("backup").executes(::backup))
+                    .then(ClientCommands.literal("backups").executes(::backups))
+                    .then(
+                        ClientCommands.literal("restore").then(
+                            ClientCommands.argument("name", StringArgumentType.string()).executes(::restore)
+                        )
+                    )
+                    .then(
+                        ClientCommands.literal("reloadregion")
+                            .executes(::whichRegion)
+                            .then(
+                                ClientCommands.argument("x", IntegerArgumentType.integer(-30000, 30000)).then(
+                                    ClientCommands.argument("z", IntegerArgumentType.integer(-30000, 30000))
+                                        .executes(::reloadRegion)
+                                )
+                            )
+                    )
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
                         ClientCommands.literal("stale").then(
@@ -333,6 +353,99 @@ object MapExposerClient : ClientModInitializer {
     private fun players(context: CommandContext<FabricClientCommandSource>): Int {
         val minecraft = Minecraft.getInstance()
         minecraft.execute { minecraft.gui.setScreen(PlayerListScreen(null)) }
+        return 1
+    }
+
+    /**
+     * Which map region you are standing in, and where Xaero keeps it. A region is 512 blocks
+     * square, so this is just the block position divided by 512, but getting that wrong by hand
+     * wastes more time than the command costs.
+     */
+    private fun whichRegion(context: CommandContext<FabricClientCommandSource>): Int {
+        val player = Minecraft.getInstance().player ?: return 0
+        val x = Math.floorDiv(player.blockX, 512)
+        val z = Math.floorDiv(player.blockZ, 512)
+        context.source.sendFeedback(Component.literal("You are in region §b${x}_${z}§r (${x}_${z}.zip)"))
+        val dimension = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension
+        val folder = dimension?.mainFolderPath?.resolve(dimension.currentMultiworld ?: "")
+        context.source.sendFeedback(Component.literal("§7${folder ?: "Xaero has not opened a map folder yet"}"))
+        context.source.sendFeedback(Component.literal("§7/mapexposer reloadregion $x $z makes Xaero read it from disk again"))
+        return 1
+    }
+
+    /**
+     * Drops one region from Xaero's memory so that it is read from disk again the next time it is
+     * needed, without restarting. `removeMapRegion` only unhooks it from Xaero's maps and does not
+     * save on the way out, so a file put there by hand is not overwritten by the copy being
+     * dropped. This is the piece a region-sharing feature would stand on.
+     */
+    private fun reloadRegion(context: CommandContext<FabricClientCommandSource>): Int {
+        val x = IntegerArgumentType.getInteger(context, "x")
+        val z = IntegerArgumentType.getInteger(context, "z")
+        return try {
+            val processor = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor
+            if (processor == null) {
+                context.source.sendError(Component.literal("Xaero's world map has no session yet; open the map first"))
+                return 0
+            }
+            // Int.MAX_VALUE is Xaero's cave layer for the surface.
+            val region = processor.getLeafMapRegion(Int.MAX_VALUE, x, z, false)
+            if (region == null) {
+                context.source.sendFeedback(
+                    Component.literal("Region §b${x}_${z}§r is not in memory, so Xaero will read it from disk when it is next shown")
+                )
+                return 1
+            }
+            processor.removeMapRegion(region)
+            context.source.sendFeedback(
+                Component.literal("Dropped region §b${x}_${z}§r from memory. Pan the map over it to make Xaero read the file again.")
+            )
+            1
+        } catch (e: Throwable) {
+            Log.error("Could not drop region ${x}_${z} from memory", e)
+            context.source.sendError(Component.literal("Could not drop that region: ${e.message ?: e.javaClass.simpleName}"))
+            0
+        }
+    }
+
+    /** Copies every surface region of the dimension on screen, to retreat to. */
+    private fun backup(context: CommandContext<FabricClientCommandSource>): Int {
+        val taken = MapBackup.snapshot()
+        if (taken == null) {
+            context.source.sendError(Component.literal("Could not copy the map; open the world map first"))
+            return 0
+        }
+        val (name, files) = taken
+        context.source.sendFeedback(Component.literal("Copied §b$files§r regions as §b$name"))
+        context.source.sendFeedback(Component.literal("§7/mapexposer restore $name puts them back"))
+        return 1
+    }
+
+    private fun backups(context: CommandContext<FabricClientCommandSource>): Int {
+        val all = MapBackup.snapshots()
+        if (all.isEmpty()) {
+            context.source.sendFeedback(Component.literal("No copies of the map yet; /mapexposer backup takes one"))
+            return 1
+        }
+        context.source.sendFeedback(Component.literal("Copies of the map, newest first:"))
+        all.take(10).forEach { context.source.sendFeedback(Component.literal("  §b$it")) }
+        if (all.size > 10) context.source.sendFeedback(Component.literal("  §7and ${all.size - 10} more"))
+        return 1
+    }
+
+    /**
+     * Puts a copy back. Xaero holds regions open, so each one restored is dropped from its memory
+     * afterwards; pan away and back to see the file that is now there.
+     */
+    private fun restore(context: CommandContext<FabricClientCommandSource>): Int {
+        val name = StringArgumentType.getString(context, "name")
+        val restored = MapBackup.restore(name)
+        if (restored < 0) {
+            context.source.sendError(Component.literal("No copy called '$name'; /mapexposer backups lists them"))
+            return 0
+        }
+        context.source.sendFeedback(Component.literal("Put §b$restored§r regions back from §b$name"))
+        context.source.sendFeedback(Component.literal("§7Pan the map over them to see it read the files again"))
         return 1
     }
 
