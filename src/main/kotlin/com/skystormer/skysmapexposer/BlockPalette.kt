@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import kotlin.math.cbrt
+import kotlin.math.pow
 
 /**
  * Choosing a block to stand for a colour.
@@ -11,9 +12,9 @@ import kotlin.math.cbrt
  * into Xaero's own map means picking, for each pixel, the block whose colour comes closest — and
  * then Xaero draws it natively, with its own shading, at every zoom, without this mod present.
  *
- * The block identities are invented. That is the honest cost of the trade, and the reason
- * [Config.fillMapFromBlueMap] is off until asked for: what you gain is terrain that persists and
- * renders like the rest of your map, and what you lose is any truth about what is actually there.
+ * The block identities are invented. That is the honest cost of the trade, and the reason a
+ * download only ever runs when asked for: what you gain is terrain that persists and renders like
+ * the rest of your map, and what you lose is any truth about what is actually there.
  *
  * Matching is done in Oklab rather than on the raw bytes. Plain RGB distance thinks a dark blue and
  * a dark brown are neighbours and that two greens a shade apart are miles away, which turns
@@ -22,7 +23,8 @@ import kotlin.math.cbrt
 object BlockPalette {
 
     /**
-     * The blocks a pixel may be matched to, as identifiers, resolved at run time.
+     * The blocks a land pixel may be matched to, as identifiers, resolved at run time. Water is
+     * not among them: it is recognised first and written as a layer over a bed.
      *
      * Deliberately a short list of the things terrain is actually made of rather than the whole
      * block registry. Matching against everything finds absurdly better colour matches — a field of
@@ -30,7 +32,7 @@ object BlockPalette {
      * open cave mode. A small honest palette beats an accurate mad one.
      */
     val CANDIDATES: List<String> = listOf(
-        "minecraft:water", "minecraft:grass_block", "minecraft:dirt", "minecraft:coarse_dirt",
+        "minecraft:grass_block", "minecraft:dirt", "minecraft:coarse_dirt",
         "minecraft:podzol", "minecraft:mycelium", "minecraft:stone", "minecraft:andesite",
         "minecraft:diorite", "minecraft:granite", "minecraft:deepslate", "minecraft:cobblestone",
         "minecraft:gravel", "minecraft:sand", "minecraft:red_sand", "minecraft:sandstone",
@@ -38,10 +40,27 @@ object BlockPalette {
         "minecraft:yellow_terracotta", "minecraft:red_terracotta", "minecraft:brown_terracotta",
         "minecraft:light_gray_terracotta", "minecraft:snow_block", "minecraft:ice", "minecraft:packed_ice",
         "minecraft:clay", "minecraft:mud", "minecraft:moss_block", "minecraft:oak_leaves",
-        "minecraft:spruce_leaves", "minecraft:jungle_leaves", "minecraft:oak_log", "minecraft:spruce_log",
+        "minecraft:spruce_leaves", "minecraft:jungle_leaves", "minecraft:cherry_leaves", "minecraft:oak_log", "minecraft:spruce_log",
         "minecraft:netherrack", "minecraft:warped_nylium", "minecraft:crimson_nylium",
         "minecraft:soul_sand", "minecraft:basalt", "minecraft:blackstone", "minecraft:lava",
         "minecraft:end_stone", "minecraft:obsidian", "minecraft:bedrock",
+    )
+
+    /**
+     * A block BlueMap draws quite unlike Xaero, so matching Xaero's colour of it to BlueMap's
+     * picture would never find it: it is matched by [blueMapColour], BlueMap's colour of it, and
+     * only in [biomes], where it grows.
+     */
+    class Lookalike(val id: String, val blueMapColour: Int, val biomes: Set<String>)
+
+    /**
+     * Pink petals are thin, and BlueMap's lowres picture blends them with the grass under them into
+     * a tan (measured over a real cherry grove: 161, 147, 120 on average, against 103, 124, 56 for
+     * its grass and 223, 169, 188 for its leaves), which is closest to grey stone; Xaero draws the
+     * same petals pink.
+     */
+    val LOOKALIKES: List<Lookalike> = listOf(
+        Lookalike("minecraft:pink_petals", 0xA19378, setOf("minecraft:cherry_grove")),
     )
 
     /** A colour in Oklab: lightness, then the two opponent axes. */
@@ -97,5 +116,5 @@ object BlockPalette {
 
     /** sRGB's transfer curve undone, so the mixing above happens on light rather than on bytes. */
     private fun linear(channel: Float): Float =
-        if (channel <= 0.04045f) channel / 12.92f else Math.pow(((channel + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+        if (channel <= 0.04045f) channel / 12.92f else ((channel + 0.055f) / 1.055f).pow(2.4f)
 }

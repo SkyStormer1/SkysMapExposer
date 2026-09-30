@@ -21,6 +21,7 @@ import xaero.map.MapProcessor;
 import xaero.map.animation.SlowingAnimation;
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider;
 import xaero.map.gui.IRightClickableElement;
+import xaero.map.gui.MapTileSelection;
 import xaero.map.gui.dropdown.rightclick.RightClickOption;
 
 import java.util.ArrayList;
@@ -36,7 +37,7 @@ import java.util.ArrayList;
  * the terrain beneath it — which is why {@link Overlay} only ever draws the exact areas it means
  * to.
  *
- * <p>Right-click menu: "Copy coordinates" and "Players…" at the end of the menu Xaero shows when
+ * <p>Right-click menu: "Copy coordinates", "Players…" and "Download" at the end of the menu Xaero shows when
  * you right-click the map itself. {@code rightClickDim} is Xaero's own reading of which
  * dimension that click landed in, so the copied coordinates can say where they are.
  *
@@ -55,6 +56,7 @@ public abstract class GuiMapMixin implements MapCamera {
     @Shadow private int rightClickX;
     @Shadow private int rightClickZ;
     @Shadow private ResourceKey<Level> rightClickDim;
+    @Shadow private MapTileSelection mapTileSelection;
     @Shadow private int[] cameraDestination;
     @Shadow private SlowingAnimation cameraDestinationAnimX;
     @Shadow private SlowingAnimation cameraDestinationAnimZ;
@@ -161,6 +163,6 @@ public abstract class GuiMapMixin implements MapCamera {
 
     @Inject(method = "getRightClickOptions", at = @At("RETURN"), require = 0)
     private void skysmapexposer$addMenuOptions(CallbackInfoReturnable<ArrayList<RightClickOption>> cir) {
-        MapMenus.addMapOptions(cir.getReturnValue(), (IRightClickableElement) this, rightClickX, rightClickZ, rightClickDim);
+        MapMenus.addMapOptions(cir.getReturnValue(), (IRightClickableElement) this, rightClickX, rightClickZ, rightClickDim, mapTileSelection);
     }
 }

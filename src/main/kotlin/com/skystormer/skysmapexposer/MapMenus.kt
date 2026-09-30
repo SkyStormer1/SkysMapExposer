@@ -8,12 +8,14 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import xaero.map.WorldMapSession
 import xaero.map.gui.IRightClickableElement
+import xaero.map.gui.MapTileSelection
 import xaero.map.gui.dropdown.rightclick.RightClickOption
 import kotlin.math.floor
 
 /**
  * What this mod adds to Xaero's world map right-click menu, and the odd jobs those options do:
- * copying coordinates, opening the player list, and moving the map's camera.
+ * copying coordinates, opening the player list, downloading BlueMap into the map, and moving the
+ * map's camera.
  *
  * Called from `GuiMapMixin`; a failure here costs the options, not the menu.
  */
@@ -30,6 +32,7 @@ object MapMenus {
         x: Int,
         z: Int,
         dimension: ResourceKey<Level>?,
+        selection: MapTileSelection?,
     ) {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
@@ -37,8 +40,31 @@ object MapMenus {
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
                 options.add(option("Players…", options.size, target) { parent -> open(PlayerListScreen(parent)) })
+                if (selection != null) options.add(downloadOption(options.size, target, selection))
             }
         }
+    }
+
+    /**
+     * "Download" for the chunks Xaero has selected: every right-click selects the chunk under the
+     * mouse, and dragging with the right button held selects a rectangle of them, which Xaero
+     * outlines on the map.
+     */
+    private fun downloadOption(index: Int, target: IRightClickableElement, selection: MapTileSelection): RightClickOption {
+        val wide = selection.right - selection.left + 1
+        val high = selection.bottom - selection.top + 1
+        val size = if (wide == 1 && high == 1) "This chunk" else "These $wide × $high chunks"
+        val busy = BlueMapDownload.running
+        val tooltip = listOf(
+            Component.literal("Download from BlueMap"),
+            Component.literal(
+                if (busy) "§7A download is already running."
+                else "§7$size, written into your own map wherever BlueMap has them. Each region is backed up just before it is replaced."
+            ),
+        )
+        val area = BlueMapDownload.Area(selection.left * 16, selection.top * 16, selection.right * 16 + 15, selection.bottom * 16 + 15)
+        return MenuTooltips.Option("Download", index, target, tooltip) { say(BlueMapDownload.start(area)) }
+            .also { it.setActive(!busy) }
     }
 
     /**

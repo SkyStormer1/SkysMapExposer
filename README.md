@@ -47,9 +47,12 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
   choose **Copy coordinates**. The dimension comes with them.
 - **Keeps up live.** Terrain on screen is re-checked every minute, markers every 30 seconds,
   players every 2 seconds.
+- **Downloads BlueMap into your own map, if you ask it to.** Write BlueMap's terrain into Xaero's
+  map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See
+  [Downloading into your own map](#downloading-into-your-own-map).
 
-Your own map is never changed. Remove the mod and Xaero's map is exactly as it was, and wherever
-you go, Xaero maps the area again and your own map takes over from BlueMap.
+Until you download, your own map is never changed. Remove the mod and Xaero's map is exactly as it
+was, and wherever you go, Xaero maps the area again and your own map takes over from BlueMap.
 
 ## Installing
 
@@ -100,6 +103,7 @@ Hover over any setting in the game for an explanation.
 | **Overworld / Nether / End map** | Which BlueMap map to use for each dimension. The **ON/OFF** button beside it switches that dimension's *terrain*. Borders, markers and players still show with terrain off. |
 | **Cover map before** | Your overworld map from before this date and time (`yyyy-MM-dd HH:mm`) is covered by BlueMap however recent it is. Useful when a new season starts on a new world. **Now** fills in the current time. Leave blank for never. |
 | **Find maps** | Asks the BlueMap which maps it has. |
+| **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
@@ -170,6 +174,40 @@ you are not, this mod:
   toggle in the world map's waypoint menu, or set `matchWaypointsToDimension` to `false` in
   `config/skysmapexposer.json` to stop the mod touching it.
 
+## Downloading into your own map
+
+Everything above only draws BlueMap over Xaero's map. A download goes further and writes BlueMap's
+terrain into Xaero's own map files, so it becomes part of your map.
+
+**Starting one**, for the dimension the world map is showing:
+
+- **A selection:** on the world map, hold the right mouse button and drag over the chunks you want,
+  then choose **Download** from the menu. A single right-click picks the chunk under the mouse.
+- **Everything:** the **Download…** button in the settings, then **Unexplored only** (fills in chunks
+  you have never mapped and leaves everything you explored as it is) or **Everything** (also
+  updates what you mapped wherever BlueMap shows something different).
+- Or type `/mapexposer download all`, `/mapexposer download unexplored`, or
+  `/mapexposer download cancel`.
+
+You can close the map and keep playing while it runs; its progress shows at the top of the world
+map and in the action bar. A whole server takes a few minutes.
+
+**What gets written.** BlueMap publishes a finished picture, but Xaero stores a block, a height and
+a biome for every spot and draws the picture itself. So each spot gets the block Xaero draws
+closest to BlueMap's colour, BlueMap's height, and water as deep as BlueMap's colour suggests. The
+biome is the one your map recorded, or else a guess from the colours around it (right about three
+times in four in the overworld; set `guessBiomes` to `false` in `config/skysmapexposer.json` for a
+plain placeholder). It looks like BlueMap, but the blocks are stand-ins: hovering a spot on the map
+may name a block that is not really there. Where BlueMap has nothing, nothing is written, and
+anything of yours that already looks like BlueMap is left exactly as it was.
+
+**Backups.** Each region of your map is copied just before a download first changes it, into
+`skysmapexposer/<server>/backups/` in your game folder, one folder per download. To undo:
+
+- `/mapexposer backups` lists them, newest first;
+- `/mapexposer restore <name>` puts one back, with the world map showing the same dimension;
+- `/mapexposer backup` copies the whole dimension's map at any time, to go back to later.
+
 ## Copying coordinates
 
 Right-click anywhere on the world map for **Copy coordinates**, which puts `-350 200 (Overworld)`
@@ -193,7 +231,10 @@ your game folder, and its settings in `config/skysmapexposer.json`.
 
 ## Limits
 
-- Surface only: in Xaero's cave mode only borders and markers are drawn, not terrain.
+- Surface only: in Xaero's cave mode only borders and markers are drawn, not terrain, and a
+  download writes only the surface.
+- Biomes are only guessed in the overworld; downloads into the nether and the end use one biome
+  each.
 - Gaps inside explored areas are found by asking Xaero, which only knows while that area is
   loaded on its map, which it always is around you and when you zoom in. Once seen, a gap is
   remembered, including after you rejoin.
@@ -209,6 +250,10 @@ your game folder, and its settings in `config/skysmapexposer.json`.
 The jar is in `build/libs/`. The tests that talk to a real BlueMap only run with `BLUEMAP_URL` set
 to one that has a map called `world`.
 
+The biome guide bundled with the mod (`src/main/resources/skysmapexposer/biomes/overworld.bin`) is
+made by `BiomeGuideTrainer` from a Xaero map with recorded biomes and the BlueMap tiles over it;
+the test's comment says how to run it. It holds colours, heights and biome names only, no places.
+
 ## Originality
 
 Written from scratch; no code was copied from any other project.
@@ -217,9 +262,10 @@ Written from scratch; no code was copied from any other project.
   at only to see what it does, not how.
 - BlueMap (MIT) is used only as a website: its tile, marker and player files were checked against
   a live server.
-- Xaero's World Map and Minimap are closed source. They are compiled against, never bundled, and
-  only their public method, field and local-variable names were read, to place the mixins and use
-  their element and waypoint systems.
+- Xaero's World Map and Minimap are closed source. They are compiled against, never bundled.
+  Their class, method and field names, and the layout of their map files, were read to place the
+  mixins, use their element and waypoint systems, and write downloads through Xaero's own map code.
+  None of their code was copied.
 
 The pictures of the maps are illustrations drawn for this page; the settings screen is a real
 screenshot.

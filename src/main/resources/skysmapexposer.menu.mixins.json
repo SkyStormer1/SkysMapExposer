@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "package": "com.skystormer.skysmapexposer.mixin.menu",
+  "compatibilityLevel": "JAVA_${java_version}",
+  "client": [
+    "DropDownWidgetAccess",
+    "DropDownWidgetMixin",
+    "RightClickMenuAccess"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

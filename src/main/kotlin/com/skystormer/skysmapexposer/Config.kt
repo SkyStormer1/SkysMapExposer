@@ -46,6 +46,12 @@ object Config {
      */
     var matchWaypointsToDimension: Boolean = true
 
+    /**
+     * Whether a download guesses the biome of blocks you have never mapped from BlueMap's colours
+     * ([BiomeGuide]), rather than writing a placeholder. Overworld only for now.
+     */
+    var guessBiomes: Boolean = true
+
     /** Which of those players the minimap shows. */
     var minimapPlayers: MinimapPlayers = MinimapPlayers.FAR_ONLY
 
@@ -157,6 +163,7 @@ object Config {
             json.get("showOutlines")?.let { showOutlines = it.asBoolean }
             json.get("showPlayers")?.let { showPlayers = it.asBoolean }
             json.get("matchWaypointsToDimension")?.let { matchWaypointsToDimension = it.asBoolean }
+            json.get("guessBiomes")?.let { guessBiomes = it.asBoolean }
             json.get("minimapPlayers")?.let { element ->
                 minimapPlayers = MinimapPlayers.entries.firstOrNull { it.name == element.asString } ?: minimapPlayers
             }
@@ -198,6 +205,7 @@ object Config {
         json.addProperty("showPlayers", showPlayers)
         json.addProperty("minimapPlayers", minimapPlayers.name)
         json.addProperty("matchWaypointsToDimension", matchWaypointsToDimension)
+        json.addProperty("guessBiomes", guessBiomes)
         json.addProperty("staleDays", staleDays)
         json.addProperty("worldMapMarkerScale", worldMapMarkerScale)
         json.addProperty("playerHeadScale", playerHeadScale)

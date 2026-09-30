@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import xaero.map.WorldMapSession
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -8,17 +9,16 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Copies of Xaero's map regions, kept before anything of this mod's writes over them.
+ * Copies of Xaero's map, kept before anything of this mod's writes over it.
  *
- * Filling blank map from BlueMap writes into Xaero's own files, which is permanent and has no undo
- * of its own: get the colours wrong, or write over somewhere you had really explored, and the only
- * way back is a copy made beforehand. So one is made beforehand.
- *
- * Copies are per region rather than per folder. A whole dimension runs to 124 MB in the overworld
- * and 206 MB in the nether on a server of any age, most of it caves and derived caches, while a
- * single surface region is about 150 KB — small enough to keep before every write without thinking
- * about it. [snapshot] takes the wider copy of every surface region at once, for when you want a
- * line to retreat to before a session of testing.
+ * Downloading BlueMap into the map writes into Xaero's own files, which is permanent and has no
+ * undo of its own: get the colours wrong, or write over somewhere you had really explored, and the
+ * only way back is a copy made beforehand. So one is made beforehand, region by region ([keep]):
+ * each region file is copied just before it is first written, about 150 to 400 KB each, and the
+ * copy is checked before anything is written. One region can then be put back without touching
+ * the rest, and a whole download's regions sit together in one folder to put back at once.
+ * [snapshot] takes every surface region of the dimension on screen at once
+ * (`/mapexposer backup`), for a line to retreat to whenever you like.
  *
  * Restoring puts the file back and then drops the region out of Xaero's memory, because Xaero holds
  * regions open and would otherwise carry on drawing, and later saving, the copy it already had.
@@ -27,10 +27,13 @@ object MapBackup {
 
     private val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
 
-    /** This launch's folder, made once the first copy is needed. */
+    /** This batch's time stamp, taken once its first copy is needed. */
     private var launch: String? = null
 
-    /** Regions already copied this launch, so a region is only ever saved in its first state. */
+    /**
+     * Regions already copied in this batch, so a region is only ever saved in its first state. A
+     * batch is one download ([forget] starts the next), or else one visit to the server.
+     */
     private val kept = HashSet<String>()
 
     /** Where Xaero keeps the regions of the dimension the map is showing. */
@@ -44,24 +47,29 @@ object MapBackup {
     fun backupRoot(): Path? = Session.current?.folder?.resolve("backups")
 
     /**
-     * Copies region ([x], [z]) aside if it has not been copied already this launch. Returns whether
-     * a copy exists afterwards — which is also true when there is no file yet, because a region
-     * that does not exist is restored by deleting whatever gets written, and [restore] does that.
+     * Copies region ([x], [z]) out of Xaero's region folder [from] if it has not been copied
+     * already in this batch, into this batch's folder for [label] — the dimension, so that two
+     * dimensions' regions of the same name never land on each other. Returns whether a copy exists
+     * afterwards, which is also true when there is no file yet: a region that does not exist is
+     * restored by deleting whatever gets written, and [restore] does that.
      */
-    fun keep(x: Int, z: Int): Boolean {
-        val label = key(x, z)
-        if (label in kept) return true
+    fun keep(from: Path, label: String, x: Int, z: Int): Boolean {
+        val id = "$from|${key(x, z)}"
+        if (id in kept) return true
         return try {
-            val from = dimensionFolder()?.resolve(regionFile(x, z)) ?: return false
-            val into = folderForThisLaunch() ?: return false
+            val source = from.resolve(regionFile(x, z))
+            val into = folderForThisLaunch(label) ?: return false
             Files.createDirectories(into)
-            if (Files.exists(from)) {
-                Files.copy(from, into.resolve(regionFile(x, z)), StandardCopyOption.REPLACE_EXISTING)
+            if (Files.exists(source)) {
+                val copy = into.resolve(regionFile(x, z))
+                Files.copy(source, copy, StandardCopyOption.REPLACE_EXISTING)
+                // A copy that is not the whole file is no backup.
+                if (Files.size(copy) != Files.size(source)) throw IOException("the copy of ${x}_$z came out a different size")
             } else {
                 // Nothing there yet: remember that, so restoring removes whatever we add.
                 Files.writeString(into.resolve(regionFile(x, z) + ".absent"), "")
             }
-            kept.add(label)
+            kept.add(id)
             true
         } catch (e: Throwable) {
             Log.error("Could not copy region ${x}_$z before writing to it", e)
@@ -107,8 +115,9 @@ object MapBackup {
     }
 
     /**
-     * Puts [name]'s regions back and drops them out of Xaero's memory so it reads them again.
-     * Returns how many files were put back, or -1 if the copy could not be read.
+     * Puts [name]'s regions back into the dimension on screen and drops them out of Xaero's memory
+     * so it reads them again. Returns how many files were put back, or -1 if the copy could not be
+     * read.
      */
     fun restore(name: String): Int {
         val root = backupRoot() ?: return -1
@@ -154,7 +163,7 @@ object MapBackup {
         }
     }
 
-    /** Forgets what has been copied, so the next write to a region copies it again. */
+    /** Starts a new batch: the next write to any region copies it again, into a new folder. */
     fun forget() {
         launch = null
         kept.clear()
@@ -175,9 +184,9 @@ object MapBackup {
 
     private fun key(x: Int, z: Int) = "${x}_$z"
 
-    private fun folderForThisLaunch(): Path? {
+    private fun folderForThisLaunch(label: String): Path? {
         val root = backupRoot() ?: return null
         val name = launch ?: LocalDateTime.now().format(STAMP).also { launch = it }
-        return root.resolve(name)
+        return root.resolve("$name-${label.replace(Regex("[^A-Za-z0-9_-]"), "_")}")
     }
 }

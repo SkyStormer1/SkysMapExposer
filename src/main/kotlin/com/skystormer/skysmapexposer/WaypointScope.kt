@@ -33,7 +33,7 @@ object WaypointScope {
         try {
             val option = WorldMapPrimaryClientConfigOptions.ONLY_CURRENT_MAP_WAYPOINTS
             val manager = WorldMap.INSTANCE?.configs?.clientConfigManager?.primaryConfigManager ?: return
-            if (manager.config.get(option) as? Boolean != false) return
+            if (manager.config.get(option) != false) return
             WorldMapClientConfigUtils.togglePrimaryOption(option)
             Log.info(
                 "Turned on Xaero's \"only display current map waypoints\", so the world map shows the " +

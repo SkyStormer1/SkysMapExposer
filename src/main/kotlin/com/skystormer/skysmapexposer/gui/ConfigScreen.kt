@@ -1,8 +1,11 @@
 package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.BlueMapDownload
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.MapMenus
+import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Overlay
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.Minecraft
@@ -214,9 +217,47 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         addRenderableWidget(messageWidget)
         y += font.lineHeight * 2 + GAP
 
-        addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, third, ROW).build())
-        addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + third + GAP, y, third, ROW).build())
-        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + (third + GAP) * 2, y, third, ROW).build())
+        addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, quarter, ROW).build())
+        addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + quarter + GAP, y, quarter, ROW).build())
+        addRenderableWidget(downloadButton(left + (quarter + GAP) * 2, y, quarter))
+        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + (quarter + GAP) * 3, y, quarter, ROW).build())
+    }
+
+    /**
+     * Downloads everything BlueMap has into your own map, after asking; or, while a download is
+     * running, stops it. The download itself is [BlueMapDownload]; it needs you on the server,
+     * with the world map's dimension the one to download.
+     */
+    private fun downloadButton(x: Int, y: Int, width: Int): Button {
+        if (BlueMapDownload.running) {
+            return Button.builder(Component.literal("Stop download")) {
+                BlueMapDownload.cancel()
+                message = Component.literal("Stopping the download after the region it is on.")
+                rebuildWidgets()
+            }
+                .bounds(x, y, width, ROW)
+                .tooltip(Tooltip.create(Component.literal(BlueMapDownload.status() ?: "A download from BlueMap is running.")))
+                .build()
+        }
+        val button = Button.builder(Component.literal("Download…")) { confirmDownload() }
+            .bounds(x, y, width, ROW)
+            .tooltip(Tooltip.create(Component.literal(
+                "Download from BlueMap into your own Xaero map, for the dimension the world map is showing: " +
+                    "only the chunks you have never explored, or everything. Each region of your map is backed up " +
+                    "just before it is changed."
+            )))
+            .build()
+        button.active = Session.current != null
+        return button
+    }
+
+    private fun confirmDownload() {
+        keepEdits()
+        val dimension = MarkerElements.worldMapDimension()?.let(MapMenus::dimensionName) ?: "current"
+        minecraft.gui.setScreen(DownloadScreen(dimension) { said ->
+            if (said != null) message = Component.literal(said)
+            minecraft.gui.setScreen(this)
+        })
     }
 
     /**

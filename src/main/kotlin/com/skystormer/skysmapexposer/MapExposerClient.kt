@@ -1,7 +1,6 @@
 package com.skystormer.skysmapexposer
 
 import com.mojang.brigadier.arguments.DoubleArgumentType
-import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
@@ -80,6 +79,7 @@ object MapExposerClient : ClientModInitializer {
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
             Session.end()
+            BlueMapDownload.forget()
             MapView.forget()
             MapBackup.forget()
         }
@@ -118,6 +118,7 @@ object MapExposerClient : ClientModInitializer {
             }
             addPins()
             MapView.tick(client)
+            BlueMapDownload.tick()
             val session = Session.current ?: return@register
             ticks++
             // Chunks you stay near are kept up to date by Xaero, so they stay current here too.
@@ -137,22 +138,18 @@ object MapExposerClient : ClientModInitializer {
                     .then(ClientCommands.literal("off").executes { setEnabled(it, false) })
                     .then(ClientCommands.literal("reload").executes(::reload))
                     .then(ClientCommands.literal("players").executes(::players))
+                    .then(
+                        ClientCommands.literal("download")
+                            .then(ClientCommands.literal("all").executes { download(it, unexploredOnly = false) })
+                            .then(ClientCommands.literal("unexplored").executes { download(it, unexploredOnly = true) })
+                            .then(ClientCommands.literal("cancel").executes(::cancelDownload))
+                    )
                     .then(ClientCommands.literal("backup").executes(::backup))
                     .then(ClientCommands.literal("backups").executes(::backups))
                     .then(
                         ClientCommands.literal("restore").then(
                             ClientCommands.argument("name", StringArgumentType.string()).executes(::restore)
                         )
-                    )
-                    .then(
-                        ClientCommands.literal("reloadregion")
-                            .executes(::whichRegion)
-                            .then(
-                                ClientCommands.argument("x", IntegerArgumentType.integer(-30000, 30000)).then(
-                                    ClientCommands.argument("z", IntegerArgumentType.integer(-30000, 30000))
-                                        .executes(::reloadRegion)
-                                )
-                            )
                     )
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
@@ -201,6 +198,15 @@ object MapExposerClient : ClientModInitializer {
                     .tooltip(markersTooltip())
                     .build()
                 widgets.add(markers)
+
+                ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
+                    val status = BlueMapDownload.status() ?: return@register
+                    val font = Screens.getMinecraft(screen).font
+                    val half = font.width(status) / 2 + 4
+                    val middle = screen.width / 2
+                    graphics.fill(middle - half, 2, middle + half, 14, 0xA0000000.toInt())
+                    graphics.centeredText(font, status, middle, 4, 0xFFFFFFFF.toInt())
+                }
 
                 var placed = false
                 ScreenEvents.beforeExtract(screen).register { _, _, _, _, _ ->
@@ -357,55 +363,21 @@ object MapExposerClient : ClientModInitializer {
     }
 
     /**
-     * Which map region you are standing in, and where Xaero keeps it. A region is 512 blocks
-     * square, so this is just the block position divided by 512, but getting that wrong by hand
-     * wastes more time than the command costs.
+     * Downloads everything BlueMap has into the dimension the world map is showing; with
+     * [unexploredOnly], only into chunks you have never mapped.
      */
-    private fun whichRegion(context: CommandContext<FabricClientCommandSource>): Int {
-        val player = Minecraft.getInstance().player ?: return 0
-        val x = Math.floorDiv(player.blockX, 512)
-        val z = Math.floorDiv(player.blockZ, 512)
-        context.source.sendFeedback(Component.literal("You are in region §b${x}_${z}§r (${x}_${z}.zip)"))
-        val dimension = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension
-        val folder = dimension?.mainFolderPath?.resolve(dimension.currentMultiworld ?: "")
-        context.source.sendFeedback(Component.literal("§7${folder ?: "Xaero has not opened a map folder yet"}"))
-        context.source.sendFeedback(Component.literal("§7/mapexposer reloadregion $x $z makes Xaero read it from disk again"))
+    private fun download(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean): Int {
+        context.source.sendFeedback(Component.literal(BlueMapDownload.start(null, unexploredOnly)))
         return 1
     }
 
-    /**
-     * Drops one region from Xaero's memory so that it is read from disk again the next time it is
-     * needed, without restarting. `removeMapRegion` only unhooks it from Xaero's maps and does not
-     * save on the way out, so a file put there by hand is not overwritten by the copy being
-     * dropped. This is the piece a region-sharing feature would stand on.
-     */
-    private fun reloadRegion(context: CommandContext<FabricClientCommandSource>): Int {
-        val x = IntegerArgumentType.getInteger(context, "x")
-        val z = IntegerArgumentType.getInteger(context, "z")
-        return try {
-            val processor = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor
-            if (processor == null) {
-                context.source.sendError(Component.literal("Xaero's world map has no session yet; open the map first"))
-                return 0
-            }
-            // Int.MAX_VALUE is Xaero's cave layer for the surface.
-            val region = processor.getLeafMapRegion(Int.MAX_VALUE, x, z, false)
-            if (region == null) {
-                context.source.sendFeedback(
-                    Component.literal("Region §b${x}_${z}§r is not in memory, so Xaero will read it from disk when it is next shown")
-                )
-                return 1
-            }
-            processor.removeMapRegion(region)
-            context.source.sendFeedback(
-                Component.literal("Dropped region §b${x}_${z}§r from memory. Pan the map over it to make Xaero read the file again.")
-            )
-            1
-        } catch (e: Throwable) {
-            Log.error("Could not drop region ${x}_${z} from memory", e)
-            context.source.sendError(Component.literal("Could not drop that region: ${e.message ?: e.javaClass.simpleName}"))
-            0
+    private fun cancelDownload(context: CommandContext<FabricClientCommandSource>): Int {
+        if (BlueMapDownload.cancel()) {
+            context.source.sendFeedback(Component.literal("Stopping the download after the region it is on"))
+        } else {
+            context.source.sendFeedback(Component.literal("No download from BlueMap is running"))
         }
+        return 1
     }
 
     /** Copies every surface region of the dimension on screen, to retreat to. */
