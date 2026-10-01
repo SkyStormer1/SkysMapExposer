@@ -94,6 +94,30 @@ object Config {
     /** Size of BlueMap's markers on the minimap, on top of their shrinking with distance. */
     var minimapMarkerScale: Float = 1f
 
+    /** Whether the bar on the world map is open, or folded down to its header. */
+    var barOpen: Boolean = true
+
+    /**
+     * Where the bar sits on the world map, from the screen's top-left corner, in GUI units. It
+     * starts beside the column of buttons down the left edge (Xaero's settings, Sky's Map Shapes).
+     */
+    var barLeft: Int = 52
+    var barTop: Int = 2
+
+    /** How many biomes the bar lists at once. */
+    var barRows: Int = 6
+
+    /** The bar's size (1 = the game's own), the width added by dragging its right edge, and the panel it is docked under ("" for none). */
+    var barScale: Float = 1f
+    var barExtra: Int = 0
+    var barUnder: String = ""
+
+    /** The biggest the map panels may be made, before the letters look too blocky. */
+    var panelMaxScale: Float = 2f
+
+    /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
+    var minimapBiomes: Boolean = true
+
     /** How often a tile on screen is checked for changes on the server. */
     var tileRefreshSeconds: Int = 60
 
@@ -164,6 +188,15 @@ object Config {
             json.get("showPlayers")?.let { showPlayers = it.asBoolean }
             json.get("matchWaypointsToDimension")?.let { matchWaypointsToDimension = it.asBoolean }
             json.get("guessBiomes")?.let { guessBiomes = it.asBoolean }
+            json.get("barOpen")?.let { barOpen = it.asBoolean }
+            json.get("barLeft")?.let { barLeft = it.asInt }
+            json.get("barTop")?.let { barTop = it.asInt }
+            json.get("barRows")?.let { barRows = it.asInt.coerceIn(1, 40) }
+            json.get("minimapBiomes")?.let { minimapBiomes = it.asBoolean }
+            json.get("barScale")?.let { barScale = it.asFloat.coerceIn(1f, 4f) }
+            json.get("barExtra")?.let { barExtra = it.asInt.coerceIn(0, 1000) }
+            json.get("barUnder")?.let { barUnder = it.asString }
+            json.get("panelMaxScale")?.let { panelMaxScale = it.asFloat.coerceIn(1f, 4f) }
             json.get("minimapPlayers")?.let { element ->
                 minimapPlayers = MinimapPlayers.entries.firstOrNull { it.name == element.asString } ?: minimapPlayers
             }
@@ -206,6 +239,15 @@ object Config {
         json.addProperty("minimapPlayers", minimapPlayers.name)
         json.addProperty("matchWaypointsToDimension", matchWaypointsToDimension)
         json.addProperty("guessBiomes", guessBiomes)
+        json.addProperty("barOpen", barOpen)
+        json.addProperty("barLeft", barLeft)
+        json.addProperty("barTop", barTop)
+        json.addProperty("barRows", barRows)
+        json.addProperty("minimapBiomes", minimapBiomes)
+        json.addProperty("barScale", barScale)
+        json.addProperty("barExtra", barExtra)
+        json.addProperty("barUnder", barUnder)
+        json.addProperty("panelMaxScale", panelMaxScale)
         json.addProperty("staleDays", staleDays)
         json.addProperty("worldMapMarkerScale", worldMapMarkerScale)
         json.addProperty("playerHeadScale", playerHeadScale)

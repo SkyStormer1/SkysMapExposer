@@ -87,6 +87,10 @@ class TileStore(
         /** The drawing plan for this tile; rebuilt by [Backfill] from time to time. */
         var mask: Backfill.Mask? = null
 
+        /** While this tile is on its way: where a coarser tile stands in for it, and which level that is. */
+        var standIn: Backfill.Mask? = null
+        var standInLod: Int = 0
+
         var lastUsedFrame: Long = 0
 
         fun hasDataAt(pixelX: Int, pixelZ: Int): Boolean =
@@ -212,9 +216,12 @@ class TileStore(
                 tile.state = State.EMPTY
                 return
             }
-            if (fresh && Files.exists(image)) {
+            if (Files.exists(image) && meta.getProperty("empty") != "true") {
+                // An old picture is shown at once rather than waiting on the server: dated by when
+                // it was fetched, it is asked about again as soon as it is drawn ([get]), and
+                // replaced only if BlueMap's has changed.
                 bytes = Files.readAllBytes(image)
-                tile.checkedAt = fetchedAt
+                tile.checkedAt = if (fresh) fetchedAt else 0L
             }
 
             if (bytes == null) {

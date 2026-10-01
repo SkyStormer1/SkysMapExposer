@@ -14,7 +14,7 @@ import java.util.function.Consumer
 /**
  * Xaero's minimap, when it draws its terrain from Xaero's World Map (which it does whenever both
  * are installed): the same backfill as the world map, from the same tiles and the same decisions,
- * then BlueMap's outlines.
+ * then BlueMap's outlines, and the biomes picked on the world map's bar.
  *
  * The minimap has its own copy of Xaero's renderer classes, and its terrain draws at block
  * coordinates relative to the player's floored position, with a pose matrix already set up for
@@ -56,7 +56,9 @@ object MinimapOverlay {
         val maxZ = (maxViewZ + 1) * 64.0
         val blocksPerUnit = Matrix4f(matrix).invert().transformDirection(Vector3f(1f, 0f, 0f)).length().coerceAtLeast(1e-4f)
 
-        // Outlines first in the code, but into the overlay buffer, which the minimap draws after its terrain.
+        // The biome tint and the outlines first in the code, but into the overlay buffer, which the
+        // minimap draws after its terrain; the tint first, so the outlines lie over it.
+        BiomeHighlight.drawMinimap(mapProcessor, overlayBuffer, matrix, blocksPerUnit, originX, originZ, minX, maxX, minZ, maxZ)
         if (Config.showOutlines) {
             val session = Session.current
             val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString()

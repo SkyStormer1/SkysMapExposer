@@ -3,13 +3,14 @@ package com.skystormer.skysmapexposer
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.Minecraft
 import org.joml.Matrix4f
-import org.joml.Vector3f
 import xaero.lib.XaeroLib
 import xaero.map.MapProcessor
 import xaero.map.graphics.CustomRenderTypes
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRenderer
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider
 import xaero.map.gui.GuiMap
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -41,17 +42,12 @@ object Overlay {
         if (!hookRan) {
             hookRan = true
         }
-        // How much of the world is on screen, from Xaero's own matrix. Its units are at most window
-        // pixels, so measuring with the window's size never sees too little.
-        val inverse = Matrix4f(matrix).invert()
-        val blocksPerUnit = inverse.transformDirection(Vector3f(1f, 0f, 0f)).length().coerceAtLeast(1e-4f)
-        val window = Minecraft.getInstance().window
-        val halfWidth = window.width * blocksPerUnit * 0.5 + 32
-        val halfHeight = window.height * blocksPerUnit * 0.5 + 32
-        val minX = cameraX - halfWidth
-        val maxX = cameraX + halfWidth
-        val minZ = cameraZ - halfHeight
-        val maxZ = cameraZ + halfHeight
+        val view = MapViewport.of(matrix, cameraX, cameraZ)
+        val blocksPerUnit = view.blocksPerUnit
+        val minX = view.minX
+        val maxX = view.maxX
+        val minZ = view.minZ
+        val maxZ = view.maxZ
 
         drawOutlines(mapProcessor, matrix, flooredCameraX, flooredCameraZ, blocksPerUnit, minX, maxX, minZ, maxZ)
 
@@ -81,6 +77,10 @@ object Overlay {
             }
         }
         renderer?.let(rendererProvider::draw)
+        if (plan.loading.isNotEmpty()) {
+            val buffer = XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY)
+            Spinner.draw(buffer, matrix, plan.loading, target.layout.tileSize, flooredCameraX, flooredCameraZ, cameraX, cameraZ, blocksPerUnit)
+        }
 
         lastSummary = plan.summary + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
     }
@@ -105,6 +105,56 @@ object Overlay {
 
     private fun standDown(key: String, reason: String) {
         lastSummary = "Not drawing: $reason."
+    }
+}
+
+/**
+ * A turning ring of dots over each BlueMap tile still on its way, in the middle of the part of it
+ * on screen: eight small squares, the brightest going round. Kept to a few screen units across, and
+ * left out where a tile is too small on screen to hold one.
+ */
+object Spinner {
+
+    private const val RADIUS = 6f
+    private const val DOTS = 8
+
+    fun draw(
+        buffer: VertexConsumer, matrix: Matrix4f, origins: IntArray, tileSize: Int,
+        originX: Int, originZ: Int, cameraX: Double, cameraZ: Double, blocksPerUnit: Float,
+    ) {
+        val window = Minecraft.getInstance().window
+        val halfWidth = window.guiScaledWidth * 0.5 * blocksPerUnit
+        val halfHeight = window.guiScaledHeight * 0.5 * blocksPerUnit
+        val tileOnScreen = tileSize / blocksPerUnit
+        val radius = minOf(RADIUS, tileOnScreen / 4f)
+        if (radius < 2.5f) return
+        val r = radius * blocksPerUnit
+        val dot = r * 0.32f
+        val lead = ((System.currentTimeMillis() / 90) % DOTS).toInt()
+        var i = 0
+        while (i < origins.size) {
+            // The middle of the part of the tile that is on screen.
+            val left = maxOf(origins[i].toDouble(), cameraX - halfWidth)
+            val right = minOf(origins[i] + tileSize.toDouble(), cameraX + halfWidth)
+            val top = maxOf(origins[i + 1].toDouble(), cameraZ - halfHeight)
+            val bottom = minOf(origins[i + 1] + tileSize.toDouble(), cameraZ + halfHeight)
+            i += 2
+            if (right - left < r * 3 || bottom - top < r * 3) continue
+            val cx = ((left + right) / 2 - originX).toFloat()
+            val cz = ((top + bottom) / 2 - originZ).toFloat()
+            for (d in 0 until DOTS) {
+                val angle = d * (2 * Math.PI / DOTS)
+                val x = cx + (cos(angle) * r).toFloat()
+                val z = cz + (sin(angle) * r).toFloat()
+                val age = (lead - d + DOTS) % DOTS
+                val a = 0.95f - age * 0.1f
+                val half = dot * (if (age == 0) 0.6f else 0.5f)
+                buffer.addVertex(matrix, x - half, z - half, 0f).setColor(1f, 1f, 1f, a)
+                buffer.addVertex(matrix, x - half, z + half, 0f).setColor(1f, 1f, 1f, a)
+                buffer.addVertex(matrix, x + half, z + half, 0f).setColor(1f, 1f, 1f, a)
+                buffer.addVertex(matrix, x + half, z - half, 0f).setColor(1f, 1f, 1f, a)
+            }
+        }
     }
 }
 

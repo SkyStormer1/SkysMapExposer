@@ -2,10 +2,12 @@ package com.skystormer.skysmapexposer.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
+import com.skystormer.skysmapexposer.BiomeHighlight;
 import com.skystormer.skysmapexposer.MapCamera;
 import com.skystormer.skysmapexposer.MapMenus;
 import com.skystormer.skysmapexposer.MapView;
 import com.skystormer.skysmapexposer.Overlay;
+import com.skystormer.skysmapexposer.gui.MapBar;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
@@ -27,7 +29,7 @@ import xaero.map.gui.dropdown.rightclick.RightClickOption;
 import java.util.ArrayList;
 
 /**
- * Three things on Xaero's world map screen.
+ * Four things on Xaero's world map screen.
  *
  * <p>Drawing: the backfill goes into Xaero's map framebuffer straight after Xaero has drawn its own
  * terrain and before anything that sits on top of terrain (highlights, waypoints, the player
@@ -37,11 +39,17 @@ import java.util.ArrayList;
  * the terrain beneath it — which is why {@link Overlay} only ever draws the exact areas it means
  * to.
  *
+ * <p>Biome highlight: {@link BiomeHighlight} adds see-through rectangles to Xaero's colour-overlay
+ * buffer straight after the <em>first</em> terrain flush. That buffer is drawn later, over all
+ * terrain, in the order things were added to it, so the tint lands under the world border (added at
+ * the second flush) and under any other mod's shapes added there.
+ *
  * <p>Right-click menu: "Copy coordinates", "Players…" and "Download" at the end of the menu Xaero shows when
  * you right-click the map itself. {@code rightClickDim} is Xaero's own reading of which
  * dimension that click landed in, so the copied coordinates can say where they are.
  *
- * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone.
+ * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone. And the
+ * mouse wheel goes to the {@link MapBar} first when it is over it, as Xaero would otherwise zoom.
  *
  * <p>The locals are taken by name, which Xaero's jar keeps. If a future Xaero renames them or moves
  * the flush, the injection does not apply ({@code require = 0}) and {@code /mapexposer} says so,
@@ -130,6 +138,30 @@ public abstract class GuiMapMixin implements MapCamera {
             @Local(name = "rendererProvider") MultiTextureRenderTypeRendererProvider rendererProvider
     ) {
         Overlay.draw(mapProcessor, matrix, flooredCameraX, flooredCameraZ, cameraX, cameraZ, rendererProvider);
+    }
+
+    @Inject(
+            method = "extractRenderState",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lxaero/map/graphics/renderer/multitexture/MultiTextureRenderTypeRendererProvider;draw(Lxaero/map/graphics/renderer/multitexture/MultiTextureRenderTypeRenderer;)V",
+                    ordinal = 0,
+                    shift = At.Shift.AFTER
+            ),
+            require = 0
+    )
+    private void skysmapexposer$drawBiomeHighlight(
+            GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci,
+            @Local(name = "matrix") Matrix4f matrix,
+            @Local(name = "flooredCameraX") int flooredCameraX,
+            @Local(name = "flooredCameraZ") int flooredCameraZ
+    ) {
+        BiomeHighlight.draw(mapProcessor, matrix, flooredCameraX, flooredCameraZ, cameraX, cameraZ);
+    }
+
+    @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true, require = 0)
+    private void skysmapexposer$scrollBar(double mouseX, double mouseY, double scrollX, double scrollY, CallbackInfoReturnable<Boolean> cir) {
+        if (MapBar.scrolled(mouseX, mouseY, scrollY)) cir.setReturnValue(true);
     }
 
     /**

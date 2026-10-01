@@ -28,20 +28,24 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
 - **Fills in your map.** Anywhere your map is blank shows BlueMap's terrain instead, including the
   gaps inside areas you explored. So does any part you haven't seen for a while (7 days by
   default) if BlueMap has a newer picture, and anything mapped before a date you choose, for a map
-  left over from a previous season.
+  left over from a previous season. While BlueMap's detailed pictures download, a blurry one
+  from BlueMap's coarser tiles stands in, with a small spinner, so nothing waits on a blank map.
+- **Finds biomes.** Search for a biome in the bar on the world map and click it: every place your
+  map recorded it is tinted in its own colour, on the minimap too if you like. Pick several to
+  see them side by side.
 - **Shows the world border and zones.** BlueMap's outlines are drawn on both maps in their own
   colours, and update when the server changes them.
 - **Shows BlueMap's markers.** Shops, banners and the like appear as icons on the world map and
   minimap only, never floating in the world. Hover one for its name. Right-click it on the world
   map and choose **Save as waypoint** to turn it into an ordinary, permanent Xaero waypoint. The
-  **Markers** button in the world map's top-left corner hides or shows them all in one click.
+  **Markers** switch in the bar on the world map hides or shows them all in one click.
 - **Shows other players** on the world map and minimap of the dimension they are in, with their
   face. BlueMap knows where everyone is, so they stay on your minimap after they walk out of your
   render distance and Xaero's own radar loses them.
 - **Locks on to a player.** Right-click someone and choose **Lock on**: their pin follows them
   wherever they go, and their head floats over them in the world like a waypoint, until you unlock
   them. The head hides itself the moment you can actually see the player.
-- **Lists everyone online.** A **Players** button on the world map opens a screen with search,
+- **Lists everyone online.** **List** in the bar on the world map opens a screen with search,
   distance and coordinates, a **Go to** that jumps the map to anyone, and **Lock**.
 - **Copies coordinates.** Right-click anywhere on the world map, or any marker or player, and
   choose **Copy coordinates**. The dimension comes with them.
@@ -110,6 +114,30 @@ Hover over any setting in the game for an explanation.
 like Xaero's nether map. So nether terrain starts **OFF**. Its world border, markers and players
 still show. Switch it on if your server's nether map shows the inside.
 
+## The bar on the world map
+
+A small see-through panel on the world map holds the mod's switches and the biome finder.
+
+- **Terrain / Markers / Borders / Players** switch each part on or off, as the settings do.
+  **Minimap** (only with Xaero's Minimap) chooses whether picked biomes are tinted there too.
+  **List** opens the player list, and **Set** the settings.
+- **The biome finder** lists the biomes of the dimension the map is showing. Type to search and
+  click a biome to tint it; click again to stop, or **Clear** to stop them all. The tint shows
+  wherever Xaero recorded that biome, so it covers the parts of the map Xaero has, not BlueMap's
+  terrain.
+- **Moving and folding:** drag the title to move the bar, click it to fold the bar down to its
+  title.
+- **Sizing:** drag the bottom edge for more or fewer lines, the right edge to widen it, and the
+  bottom-right corner to make everything bigger (only when you drag right and down together).
+  The list scrolls with the mouse wheel, or drag its scroll bar.
+- **Docking:** with [Sky's Structure Map](https://github.com/SkyStormer1/SkysStructureMap)
+  installed, drag one panel's title up under the other's bottom edge and it docks there: the two
+  move as one, share a width and a size, and the lower one comes off again when dragged away.
+  Neither mod needs the other.
+
+Nothing is ever pushed off screen, and everything is remembered. `panelMaxScale` in
+`config/skysmapexposer.json` sets how big the corner may make it (2 by default).
+
 ## Markers on the minimap
 
 The minimap only shows BlueMap markers near you, so a busy server doesn't crowd its edge. The
@@ -150,7 +178,7 @@ use **Unlock all** in the player list.
 
 ### The player list
 
-Open it with the **Players** button in the top-left corner of the world map, from the map's
+Open it with **List** in the bar on the world map, from the map's
 right-click menu, from the **Players…** button in the settings, or with `/mapexposer players`.
 Search by name, switch between your dimension and all of them, and for anyone: **Go to** (jumps the
 world map to them) and **Lock** / **Unlock**. Locked players sort to the top, then the nearest.

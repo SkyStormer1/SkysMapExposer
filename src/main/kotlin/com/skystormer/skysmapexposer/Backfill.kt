@@ -20,6 +20,10 @@ import kotlin.math.floor
  * The decision is always per chunk, at every zoom, so the backfilled area keeps its shape; only
  * the picture's resolution changes, the same way Xaero's own does.
  *
+ * While a tile is on its way, a coarser one BlueMap has already sent stands in for it, blurry,
+ * wherever Xaero has nothing at all ([standIn]); one coarse tile covers many fine ones, so it
+ * arrives long before they do.
+ *
  * Xaero's map pipelines overwrite colour rather than blending it, so a tile cannot simply be drawn
  * with the areas to keep made transparent. Instead each tile gets a [Mask]: the chunks that
  * qualify, merged along each row into rectangles, and only those are drawn.
@@ -35,8 +39,11 @@ object Backfill {
     /** One tile's worth of drawing: its texture, the rectangles to draw, and where the tile starts. */
     class Piece(val texture: GpuTextureView, val mask: Mask, val originX: Int, val originZ: Int, val tileSize: Int)
 
-    /** What [plan] found, for the status line. */
-    class Plan(val pieces: List<Piece>, val summary: String)
+    /**
+     * What [plan] found: what to draw, the origins of the tiles still on their way (`x, z` in
+     * blocks, two to a tile) for a loading sign, and a line for the status screen.
+     */
+    class Plan(val pieces: List<Piece>, val loading: IntArray, val summary: String)
 
     /** What there is to draw for one dimension on one server: null with a reason if nothing. */
     class Target(val session: Session, val dimensionId: String, val mapId: String, val layout: BlueMap.MapLayout, val regionFolder: Path)
@@ -121,6 +128,8 @@ object Backfill {
 
         val now = Clock.nowMinutes()
         val pieces = ArrayList<Piece>()
+        val loading = ArrayList<Int>()
+        var standIns = 0
         var ready = 0
         var waiting = 0
         var empty = 0
@@ -128,16 +137,19 @@ object Backfill {
         var gaps = 0
         for (candidate in candidates) {
             val tile = session.tiles.get(TileStore.Key(target.mapId, 1, candidate.x, candidate.z), 1, tileSize, frame)
+            val originX = candidate.x * tileSize
+            val originZ = candidate.z * tileSize
+            fun standInFor() {
+                if (standIn(tile, originX, originZ, target, mapProcessor, budget, pieces, loading)) standIns++
+            }
             when (tile.state) {
-                TileStore.State.LOADING -> { waiting++; continue }
+                TileStore.State.LOADING -> { waiting++; standInFor(); continue }
                 TileStore.State.EMPTY -> { empty++; continue }
                 TileStore.State.FAILED -> { failed++; continue }
                 TileStore.State.READY -> ready++
             }
             session.tiles.requestFactor(tile, factor)
 
-            val originX = candidate.x * tileSize
-            val originZ = candidate.z * tileSize
             var mask = tile.mask
             val maskStale = mask == null || mask.contentMinute != tile.contentMinute ||
                 System.currentTimeMillis() - mask.builtAt > MASK_LIFETIME_MS
@@ -146,21 +158,96 @@ object Backfill {
                 mask = buildMask(tile, originX, originZ, target, mapProcessor, now)
                 tile.mask = mask
             }
-            if (mask == null) continue
+            if (mask == null) { standInFor(); continue }
             gaps += mask.xaeroGaps
             if (mask.count == 0) continue
 
             val mayUpload = session.tiles.hasUploadWaiting(tile, factor) && budget.uploads > 0
             if (mayUpload) budget.uploads--
-            val texture = session.tiles.textureOf(tile, factor, mayUpload) ?: continue
+            val texture = session.tiles.textureOf(tile, factor, mayUpload)
+            if (texture == null) { standInFor(); continue }
+            tile.standIn = null
             pieces.add(Piece(texture, mask, originX, originZ, tileSize))
         }
         session.tiles.trim(maxOf(Config.maxLoadedTiles, candidates.size * 2 + 16), frame)
 
         val summary = "${target.dimensionId} → '${target.mapId}' at 1:$factor: ${candidates.size} tiles with data in view " +
             "($waitingForIndex awaiting the index), $ready ready, $waiting loading, $empty empty, $failed failed; " +
-            "${pieces.sumOf { it.mask.count }} rectangles from ${pieces.size} tiles; $gaps chunks are gaps in Xaero's map"
-        return Plan(pieces, summary)
+            "${pieces.sumOf { it.mask.count }} rectangles from ${pieces.size} tiles ($standIns standing in); $gaps chunks are gaps in Xaero's map"
+        return Plan(pieces, loading.toIntArray(), summary)
+    }
+
+    /**
+     * A coarser tile standing in for [fine], which is not ready to draw: the finest level BlueMap
+     * has already sent, drawn only where Xaero has nothing at all, so a map you have explored is
+     * never covered by a blurry picture. Adds the piece to [pieces] and, while BlueMap may still
+     * have something here, the tile's origin to [loading]. True when something stands in.
+     */
+    private fun standIn(
+        fine: TileStore.Tile, originX: Int, originZ: Int, target: Target, mapProcessor: MapProcessor,
+        budget: Budget, pieces: MutableList<Piece>, loading: MutableList<Int>,
+    ): Boolean {
+        val session = target.session
+        val layout = target.layout
+        for (lod in 2..layout.lodCount) {
+            val span = layout.tileBlocks(lod)
+            val coarseX = Math.floorDiv(originX, span)
+            val coarseZ = Math.floorDiv(originZ, span)
+            val coarse = session.tiles.get(TileStore.Key(target.mapId, lod, coarseX, coarseZ), layout.blocksPerPixel(lod), layout.tileSize, frame)
+            when (coarse.state) {
+                TileStore.State.LOADING, TileStore.State.FAILED -> continue
+                TileStore.State.EMPTY -> return false // BlueMap has nothing here at all
+                TileStore.State.READY -> {}
+            }
+            session.tiles.requestFactor(coarse, 1)
+            var mask = fine.standIn
+            val stale = mask == null || fine.standInLod != lod || System.currentTimeMillis() - mask.builtAt > MASK_LIFETIME_MS
+            if (stale && budget.masks > 0) {
+                budget.masks--
+                mask = buildStandInMask(coarse, coarseX * span, coarseZ * span, layout.blocksPerPixel(lod), originX, originZ, layout.tileSize, target, mapProcessor)
+                fine.standIn = mask
+                fine.standInLod = lod
+            }
+            if (mask == null || fine.standInLod != lod) {
+                loading.add(originX)
+                loading.add(originZ)
+                return false
+            }
+            if (mask.count == 0) return false // Xaero has all of it: nothing to wait for
+            loading.add(originX)
+            loading.add(originZ)
+            val mayUpload = session.tiles.hasUploadWaiting(coarse, 1) && budget.uploads > 0
+            if (mayUpload) budget.uploads--
+            val texture = session.tiles.textureOf(coarse, 1, mayUpload) ?: return false
+            pieces.add(Piece(texture, mask, coarseX * span, coarseZ * span, span))
+            return true
+        }
+        // Nothing coarser has arrived yet either.
+        loading.add(originX)
+        loading.add(originZ)
+        return false
+    }
+
+    /**
+     * The chunks of the fine tile at ([originX], [originZ]) where Xaero has nothing at all and the
+     * [coarse] tile, starting at ([coarseX], [coarseZ]) with [blocksPerPixel] blocks to a pixel,
+     * has something.
+     */
+    private fun buildStandInMask(
+        coarse: TileStore.Tile, coarseX: Int, coarseZ: Int, blocksPerPixel: Int,
+        originX: Int, originZ: Int, tileSize: Int, target: Target, mapProcessor: MapProcessor,
+    ): Mask {
+        val session = target.session
+        val regionsKnown = session.regionAges.isKnown(target.regionFolder)
+        val remembered = session.xaeroGapsIn(target.dimensionId)
+        fun wanted(chunkX: Int, chunkZ: Int): Boolean {
+            val pixelX = Math.floorDiv((chunkX shl 4) + 8 - coarseX, blocksPerPixel).coerceIn(0, coarse.tileSize - 1)
+            val pixelZ = Math.floorDiv((chunkZ shl 4) + 8 - coarseZ, blocksPerPixel).coerceIn(0, coarse.tileSize - 1)
+            if (!coarse.hasDataAt(pixelX, pixelZ)) return false
+            if (isXaeroGap(mapProcessor, remembered, chunkX, chunkZ)) return true
+            return regionsKnown && session.regionAges.minuteOf(target.regionFolder, chunkX shr 5, chunkZ shr 5) == 0
+        }
+        return rectanglesOf(originX, originZ, tileSize, coarse.contentMinute, 0, ::wanted)
     }
 
     /** Uploads and mask builds allowed per frame, shared by the world map and the minimap. */
@@ -252,6 +339,12 @@ object Backfill {
             return tile.contentMinute > seen
         }
 
+        val mask = rectanglesOf(originX, originZ, tileSize, tile.contentMinute, 0, ::chunkWanted)
+        return Mask(mask.builtAt, mask.contentMinute, mask.rectangles, mask.count, gapCount)
+    }
+
+    /** The chunks of the square at ([originX], [originZ]) that are [wanted], merged along each row into rectangles. */
+    private fun rectanglesOf(originX: Int, originZ: Int, tileSize: Int, contentMinute: Int, gapCount: Int, wanted: (Int, Int) -> Boolean): Mask {
         val firstChunkX = Math.floorDiv(originX, 16)
         val lastChunkX = Math.floorDiv(originX + tileSize - 1, 16)
         val firstChunkZ = Math.floorDiv(originZ, 16)
@@ -266,7 +359,7 @@ object Backfill {
             val bottom = minOf((chunkZ + 1) shl 4, maxZ).toFloat()
             var runStart = Int.MIN_VALUE
             for (chunkX in firstChunkX..lastChunkX + 1) {
-                val wanted = chunkX <= lastChunkX && chunkWanted(chunkX, chunkZ)
+                val wanted = chunkX <= lastChunkX && wanted(chunkX, chunkZ)
                 if (wanted && runStart == Int.MIN_VALUE) runStart = chunkX
                 if (!wanted && runStart != Int.MIN_VALUE) {
                     if ((count + 1) * 4 > rectangles.size) rectangles = rectangles.copyOf(rectangles.size * 2)
@@ -279,7 +372,7 @@ object Backfill {
                 }
             }
         }
-        return Mask(System.currentTimeMillis(), tile.contentMinute, rectangles, count, gapCount)
+        return Mask(System.currentTimeMillis(), contentMinute, rectangles, count, gapCount)
     }
 
     /**

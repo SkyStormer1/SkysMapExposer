@@ -3,6 +3,7 @@ package com.skystormer.skysmapexposer
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
+import com.skystormer.skysmapexposer.gui.MapBar
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
@@ -17,9 +18,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.components.AbstractWidget
-import net.minecraft.client.gui.components.Button
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
@@ -70,7 +68,7 @@ object MapExposerClient : ClientModInitializer {
         // Under the chat, so a locked player's head never covers what someone is saying.
         HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, BEACON, PlayerBeacon)
 
-        addMapButtons()
+        addToMapScreen()
 
         ClientPlayConnectionEvents.JOIN.register { _, _, client ->
             Session.start(addressOf(client))
@@ -98,6 +96,9 @@ object MapExposerClient : ClientModInitializer {
                 if (!hookInstalled()) Log.warn("This version of Xaero's World Map is not supported; nothing will be drawn on it")
                 if (FabricLoader.getInstance().isModLoaded("xaerominimap") && !minimapHookInstalled()) {
                     Log.warn("This version of Xaero's Minimap is not supported; nothing will be drawn on it")
+                }
+                if (!injected("xaero.map.gui.GuiMap", "drawBiomeHighlight")) {
+                    Log.warn("Could not hook Xaero's map drawing for biome highlights; picking a biome will show nothing")
                 }
                 if (!injected("xaero.map.gui.GuiMap", "hideArrowInOtherDimension")) {
                     Log.warn("Could not hook Xaero's player arrow; it will show on another dimension's map")
@@ -162,42 +163,14 @@ object MapExposerClient : ClientModInitializer {
     }
 
     /**
-     * Two buttons in the top-left corner of Xaero's world map, under Xaero's own settings button:
-     * **Players**, which opens the player list (the right-click menu has the same thing, but nobody
-     * finds a right-click menu), and **Markers**, which shows or hides BlueMap's markers in one
-     * click.
-     *
-     * Other mods put buttons in that same corner (Sky's Map Shapes puts a Shapes button there), so
-     * rather than guess at a free spot, each looks at what is actually on the screen and takes the
-     * first gap down the left edge. They are placed twice: once as the screen is built, and again
-     * on the first frame after that. The second time is the one that counts — a mod whose own
-     * `AFTER_INIT` runs after this one has added its button by then, and these step below it.
+     * This mod's bar ([MapBar]) on Xaero's world map, and a line at the top of the map saying how a
+     * download is going.
      */
-    private fun addMapButtons() {
+    private fun addToMapScreen() {
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
             if (screen.javaClass.name != "xaero.map.gui.GuiMap") return@register
             try {
-                val widgets = Screens.getWidgets(screen)
-                val players = Button.builder(Component.literal("Players")) {
-                    Screens.getMinecraft(screen).gui.setScreen(PlayerListScreen(screen))
-                }
-                    .bounds(0, freeSlot(widgets, null), MapButtons.WIDTH, MapButtons.HEIGHT)
-                    .tooltip(Tooltip.create(Component.literal(
-                        "Everyone BlueMap can see: search them, jump the map to them, lock on, or copy their coordinates."
-                    )))
-                    .build()
-                widgets.add(players)
-
-                val markers = Button.builder(markersLabel()) { button ->
-                    Config.showMarkers = !Config.showMarkers
-                    Config.save()
-                    button.message = markersLabel()
-                    button.setTooltip(markersTooltip())
-                }
-                    .bounds(0, freeSlot(widgets, null), MapButtons.WIDTH, MapButtons.HEIGHT)
-                    .tooltip(markersTooltip())
-                    .build()
-                widgets.add(markers)
+                MapBar.addTo(screen)
 
                 ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
                     val status = BlueMapDownload.status() ?: return@register
@@ -207,41 +180,11 @@ object MapExposerClient : ClientModInitializer {
                     graphics.fill(middle - half, 2, middle + half, 14, 0xA0000000.toInt())
                     graphics.centeredText(font, status, middle, 4, 0xFFFFFFFF.toInt())
                 }
-
-                var placed = false
-                ScreenEvents.beforeExtract(screen).register { _, _, _, _, _ ->
-                    if (!placed) {
-                        placed = true
-                        // In order, so Markers takes the gap below wherever Players ends up.
-                        players.y = freeSlot(widgets, players, markers)
-                        markers.y = freeSlot(widgets, markers)
-                    }
-                }
             } catch (e: Throwable) {
-                Log.error("Could not add the Players and Markers buttons to Xaero's world map", e)
+                Log.error("Could not add the bar to Xaero's world map", e)
             }
         }
     }
-
-    /** "Markers", struck through and grey while BlueMap's markers are hidden. */
-    private fun markersLabel(): Component =
-        if (Config.showMarkers) Component.literal("Markers")
-        else Component.literal("Markers").withStyle { it.withStrikethrough(true).withColor(0x888888) }
-
-    private fun markersTooltip(): Tooltip = Tooltip.create(Component.literal(
-        if (Config.showMarkers) "BlueMap's markers are shown on the world map and minimap. Click to hide them."
-        else "BlueMap's markers are hidden. Click to show them on the world map and minimap again."
-    ))
-
-    /**
-     * Where a button goes, given what is already on [widgets]. [mine] is the button being placed,
-     * which does not count as being in its own way, and neither does anything in [ignoring] (a
-     * button still to be placed after it). The arithmetic is [MapButtons].
-     */
-    private fun freeSlot(widgets: List<AbstractWidget>, mine: AbstractWidget?, vararg ignoring: AbstractWidget): Int =
-        MapButtons.firstFreeSlot(
-            widgets.filter { it !== mine && it !in ignoring && it.visible }.map { intArrayOf(it.x, it.y, it.width, it.height) }
-        )
 
     /**
      * Registers the marker pins with Xaero's world map and minimap, once each has started. A

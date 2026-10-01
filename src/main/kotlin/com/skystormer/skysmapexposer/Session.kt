@@ -18,7 +18,7 @@ import java.util.concurrent.ThreadFactory
 class Session private constructor(val server: Config.Server, val folder: Path) {
 
     private val io: ExecutorService = Executors.newSingleThreadExecutor(daemon("SkysMapExposer IO"))
-    private val workers: ExecutorService = Executors.newFixedThreadPool(4, daemon("SkysMapExposer fetch"))
+    private val workers: ExecutorService = Executors.newFixedThreadPool(6, daemon("SkysMapExposer fetch"))
 
     val blueMap = BlueMap(server.url)
     val visits = VisitLog(folder, io)
