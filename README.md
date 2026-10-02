@@ -1,10 +1,10 @@
 <p align="center"><img src="src/main/resources/assets/skysmapexposer/icon.png" width="128" alt="Sky's Map Exposer icon"></p>
 
-<h1 align="center">Sky's Map Exposer</h1>
+<h1 align="center">BlueMap Unlocked: Sky's Map Exposer</h1>
 
 <p align="center">
 A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b> into
-<b>Xaero's World Map</b> and <b>Xaero's Minimap</b>.
+<b>Xaero's World Map</b>, <b>Xaero's Minimap</b> and more.
 </p>
 
 <p align="center">
