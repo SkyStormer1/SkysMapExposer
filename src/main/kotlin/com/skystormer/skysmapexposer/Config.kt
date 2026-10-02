@@ -91,11 +91,11 @@ object Config {
     /** Size of BlueMap's markers on the world map, as a multiple of the normal size. */
     var worldMapMarkerScale: Float = 1f
 
-    /**
-     * Size of other players' heads, independent of the markers: on the world map, on the minimap,
-     * and over a locked player in the world.
-     */
+    /** Size of other players' heads on the world map and over a locked player in the world. */
     var playerHeadScale: Float = 1f
+
+    /** Size of other players' heads on the minimap. */
+    var minimapHeadScale: Float = 1f
 
     /** Size of BlueMap's markers on the minimap, on top of their shrinking with distance. */
     var minimapMarkerScale: Float = 1f
@@ -210,6 +210,8 @@ object Config {
             json.get("staleDays")?.let { staleDays = it.asDouble }
             json.get("worldMapMarkerScale")?.let { worldMapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
             json.get("playerHeadScale")?.let { playerHeadScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
+            // Before it had its own setting, the minimap used the world map's.
+            minimapHeadScale = (json.get("minimapHeadScale") ?: json.get("playerHeadScale"))?.asFloat?.coerceIn(MIN_SCALE, MAX_SCALE) ?: 1f
             json.get("minimapMarkerScale")?.let { minimapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
             json.get("minimapShrinkChunks")?.let { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
             json.get("tileRefreshSeconds")?.let { tileRefreshSeconds = it.asInt.coerceAtLeast(10) }
@@ -259,6 +261,7 @@ object Config {
         json.addProperty("staleDays", staleDays)
         json.addProperty("worldMapMarkerScale", worldMapMarkerScale)
         json.addProperty("playerHeadScale", playerHeadScale)
+        json.addProperty("minimapHeadScale", minimapHeadScale)
         json.addProperty("minimapMarkerScale", minimapMarkerScale)
         json.addProperty("minimapShrinkChunks", minimapShrinkChunks)
         json.addProperty("tileRefreshSeconds", tileRefreshSeconds)

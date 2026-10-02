@@ -17,7 +17,6 @@ import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
 import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
-import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 import java.time.Instant
 import java.time.LocalDateTime
@@ -37,7 +36,7 @@ import kotlin.math.roundToInt
  *
  * Built from plain vanilla widgets rather than a config library, like About Face Easy Place's.
  */
-class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's Map Exposer")) {
+class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal("Sky's Map Exposer")) {
 
     /** A server entry being edited. Kept across [rebuildWidgets], which switching server causes. */
     private class Draft(
@@ -74,6 +73,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     private var shrinkChunks = Config.minimapShrinkChunks
     private var worldMapMarkerScale = Config.worldMapMarkerScale
     private var playerHeadScale = Config.playerHeadScale
+    private var minimapHeadScale = Config.minimapHeadScale
     private var minimapMarkerScale = Config.minimapMarkerScale
     private var otherDimensionCoords = Config.otherDimensionCoords
     private var minimapBiomes = Config.minimapBiomes
@@ -109,12 +109,33 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         return 0
     }
 
-    override fun init() {
+    override val resetTip = "Puts the Map tab's switches and sizes, and how long saved pictures are kept, back to how the mod comes. " +
+        "Your servers and their BlueMap addresses are kept."
+
+    override fun resetToDefaults() {
+        keepEdits()
+        enabled = true
+        showMarkers = true
+        showOutlines = true
+        showPlayers = true
+        minimapPlayers = Config.MinimapPlayers.FAR_ONLY
+        shrinkChunks = 32
+        worldMapMarkerScale = 1f
+        playerHeadScale = 1f
+        minimapHeadScale = 1f
+        minimapMarkerScale = 1f
+        otherDimensionCoords = true
+        minimapBiomes = true
+        matchWaypoints = true
+        guessBiomes = true
+        staleDays = formatDays(7.0)
+    }
+
+    override fun content(top: Int) {
         staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null
         mapBoxes.clear()
         val left = width / 2 - WIDTH / 2
-        val tall = if (page == Page.MAP) MAP_HEIGHT else SERVER_HEIGHT
-        var y = maxOf(1, (height - tall) / 2)
+        var y = top
 
         // The tabs: the one showing is greyed out.
         val half = (WIDTH - GAP) / 2
@@ -181,23 +202,25 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         addRenderableWidget(slider)
         y += ROW + GAP
 
-        // Sizes: world map markers, players' heads, minimap markers, each on its own.
-        val third = (WIDTH - GAP * 2) / 3
-        addRenderableWidget(ScaleSlider(left, y, third, "Map icons", worldMapMarkerScale,
+        // Sizes: markers and players' heads, on the world map and on the minimap, each on its own.
+        val sizeHalf = (WIDTH - GAP) / 2
+        addRenderableWidget(ScaleSlider(left, y, sizeHalf, "Map icons", worldMapMarkerScale,
             "Size of BlueMap's markers on the world map.") { worldMapMarkerScale = it })
-        addRenderableWidget(ScaleSlider(left + third + GAP, y, third, "Heads", playerHeadScale,
-            "Size of other players' heads: on the world map, on the minimap, and over a player you have locked on to.") { playerHeadScale = it })
-        addRenderableWidget(ScaleSlider(left + (third + GAP) * 2, y, third, "Minimap", minimapMarkerScale,
+        addRenderableWidget(ScaleSlider(left + sizeHalf + GAP, y, WIDTH - sizeHalf - GAP, "Map heads", playerHeadScale,
+            "Size of other players' heads on the world map and over a player you have locked on to. The same size on screen at any GUI scale.") { playerHeadScale = it })
+        y += ROW + GAP
+        addRenderableWidget(ScaleSlider(left, y, sizeHalf, "Minimap icons", minimapMarkerScale,
             "Size of BlueMap's markers on the minimap. They still shrink with distance.") { minimapMarkerScale = it })
+        addRenderableWidget(ScaleSlider(left + sizeHalf + GAP, y, WIDTH - sizeHalf - GAP, "Minimap heads", minimapHeadScale,
+            "Size of other players' heads on the minimap.") { minimapHeadScale = it })
         y += ROW + GAP * 3
 
         addRenderableWidget(
             Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
-                .bounds(left, y, half, ROW)
+                .bounds(left, y, WIDTH, ROW)
                 .tooltip(Tooltip.create(Component.literal("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates.")))
                 .build()
         )
-        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build())
     }
 
     /** Where this server's BlueMap is, which of its maps to use, and downloading from it. */
@@ -270,10 +293,10 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         messageWidget = MultiLineTextWidget(left, y + 1, message, font).setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
         y += font.lineHeight * 2 + GAP
 
-        addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, quarter, ROW).build())
-        addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + quarter + GAP, y, quarter, ROW).build())
-        addRenderableWidget(downloadButton(left + (quarter + GAP) * 2, y, quarter))
-        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + (quarter + GAP) * 3, y, quarter, ROW).build())
+        val third = (WIDTH - GAP * 2) / 3
+        addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, third, ROW).build())
+        addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + third + GAP, y, third, ROW).build())
+        addRenderableWidget(downloadButton(left + (third + GAP) * 2, y, WIDTH - (third + GAP) * 2))
     }
 
     private fun switchPage(to: Page) {
@@ -282,11 +305,6 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         rebuildWidgets()
     }
 
-    /**
-     * Downloads everything BlueMap has into your own map, after asking; or, while a download is
-     * running, stops it. The download itself is [BlueMapDownload]; it needs you on the server,
-     * with the world map's dimension the one to download.
-     */
     private fun downloadButton(x: Int, y: Int, width: Int): Button {
         if (BlueMapDownload.running) {
             return Button.builder(Component.literal("Stop download")) {
@@ -460,6 +478,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         Config.minimapShrinkChunks = shrinkChunks
         Config.worldMapMarkerScale = worldMapMarkerScale
         Config.playerHeadScale = playerHeadScale
+        Config.minimapHeadScale = minimapHeadScale
         Config.minimapMarkerScale = minimapMarkerScale
         Config.otherDimensionCoords = otherDimensionCoords
         Config.minimapBiomes = minimapBiomes
@@ -504,8 +523,6 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         const val GAP = 2
         const val NEW = -1
         /** How tall each tab is, to centre it; both fit in 278 scaled pixels, so they show at large GUI scales. */
-        const val MAP_HEIGHT = 194
-        const val SERVER_HEIGHT = 270
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         val DIMENSIONS = listOf(Config.OVERWORLD to "Overworld", Config.NETHER to "Nether", Config.END to "End")
     }

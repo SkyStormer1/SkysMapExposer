@@ -333,7 +333,7 @@ object MapBar {
          * puts tooltips a little above the mouse, which near the top edge ran them off screen.
          */
         private fun tooltip(graphics: GuiGraphicsExtractor, text: String, mouseX: Int, mouseY: Int) {
-            graphics.setTooltipForNextFrame(font, font.split(Component.literal(text), TOOLTIP_WIDTH), mouseX, maxOf(mouseY, 16))
+            DockPanel.tooltip(graphics, text, mouseX, mouseY, TOOLTIP_WIDTH)
         }
 
         override fun clickLocal(lx: Double, ly: Double): Click {

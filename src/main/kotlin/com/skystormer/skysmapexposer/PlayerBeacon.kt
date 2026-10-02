@@ -5,6 +5,7 @@ import net.minecraft.client.DeltaTracker
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.world.phys.Vec3
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -24,8 +25,11 @@ object PlayerBeacon : HudElement {
     /** How far above a player's feet the head sits, in blocks: just clear of their own head. */
     private const val HEIGHT = 2.6
 
-    /** The head's size on screen at 100%, in scaled pixels. */
+    /** The head's size on screen at 100%, in scaled pixels at GUI scale 2. */
     private const val SIZE = 16
+
+    /** The GUI scale [SIZE] is meant for; at bigger scales the head and its label are drawn smaller to match. */
+    private const val BASE_GUI_SCALE = 2.0
 
     /** Kept off the very edge of the screen, so a half-drawn head never hangs off it. */
     private const val MARGIN = 4
@@ -57,7 +61,11 @@ object PlayerBeacon : HudElement {
         val camera = minecraft.gameRenderer.mainCamera()
         val eye = camera.position()
         val forward = camera.forwardVector()
-        val size = (SIZE * Config.playerHeadScale).roundToInt().coerceAtLeast(4)
+        // The HUD is in scaled pixels, so at GUI scale 3 or 4 everything here would grow with it.
+        // Head and label are drawn in one scale instead: the same size on screen whatever the GUI
+        // scale, and the label grows and shrinks with the head.
+        val scale = (Config.playerHeadScale * BASE_GUI_SCALE / max(1.0, minecraft.window.guiScale.toDouble())).toFloat()
+        val size = SIZE
         val half = size / 2
 
         for (player in session.markers.players(map)) {
@@ -79,18 +87,24 @@ object PlayerBeacon : HudElement {
             if (toward.x * forward.x() + toward.y * forward.y() + toward.z * forward.z() <= 0.0) continue
 
             val screen = minecraft.gameRenderer.projectPointToScreen(anchor)
-            val x = ((screen.x * 0.5 + 0.5) * graphics.guiWidth()).roundToInt()
-            val y = ((0.5 - screen.y * 0.5) * graphics.guiHeight()).roundToInt()
-            if (x < half + MARGIN || x > graphics.guiWidth() - half - MARGIN) continue
-            if (y < half + MARGIN + font.lineHeight || y > graphics.guiHeight() - half - MARGIN - font.lineHeight) continue
+            val screenX = (screen.x * 0.5 + 0.5) * graphics.guiWidth()
+            val screenY = (0.5 - screen.y * 0.5) * graphics.guiHeight()
+            val reach = (half + font.lineHeight) * scale
+            if (screenX < half * scale + MARGIN || screenX > graphics.guiWidth() - half * scale - MARGIN) continue
+            if (screenY < reach + MARGIN || screenY > graphics.guiHeight() - reach - MARGIN) continue
 
             val distance = me.position().distanceTo(feet).roundToInt()
             val label = "${player.label} ${distance}m"
             val labelWidth = font.width(label)
-            graphics.fill(x - labelWidth / 2 - 2, y - half - font.lineHeight - 2, x + labelWidth / 2 + 2, y - half - 1, BACKDROP)
-            graphics.centeredText(font, label, x, y - half - font.lineHeight - 1, LABEL)
-            graphics.fill(x - half - 1, y - half - 1, x + half + 1, y + half + 1, BACKDROP)
-            PinDrawing.face(graphics, player.uuid, x - half, y - half, size)
+            val pose = graphics.pose()
+            pose.pushMatrix()
+            pose.translate(screenX.toFloat(), screenY.toFloat())
+            pose.scale(scale, scale)
+            graphics.fill(-labelWidth / 2 - 2, -half - font.lineHeight - 2, labelWidth / 2 + 2, -half - 1, BACKDROP)
+            graphics.centeredText(font, label, 0, -half - font.lineHeight - 1, LABEL)
+            graphics.fill(-half - 1, -half - 1, half + 1, half + 1, BACKDROP)
+            PinDrawing.face(graphics, player.uuid, -half, -half, size)
+            pose.popMatrix()
         }
     }
 

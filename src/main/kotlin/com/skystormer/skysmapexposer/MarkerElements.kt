@@ -34,7 +34,10 @@ import kotlin.math.floor
 object MarkerElements {
 
     /** What the world map's pins need between [ElementRenderer.preRender] and `postRender`. */
-    class Context {
+    class Context(
+        /** Players' heads or BlueMap's markers: the two are separate renderers, so the heads can go on top. */
+        val players: Boolean,
+    ) {
         var pins: List<Markers.Pin> = emptyList()
         var next = 0
         var iconRenderer: MultiTextureRenderTypeRenderer? = null
@@ -67,7 +70,7 @@ object MarkerElements {
 
     class Provider : ElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: ElementRenderLocation, context: Context) {
-            context.pins = if (location == ElementRenderLocation.WORLD_MAP) pinsForWorldMap() else emptyList()
+            context.pins = if (location == ElementRenderLocation.WORLD_MAP) pinsForWorldMap().filter { (it is Markers.Player) == context.players } else emptyList()
             context.next = 0
         }
 
@@ -178,6 +181,14 @@ object MarkerElements {
          */
         override fun shouldBeDimScaled(): Boolean = false
 
+        /**
+         * Xaero draws its renderers from the lowest order up and hovers the last one drawn under
+         * the mouse. Its own waypoints and tracked players are 200, so at the default 0 they sat on
+         * top of players' heads and took the right-click meant for locking on. Heads go above them;
+         * BlueMap's markers stay below, so your own waypoints still win over those.
+         */
+        override fun getOrder(): Int = if (context.players) 300 else 0
+
         override fun preRender(info: ElementRenderInfo, buffers: XaeroBufferProvider, renderers: MultiTextureRenderTypeRendererProvider, pre: Boolean) {
             context.iconRenderer = renderers.getRenderer(CustomRenderTypes.GUI_NEAREST)
         }
@@ -225,8 +236,8 @@ object MarkerElements {
     /** Registers with Xaero's world map. Safe to call again; does nothing once done. */
     fun register(): Boolean {
         val handler = xaero.map.WorldMap.mapElementRenderHandler ?: return false
-        val context = Context()
-        handler.add(Renderer(context, Provider(), Reader()))
+        handler.add(Renderer(Context(players = false), Provider(), Reader()))
+        handler.add(Renderer(Context(players = true), Provider(), Reader()))
         return true
     }
 

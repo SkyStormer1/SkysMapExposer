@@ -104,7 +104,7 @@ Hover over any setting in the game for an explanation.
 | **Players…** | Opens the player list. |
 | **Replace after … days** | How old your own map must be before BlueMap's newer picture replaces it. |
 | **Markers within … chunks** | How far away BlueMap markers show on the minimap. |
-| **Map icons / Heads / Minimap** | How big markers and players' heads are drawn. **Heads** covers the world map, the minimap and locked players' heads in the world. |
+| **Map icons / Map heads / Minimap icons / Minimap heads** | How big markers and players' heads are drawn, each on its own. **Map heads** also sizes the head over a player you've locked on to, which stays the same size on screen at any GUI scale. |
 | **Server** | Which server you are editing. Click through to switch, or to add one. |
 | **Server address** | Every name you join this server by, separated by commas, e.g. `play.example.com, 203.0.113.7`. |
 | **BlueMap address** | The web page of the server's BlueMap. |

@@ -353,10 +353,7 @@ abstract class DockPanel(protected val screen: Screen, private val id: String, t
         if (drag == Drag.CORNER) tip(graphics, "Size ${"%.2f".format(scale).trimEnd('0').trimEnd('.')}x", mouseX, mouseY)
     }
 
-    private fun tip(graphics: GuiGraphicsExtractor, text: String, mouseX: Int, mouseY: Int) {
-        val font = Minecraft.getInstance().font
-        graphics.setTooltipForNextFrame(font, font.split(Component.literal(text), 190), mouseX, maxOf(mouseY, 16))
-    }
+    private fun tip(graphics: GuiGraphicsExtractor, text: String, mouseX: Int, mouseY: Int) = tooltip(graphics, text, mouseX, mouseY)
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
         if (!visible || event.button() != 0 || !isMouseOver(event.x(), event.y())) return false
@@ -546,6 +543,38 @@ abstract class DockPanel(protected val screen: Screen, private val id: String, t
     }
 
     companion object {
+        /**
+         * Shows [text] as a tooltip near the mouse, kept wholly on screen. Vanilla only keeps a
+         * tooltip off the right and bottom edges, so at a big GUI scale a long one ran off the top
+         * or out of the side. This wraps it to fit the screen, cuts it short if it still cannot
+         * fit, and places it itself.
+         */
+        fun tooltip(graphics: GuiGraphicsExtractor, text: String, mouseX: Int, mouseY: Int, wrap: Int = 190) {
+            val font = Minecraft.getInstance().font
+            val screenWidth = graphics.guiWidth()
+            val screenHeight = graphics.guiHeight()
+            val widest = maxOf(40, screenWidth - TIP_EDGE * 2)
+            val tallest = maxOf(1, (screenHeight - TIP_EDGE * 2 - 2) / TIP_LINE)
+            var lines = font.split(Component.literal(text), minOf(wrap, widest))
+            // Too tall for the screen: use the whole width before giving up on any of it.
+            if (lines.size > tallest && wrap < widest) lines = font.split(Component.literal(text), widest)
+            if (lines.size > tallest) lines = lines.take(tallest - 1) + font.split(Component.literal("…"), widest)
+            val width = lines.maxOf { font.width(it) }
+            val height = lines.size * TIP_LINE + 2
+            var x = mouseX + 12
+            if (x + width + TIP_EDGE > screenWidth) x = mouseX - 16 - width
+            x = x.coerceIn(TIP_EDGE, maxOf(TIP_EDGE, screenWidth - width - TIP_EDGE))
+            val y = (mouseY - 12).coerceIn(TIP_EDGE, maxOf(TIP_EDGE, screenHeight - height - TIP_EDGE))
+            // Vanilla moves a tooltip 12 right of and 12 above the point it is given.
+            graphics.setTooltipForNextFrame(font, lines, x - 12, y + 12)
+        }
+
+        /** Space kept between a tooltip and the screen's edge, its border included. */
+        private const val TIP_EDGE = 5
+
+        /** Height of one line of a tooltip. */
+        private const val TIP_LINE = 10
+
         const val ROW = 11
         const val GRIP = 4
         private const val EDGE = 2

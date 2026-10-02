@@ -141,7 +141,7 @@ object MinimapMarkerElements {
      * with distance; players keep their size, since the point of them is to be read far away.
      */
     fun sizeOf(pin: Markers.Pin): Float = when (pin) {
-        is Markers.Player -> PLAYER * Config.playerHeadScale
+        is Markers.Player -> PLAYER * Config.minimapHeadScale
         is Markers.Point -> scaleFor(pin) * Config.minimapMarkerScale
     }
 
