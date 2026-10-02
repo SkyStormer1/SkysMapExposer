@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer
 
 import com.mojang.blaze3d.textures.GpuTextureView
 import com.mojang.blaze3d.vertex.BufferBuilder
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.renderer.RenderPipelines
@@ -22,6 +23,7 @@ import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRenderer
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider
 import xaero.map.gui.IRightClickableElement
 import xaero.map.gui.dropdown.rightclick.RightClickOption
+import kotlin.math.floor
 
 /**
  * BlueMap's markers and players as pins on Xaero's world map, through Xaero's own element system —
@@ -123,6 +125,10 @@ object MarkerElements {
                 MapMenus.option("Save as waypoint", options.size, target) { Waypoints.save(pin) }
                     .setActive(Waypoints.available())
             )
+            options.add(
+                MapMenus.option("Set temporary waypoint", options.size, target) { Waypoints.setTemporary(pin) }
+                    .setActive(Waypoints.available())
+            )
             // Pins are read from the BlueMap of the dimension the map is showing, so that is the
             // dimension their coordinates are in.
             options.add(
@@ -130,7 +136,28 @@ object MarkerElements {
                     MapMenus.copy(pin.x, pin.y, pin.z, worldMapDimension())
                 }
             )
+            if (FabricLoader.getInstance().isModLoaded("skysmapshapes")) {
+                options.add(MapMenus.option("Add shape here", options.size, target) { addShape(pin) })
+            }
             return options
+        }
+    }
+
+    /**
+     * Sky's Map Shapes' add window, for a shape centred on [pin] and named after it, in the
+     * dimension the map is showing. Found by name, so that mod is never needed to build or run this one.
+     */
+    private fun addShape(pin: Markers.Pin) {
+        val say = { message: String -> Minecraft.getInstance().player?.sendOverlayMessage(Component.literal(message)) }
+        try {
+            val dimension = worldMapDimension() ?: return
+            val opened = Class.forName("com.skystormer.skysmapshapes.ShapesApi")
+                .getMethod("openNewShape", String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, String::class.java)
+                .invoke(null, dimension, floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt(), pin.label) as Boolean
+            if (!opened) say("Sky's Map Shapes could not add a shape here")
+        } catch (e: Throwable) {
+            Log.error("Could not open Sky's Map Shapes for ${pin.label}", e)
+            say("This needs a newer Sky's Map Shapes")
         }
     }
 

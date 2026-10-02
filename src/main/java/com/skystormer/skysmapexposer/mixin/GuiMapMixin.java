@@ -6,21 +6,27 @@ import com.skystormer.skysmapexposer.BiomeHighlight;
 import com.skystormer.skysmapexposer.MapCamera;
 import com.skystormer.skysmapexposer.MapMenus;
 import com.skystormer.skysmapexposer.MapView;
+import com.skystormer.skysmapexposer.OtherDimensionCoords;
 import com.skystormer.skysmapexposer.Overlay;
 import com.skystormer.skysmapexposer.gui.MapBar;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import xaero.map.MapProcessor;
 import xaero.map.animation.SlowingAnimation;
+import xaero.map.graphics.MapRenderHelper;
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider;
 import xaero.map.gui.IRightClickableElement;
 import xaero.map.gui.MapTileSelection;
@@ -29,7 +35,7 @@ import xaero.map.gui.dropdown.rightclick.RightClickOption;
 import java.util.ArrayList;
 
 /**
- * Four things on Xaero's world map screen.
+ * Five things on Xaero's world map screen.
  *
  * <p>Drawing: the backfill goes into Xaero's map framebuffer straight after Xaero has drawn its own
  * terrain and before anything that sits on top of terrain (highlights, waypoints, the player
@@ -47,6 +53,9 @@ import java.util.ArrayList;
  * <p>Right-click menu: "Copy coordinates", "Players…" and "Download" at the end of the menu Xaero shows when
  * you right-click the map itself. {@code rightClickDim} is Xaero's own reading of which
  * dimension that click landed in, so the copied coordinates can say where they are.
+ *
+ * <p>Other dimension: under Xaero's readout of the block under the mouse, the same block's
+ * coordinates in the other dimension ({@link OtherDimensionCoords}).
  *
  * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone. And the
  * mouse wheel goes to the {@link MapBar} first when it is over it, as Xaero would otherwise zoom.
@@ -191,6 +200,58 @@ public abstract class GuiMapMixin implements MapCamera {
     )
     private boolean skysmapexposer$hideArrowInOtherDimension(boolean original) {
         return original && !MapView.hideArrow();
+    }
+
+    @Shadow private int mouseBlockPosX;
+    @Shadow private int mouseBlockPosZ;
+
+    /** Where the last of Xaero's lines at the top of the map went this frame, or -1 for none. */
+    @Unique private int skysmapexposer$topLineY = -1;
+
+    @Inject(method = "extractRenderState", at = @At("HEAD"), require = 0)
+    private void skysmapexposer$resetTopLines(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+        skysmapexposer$topLineY = -1;
+    }
+
+    /**
+     * Notes where Xaero puts its first two lines at the top of the map: the block under the mouse,
+     * then its biome. Either can be switched off in Xaero, so the other dimension's coordinates go
+     * under whichever was drawn last.
+     */
+    @ModifyArg(
+            method = "extractRenderState",
+            at = @At(value = "INVOKE", target = "Lxaero/map/graphics/MapRenderHelper;drawCenteredStringWithBackground(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/gui/Font;Ljava/lang/String;IIIFFFF)V", ordinal = 0),
+            index = 4,
+            require = 0
+    )
+    private int skysmapexposer$coordinatesLine(int y) {
+        skysmapexposer$topLineY = Math.max(skysmapexposer$topLineY, y);
+        return y;
+    }
+
+    @ModifyArg(
+            method = "extractRenderState",
+            at = @At(value = "INVOKE", target = "Lxaero/map/graphics/MapRenderHelper;drawCenteredStringWithBackground(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/gui/Font;Ljava/lang/String;IIIFFFF)V", ordinal = 1),
+            index = 4,
+            require = 0
+    )
+    private int skysmapexposer$biomeLine(int y) {
+        skysmapexposer$topLineY = Math.max(skysmapexposer$topLineY, y);
+        return y;
+    }
+
+    /**
+     * The other dimension's coordinates for the block under the mouse, one line under Xaero's own,
+     * in its style (Xaero puts its lines 10 apart). Only while Xaero shows the mouse's coordinates.
+     */
+    @Inject(method = "extractRenderState", at = @At("TAIL"), require = 0)
+    private void skysmapexposer$otherDimensionLine(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+        if (skysmapexposer$topLineY < 0) return;
+        String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
+        if (line == null) return;
+        Screen screen = (Screen) (Object) this;
+        MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
+                screen.width / 2, skysmapexposer$topLineY + 10, -1, 0f, 0f, 0f, 0.4f);
     }
 
     @Inject(method = "getRightClickOptions", at = @At("RETURN"), require = 0)

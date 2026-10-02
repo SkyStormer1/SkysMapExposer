@@ -1,8 +1,6 @@
 package com.skystormer.skysmapexposer
 
-import java.io.ByteArrayInputStream
 import java.io.IOException
-import javax.imageio.ImageIO
 
 /**
  * BlueMap's finest tiles read as data rather than as a picture: for every block, its colour, the
@@ -31,7 +29,7 @@ object BlueMapPicture {
      * column and row belong to the next tile and are dropped.
      */
     fun decode(tileX: Int, tileZ: Int, size: Int, bytes: ByteArray): Tile {
-        val image = ImageIO.read(ByteArrayInputStream(bytes)) ?: throw IOException("not an image")
+        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
         val width = image.width
         val half = image.height / 2
         if (width != half || width < size) throw IOException("unexpected tile shape ${width}x${image.height}")

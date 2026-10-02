@@ -26,9 +26,10 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /**
- * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file.
+ * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on two
+ * tabs: Map (what is shown, and how big) and Server (where BlueMap is, and downloading from it).
  *
- * Opens on the server you are connected to: its BlueMap address, which BlueMap map to use for each
+ * The Server tab opens on the server you are connected to: its BlueMap address, which BlueMap map to use for each
  * dimension and whether its terrain is used, and the date before which your own overworld map is
  * covered regardless (for a map left over from a previous season). On a server not set up yet it
  * starts a new entry with that server's address filled in, and "Find maps" asks the BlueMap which
@@ -61,6 +62,9 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         )
     }.toMutableList()
 
+    private enum class Page(val title: String) { MAP("Map"), SERVER("Server") }
+
+    private var page = Page.MAP
     private var enabled = Config.enabled
     private var showMarkers = Config.showMarkers
     private var showOutlines = Config.showOutlines
@@ -71,15 +75,20 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     private var worldMapMarkerScale = Config.worldMapMarkerScale
     private var playerHeadScale = Config.playerHeadScale
     private var minimapMarkerScale = Config.minimapMarkerScale
+    private var otherDimensionCoords = Config.otherDimensionCoords
+    private var minimapBiomes = Config.minimapBiomes
+    private var matchWaypoints = Config.matchWaypointsToDimension
+    private var guessBiomes = Config.guessBiomes
     private var message: Component = Component.literal(Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
-    private lateinit var staleBox: EditBox
-    private lateinit var coverBox: EditBox
-    private lateinit var addressBox: EditBox
-    private lateinit var urlBox: EditBox
+    // Only the boxes of the tab showing exist; the other tab's are null.
+    private var staleBox: EditBox? = null
+    private var coverBox: EditBox? = null
+    private var addressBox: EditBox? = null
+    private var urlBox: EditBox? = null
     private val mapBoxes = HashMap<String, EditBox>()
-    private lateinit var messageWidget: MultiLineTextWidget
+    private var messageWidget: MultiLineTextWidget? = null
 
     private fun newDraft(address: String) =
         Draft(address, "", mutableMapOf(Config.OVERWORLD to "world"), mutableSetOf(Config.NETHER), "", emptyMap())
@@ -93,6 +102,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
             if (index >= 0) return index
             drafts.add(newDraft(here))
             message = Component.literal("$here is not set up yet. Enter its BlueMap address, then press Find maps.")
+            page = Page.SERVER
             return drafts.size - 1
         }
         if (drafts.isEmpty()) drafts.add(newDraft(""))
@@ -100,49 +110,68 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
     }
 
     override fun init() {
+        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null
+        mapBoxes.clear()
         val left = width / 2 - WIDTH / 2
-        val labelWidth = 96
-        val fieldLeft = left + labelWidth
-        val fieldWidth = WIDTH - labelWidth
-        val switchWidth = 48
-        // Everything below fits in 278 scaled pixels, so the whole screen shows at large GUI scales.
-        var y = maxOf(1, (height - 278) / 2)
+        val tall = if (page == Page.MAP) MAP_HEIGHT else SERVER_HEIGHT
+        var y = maxOf(1, (height - tall) / 2)
 
+        // The tabs: the one showing is greyed out.
+        val half = (WIDTH - GAP) / 2
+        Page.entries.forEachIndexed { i, tab ->
+            val x = left + i * (half + GAP)
+            addRenderableWidget(Button.builder(Component.literal(tab.title)) { switchPage(tab) }
+                .bounds(x, y, if (i == 0) half else WIDTH - half - GAP, ROW).build()
+                .also { it.active = tab != page })
+        }
+        y += ROW + GAP * 3
+
+        if (page == Page.MAP) mapPage(left, y) else serverPage(left, y)
+    }
+
+    /** What is shown on the maps, how big, and the players. */
+    private fun mapPage(left: Int, top: Int) {
+        var y = top
+        val half = (WIDTH - GAP) / 2
         val quarter = (WIDTH - GAP * 3) / 4
+
         addRenderableWidget(toggle(left, y, quarter, "Terrain", enabled, "Fill in your map with BlueMap's terrain.") { enabled = it })
         addRenderableWidget(toggle(left + (quarter + GAP), y, quarter, "Markers", showMarkers, "Show BlueMap's markers (shops, banners…) on the world map and minimap.") { showMarkers = it })
         addRenderableWidget(toggle(left + (quarter + GAP) * 2, y, quarter, "Borders", showOutlines, "Draw BlueMap's world border and zones on both maps.") { showOutlines = it })
         addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", showPlayers, "Show other players BlueMap reports, in their own dimension.") { showPlayers = it })
         y += ROW + GAP
 
-        // Which players the minimap shows, and the list of everyone online.
-        val halfWidth = (WIDTH - GAP) / 2
+        addRenderableWidget(toggle(left, y, half, "Other dimension XZ", otherDimensionCoords,
+            "On the world map, under the coordinates of the block under the mouse: the same block in the other dimension. " +
+                "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth).") { otherDimensionCoords = it })
+        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP, "Biomes on minimap", minimapBiomes,
+            "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map.") { minimapBiomes = it })
+        y += ROW + GAP
+
+        addRenderableWidget(toggle(left, y, half, "Waypoints follow map", matchWaypoints,
+            "The world map shows the waypoints of the dimension it is showing, not the one you are in. This switches on " +
+                "Xaero's own setting for it when you join a world; off leaves Xaero's setting as it is.") { matchWaypoints = it })
         val minimapChoice = CycleButton.builder<Config.MinimapPlayers>({ Component.literal(it.label) }, minimapPlayers)
             .withValues(Config.MinimapPlayers.entries.toList())
             .displayOnlyValue()
-            .create(left, y, halfWidth, ROW, Component.literal("Minimap players")) { _, value -> minimapPlayers = value }
+            .create(left + half + GAP, y, WIDTH - half - GAP, ROW, Component.literal("Minimap players")) { _, value -> minimapPlayers = value }
         minimapChoice.setTooltip(Tooltip.create(Component.literal(
             "Which players the minimap shows. BlueMap knows where everyone is, so a zoomed out minimap can keep them " +
                 "on screen after they leave your render distance. Out of range leaves the ones near you to Xaero's own " +
                 "radar, so nobody is drawn twice; choose All players if you have that radar switched off."
         )))
         addRenderableWidget(minimapChoice)
-        addRenderableWidget(
-            Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
-                .bounds(left + halfWidth + GAP, y, WIDTH - halfWidth - GAP, ROW)
-                .tooltip(Tooltip.create(Component.literal("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates.")))
-                .build()
-        )
-        y += ROW + GAP
+        y += ROW + GAP * 3
 
-        // Two settings side by side: how old your map may get, and how far edge markers shrink.
+        // How old your map may get, and how far minimap markers reach.
         val staleLabel = 80
         val staleBoxWidth = 28
         label(left, y, staleLabel, "Replace after")
-        staleBox = field(left + staleLabel, y, staleBoxWidth, staleDays, "7")
-        staleBox.setTooltip(Tooltip.create(Component.literal(
-            "Days before your own map counts as out of date. After that, BlueMap's picture replaces it wherever BlueMap has changed since you were last there."
-        )))
+        staleBox = field(left + staleLabel, y, staleBoxWidth, staleDays, "7").also {
+            it.setTooltip(Tooltip.create(Component.literal(
+                "Days before your own map counts as out of date. After that, BlueMap's picture replaces it wherever BlueMap has changed since you were last there."
+            )))
+        }
         label(left + staleLabel + staleBoxWidth + 4, y, 26, "days")
         val sliderLeft = left + staleLabel + staleBoxWidth + 32
         val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, shrinkChunks) { shrinkChunks = it }
@@ -160,7 +189,25 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
             "Size of other players' heads: on the world map, on the minimap, and over a player you have locked on to.") { playerHeadScale = it })
         addRenderableWidget(ScaleSlider(left + (third + GAP) * 2, y, third, "Minimap", minimapMarkerScale,
             "Size of BlueMap's markers on the minimap. They still shrink with distance.") { minimapMarkerScale = it })
-        y += ROW + GAP * 2
+        y += ROW + GAP * 3
+
+        addRenderableWidget(
+            Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
+                .bounds(left, y, half, ROW)
+                .tooltip(Tooltip.create(Component.literal("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates.")))
+                .build()
+        )
+        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build())
+    }
+
+    /** Where this server's BlueMap is, which of its maps to use, and downloading from it. */
+    private fun serverPage(left: Int, top: Int) {
+        var y = top
+        val labelWidth = 96
+        val fieldLeft = left + labelWidth
+        val fieldWidth = WIDTH - labelWidth
+        val switchWidth = 48
+        val quarter = (WIDTH - GAP * 3) / 4
 
         val choices = drafts.indices.toList() + NEW
         addRenderableWidget(
@@ -172,19 +219,20 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
 
         val draft = drafts[selected]
         label(left, y, labelWidth, "Server address")
-        addressBox = field(fieldLeft, y, fieldWidth, draft.addresses, "play.example.com, 1.2.3.4")
-        addressBox.setTooltip(Tooltip.create(Component.literal(
-            "Every name you join this server by, as typed in your server list, separated by commas."
-        )))
+        addressBox = field(fieldLeft, y, fieldWidth, draft.addresses, "play.example.com, 1.2.3.4").also {
+            it.setTooltip(Tooltip.create(Component.literal(
+                "Every name you join this server by, as typed in your server list, separated by commas."
+            )))
+        }
         y += ROW + GAP
         label(left, y, labelWidth, "BlueMap address")
-        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/")
-        urlBox.setTooltip(Tooltip.create(Component.literal(
-            "The web address of the server's BlueMap: the page you open in a browser to see the map."
-        )))
+        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/").also {
+            it.setTooltip(Tooltip.create(Component.literal(
+                "The web address of the server's BlueMap: the page you open in a browser to see the map."
+            )))
+        }
         y += ROW + GAP
 
-        mapBoxes.clear()
         for ((dimension, name) in DIMENSIONS) {
             label(left, y, labelWidth, "$name map")
             val box = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.maps[dimension] ?: "", "blank = none")
@@ -203,24 +251,35 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         }
 
         label(left, y, labelWidth, "Cover map before")
-        coverBox = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.coverOverworld, "blank = never")
-        coverBox.setTooltip(Tooltip.create(Component.literal(
+        val cover = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.coverOverworld, "blank = never")
+        cover.setTooltip(Tooltip.create(Component.literal(
             "Your overworld map from before this date and time (yyyy-MM-dd HH:mm) is covered by BlueMap however recent it is. For a map left over from a previous season."
         )))
+        coverBox = cover
         addRenderableWidget(
-            Button.builder(Component.literal("Now")) { coverBox.value = formatTime(System.currentTimeMillis()) }
+            Button.builder(Component.literal("Now")) { cover.value = formatTime(System.currentTimeMillis()) }
                 .bounds(left + WIDTH - switchWidth, y, switchWidth, ROW).build()
         )
         y += ROW + GAP
 
-        messageWidget = MultiLineTextWidget(left, y + 1, message, font).setMaxWidth(WIDTH).setMaxRows(2)
-        addRenderableWidget(messageWidget)
+        addRenderableWidget(toggle(left, y, WIDTH, "Downloads guess biomes", guessBiomes,
+            "When downloading, guess the biome of blocks you have never been to from BlueMap's colours, so grass, " +
+                "leaves and water come out the right shade. Overworld only.") { guessBiomes = it })
+        y += ROW + GAP
+
+        messageWidget = MultiLineTextWidget(left, y + 1, message, font).setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
         y += font.lineHeight * 2 + GAP
 
         addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, quarter, ROW).build())
         addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + quarter + GAP, y, quarter, ROW).build())
         addRenderableWidget(downloadButton(left + (quarter + GAP) * 2, y, quarter))
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + (quarter + GAP) * 3, y, quarter, ROW).build())
+    }
+
+    private fun switchPage(to: Page) {
+        keepEdits()
+        page = to
+        rebuildWidgets()
     }
 
     /**
@@ -333,14 +392,14 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
 
     /** Copies what is typed into the selected draft, before the widgets are thrown away. */
     private fun keepEdits() {
-        staleDays = staleBox.value
+        staleBox?.let { staleDays = it.value }
         val draft = drafts[selected]
-        draft.addresses = addressBox.value
-        draft.url = urlBox.value
+        addressBox?.let { draft.addresses = it.value }
+        urlBox?.let { draft.url = it.value }
         for ((dimension, box) in mapBoxes) {
             if (box.value.isBlank()) draft.maps.remove(dimension) else draft.maps[dimension] = box.value.trim()
         }
-        draft.coverOverworld = coverBox.value
+        coverBox?.let { draft.coverOverworld = it.value }
     }
 
     private fun switchTo(index: Int) {
@@ -365,7 +424,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
 
     /** Asks the BlueMap at the typed address which maps it has, and fills in the overworld if blank. */
     private fun findMaps() {
-        val url = urlBox.value.trim()
+        val url = urlBox?.value?.trim() ?: return
         if (url.isEmpty()) {
             show("Type the BlueMap address first: the page you open in a browser.")
             return
@@ -388,7 +447,7 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
 
     private fun show(text: String) {
         message = Component.literal(text)
-        messageWidget.setMessage(message)
+        messageWidget?.setMessage(message)
     }
 
     override fun onClose() {
@@ -402,6 +461,10 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         Config.worldMapMarkerScale = worldMapMarkerScale
         Config.playerHeadScale = playerHeadScale
         Config.minimapMarkerScale = minimapMarkerScale
+        Config.otherDimensionCoords = otherDimensionCoords
+        Config.minimapBiomes = minimapBiomes
+        Config.matchWaypointsToDimension = matchWaypoints
+        Config.guessBiomes = guessBiomes
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
@@ -440,6 +503,9 @@ class ConfigScreen(private val parent: Screen) : Screen(Component.literal("Sky's
         const val ROW = 20
         const val GAP = 2
         const val NEW = -1
+        /** How tall each tab is, to centre it; both fit in 278 scaled pixels, so they show at large GUI scales. */
+        const val MAP_HEIGHT = 194
+        const val SERVER_HEIGHT = 270
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         val DIMENSIONS = listOf(Config.OVERWORLD to "Overworld", Config.NETHER to "Nether", Config.END to "End")
     }

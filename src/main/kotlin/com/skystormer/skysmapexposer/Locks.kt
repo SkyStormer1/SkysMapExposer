@@ -60,10 +60,9 @@ class Locks(private val file: Path, private val io: ExecutorService) {
         val snapshot = locked.toList()
         io.execute {
             try {
-                Files.createDirectories(file.parent)
                 val array = JsonArray()
                 snapshot.forEach { array.add(it.toString()) }
-                Files.writeString(file, array.toString())
+                SafeFiles.writeString(file, array.toString())
             } catch (e: Exception) {
                 Log.error("Could not write $file", e)
             }

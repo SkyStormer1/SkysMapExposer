@@ -44,6 +44,8 @@
   },
   "suggests": {
     "modmenu": "*",
-    "xaerominimap": "*"
+    "xaerominimap": "*",
+    "skysmapshapes": "*",
+    "skysstructuremap": "*"
   }
 }

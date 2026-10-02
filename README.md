@@ -37,8 +37,10 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
   colours, and update when the server changes them.
 - **Shows BlueMap's markers.** Shops, banners and the like appear as icons on the world map and
   minimap only, never floating in the world. Hover one for its name. Right-click it on the world
-  map and choose **Save as waypoint** to turn it into an ordinary, permanent Xaero waypoint. The
-  **Markers** switch in the bar on the world map hides or shows them all in one click.
+  map and choose **Save as waypoint** to turn it into an ordinary, permanent Xaero waypoint, or
+  **Set temporary waypoint** for one that goes when you leave. With
+  [Sky's Map Shapes](https://github.com/SkyStormer1/SkysMapShapes) installed, **Add shape here**
+  draws a shape centred on it. The **Markers** switch in the bar on the world map hides or shows them all in one click.
 - **Shows other players** on the world map and minimap of the dimension they are in, with their
   face. BlueMap knows where everyone is, so they stay on your minimap after they walk out of your
   render distance and Xaero's own radar loses them.
@@ -152,6 +154,9 @@ On the world map, hover over a BlueMap marker to see its name, right-click it, a
 name, initials and colour, and stays even if the marker is later removed from BlueMap. Waypoints
 are saved to the dimension you are standing in, so the world map must be showing that dimension.
 
+**Set temporary waypoint** puts one of Xaero's own temporary waypoints on the marker instead, the
+same as Xaero's "Set Temporary Waypoint": handy for walking to a shop, and gone when you leave.
+
 ## Players
 
 Everyone BlueMap can see shows up as their face, on the world map and on the minimap of the
@@ -188,6 +193,10 @@ Overworld, the map switches to the Nether to show them, and switches back to wha
 as you leave the map.
 
 ## Looking at another dimension
+
+Under the coordinates of the block under your mouse, the world map also shows the same spot in the
+other dimension: the Overworld's coordinates while you look at the Nether, and the Nether's while
+you look at the Overworld. **Other dimension XZ** in the settings switches it off.
 
 The world map can be switched to a dimension you are not standing in. Xaero draws your own arrow,
 your own waypoints and the entities around you there anyway, converted into that dimension's

@@ -3,7 +3,6 @@ package com.skystormer.skysmapexposer
 import com.mojang.blaze3d.platform.NativeImage
 import com.mojang.blaze3d.textures.GpuTextureView
 import net.minecraft.client.renderer.texture.DynamicTexture
-import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -12,7 +11,6 @@ import java.util.BitSet
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
-import javax.imageio.ImageIO
 
 /**
  * BlueMap tiles: fetched on demand, kept on disk, decoded off the client thread, and turned into
@@ -197,7 +195,8 @@ class TileStore(
         tile.requested.clear()
     }
 
-    private fun imageFile(key: Key): Path = folder.resolve("${key.map}/${key.lod}/${key.x}_${key.z}.png")
+    // The map id came from the server and becomes a folder name, so only ever a safe one.
+    private fun imageFile(key: Key): Path = folder.resolve("${if (BlueMap.isMapId(key.map)) key.map else "_"}/${key.lod}/${key.x}_${key.z}.png")
 
     // ---- worker threads from here on ----
 
@@ -247,8 +246,7 @@ class TileStore(
                 if (hash != meta.getProperty("hash") || contentMinute == 0) {
                     contentMinute = Clock.nowMinutes()
                 }
-                Files.createDirectories(image.parent)
-                Files.write(image, fetched)
+                SafeFiles.write(image, fetched)
                 meta.remove("empty")
                 meta.setProperty("hash", hash)
                 meta.setProperty("since", contentMinute.toString())
@@ -282,7 +280,7 @@ class TileStore(
                 return
             }
             val now = Clock.nowMinutes()
-            Files.write(image, fetched)
+            SafeFiles.write(image, fetched)
             meta.setProperty("hash", hash)
             meta.setProperty("since", now.toString())
             writeMeta(metaFile, meta)
@@ -314,7 +312,7 @@ class TileStore(
      * falls, so hills read the way they do on the rest of the map.
      */
     private fun decodeColours(tile: Tile, bytes: ByteArray): IntArray {
-        val image = ImageIO.read(ByteArrayInputStream(bytes)) ?: throw IOException("not an image")
+        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
         val width = image.width
         val half = image.height / 2
         require(width == half) { "unexpected tile shape ${width}x${image.height}" }
@@ -382,8 +380,8 @@ class TileStore(
     }
 
     private fun writeMeta(file: Path, meta: Properties) {
-        Files.createDirectories(file.parent)
-        Files.newOutputStream(file).use { meta.store(it, null) }
+        val text = java.io.StringWriter().also { meta.store(it, null) }.toString()
+        SafeFiles.writeString(file, text)
     }
 
     private fun sha1(bytes: ByteArray): String =

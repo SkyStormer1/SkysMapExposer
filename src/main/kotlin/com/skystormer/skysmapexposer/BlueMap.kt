@@ -2,12 +2,17 @@ package com.skystormer.skysmapexposer
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import javax.imageio.ImageIO
 
 /**
  * Talking to a BlueMap web server.
@@ -21,6 +26,9 @@ import java.time.Duration
  *
  * These are facts about the files a BlueMap server publishes, checked against a live server; no
  * BlueMap code is used.
+ *
+ * Everything a server sends is treated as untrusted: replies are capped in size, map ids are
+ * checked before they go into a path, and layouts and images are checked before they are used.
  */
 class BlueMap(baseUrl: String) : AutoCloseable {
 
@@ -55,14 +63,20 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** Reads `maps/<map>/settings.json`. Blocking; call it off the client thread. */
     @Throws(IOException::class)
     fun layout(map: String): MapLayout {
-        val response = get("maps/$map/settings.json", HttpResponse.BodyHandlers.ofString())
+        val response = getText("maps/${checkMapId(map)}/settings.json")
         if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
         val lowres = JsonParser.parseString(response.body()).asJsonObject.getAsJsonObject("lowres")
-        return MapLayout(
+            ?: throw IOException("$map has no lowres tiles")
+        val layout = MapLayout(
             tileSize = lowres.getAsJsonArray("tileSize")[0].asInt,
             lodFactor = lowres.get("lodFactor").asInt,
             lodCount = lowres.get("lodCount").asInt,
         )
+        // Sizes no BlueMap uses would overflow or loop for ever further on.
+        if (layout.tileSize !in 1..MAX_TILE_SIZE || layout.lodFactor !in 1..MAX_LOD_FACTOR || layout.lodCount !in 1..MAX_LOD_COUNT) {
+            throw IOException("$map has an unusable layout: tiles ${layout.tileSize}, factor ${layout.lodFactor}, levels ${layout.lodCount}")
+        }
+        return layout
     }
 
     /**
@@ -71,12 +85,14 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      */
     @Throws(IOException::class)
     fun maps(): List<Pair<String, String>> {
-        val response = get("settings.json", HttpResponse.BodyHandlers.ofString())
+        val response = getText("settings.json")
         if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for settings.json")
-        val ids = JsonParser.parseString(response.body()).asJsonObject.getAsJsonArray("maps").map { it.asString }
+        // Ids that could not be a folder name are left out rather than trusted.
+        val ids = JsonParser.parseString(response.body()).asJsonObject.getAsJsonArray("maps")
+            .map { it.asString }.filter(::isMapId).take(MAX_MAPS)
         return ids.map { id ->
             val name = try {
-                val map = get("maps/$id/settings.json", HttpResponse.BodyHandlers.ofString())
+                val map = getText("maps/$id/settings.json")
                 JsonParser.parseString(map.body()).asJsonObject.get("name")?.asString ?: id
             } catch (e: Exception) {
                 id
@@ -92,7 +108,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      */
     @Throws(IOException::class)
     fun tile(map: String, lod: Int, tileX: Int, tileZ: Int): ByteArray? {
-        val response = get(tilePath(map, lod, tileX, tileZ), HttpResponse.BodyHandlers.ofByteArray())
+        val response = getBytes(tilePath(map, lod, tileX, tileZ))
         return when (response.statusCode()) {
             200 -> response.body()
             204, 404 -> null
@@ -103,7 +119,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** A map's live markers, `maps/<map>/live/markers.json`, or null if it has none. Blocking. */
     @Throws(IOException::class)
     fun markers(map: String): JsonObject? {
-        val response = get("maps/$map/live/markers.json", HttpResponse.BodyHandlers.ofString())
+        val response = getText("maps/${checkMapId(map)}/live/markers.json")
         if (response.statusCode() != 200) return null
         return JsonParser.parseString(response.body()).asJsonObject
     }
@@ -111,7 +127,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** Who is where, `maps/<map>/live/players.json`, or null if BlueMap does not share it. Blocking. */
     @Throws(IOException::class)
     fun players(map: String): JsonObject? {
-        val response = get("maps/$map/live/players.json", HttpResponse.BodyHandlers.ofString())
+        val response = getText("maps/${checkMapId(map)}/live/players.json")
         if (response.statusCode() != 200) return null
         return JsonParser.parseString(response.body()).asJsonObject
     }
@@ -119,7 +135,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** Any other file the web app serves, such as a marker icon; null if missing. Blocking. */
     @Throws(IOException::class)
     fun file(path: String): ByteArray? {
-        val response = get(path.trimStart('/'), HttpResponse.BodyHandlers.ofByteArray())
+        val response = getBytes(path.trimStart('/'))
         return if (response.statusCode() == 200) response.body() else null
     }
 
@@ -131,8 +147,29 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         client.shutdownNow()
     }
 
+    /** A reply, read whole on the calling thread, but never more than [MAX_BODY] bytes of it. */
+    private class Reply<T>(private val status: Int, private val content: T) {
+        fun statusCode() = status
+        fun body() = content
+    }
+
+    private fun getBytes(path: String): Reply<ByteArray> {
+        val response = get(path, HttpResponse.BodyHandlers.ofInputStream())
+        return Reply(response.statusCode(), readCapped(response.body()))
+    }
+
+    private fun getText(path: String): Reply<String> {
+        val reply = getBytes(path)
+        return Reply(reply.statusCode(), String(reply.body(), Charsets.UTF_8))
+    }
+
     private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
-        val request = HttpRequest.newBuilder(URI.create(base + path))
+        val uri = try {
+            URI.create(base + path)
+        } catch (e: IllegalArgumentException) {
+            throw IOException("not a usable address: $path", e)
+        }
+        val request = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(20))
             .header("User-Agent", "SkysMapExposer (Minecraft mod)")
             .GET()
@@ -151,7 +188,59 @@ class BlueMap(baseUrl: String) : AutoCloseable {
          * `tiles/1/x-1/2/z3.png`. This keeps any one folder on the server small.
          */
         fun tilePath(map: String, lod: Int, tileX: Int, tileZ: Int): String =
-            "maps/$map/tiles/$lod/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.png"
+            "maps/${checkMapId(map)}/tiles/$lod/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.png"
+
+        private const val MAX_BODY = 32 * 1024 * 1024
+        private const val MAX_TILE_SIZE = 4096
+
+        /** The biggest lowres tile image: `(tileSize + 1)` wide and twice as tall. */
+        const val MAX_TILE_IMAGE = (MAX_TILE_SIZE + 1) * 2
+
+        /** The biggest marker icon worth drawing. */
+        const val MAX_ICON = 1024
+        private const val MAX_LOD_FACTOR = 64
+        private const val MAX_LOD_COUNT = 16
+        private const val MAX_MAPS = 64
+        private val MAP_ID = Regex("[A-Za-z0-9_.-]{1,64}")
+
+        /** Whether [id] is safe to use as a BlueMap map id, in a web address and as a folder name. */
+        fun isMapId(id: String): Boolean = MAP_ID.matches(id) && id.any { it != '.' }
+
+        @Throws(IOException::class)
+        fun checkMapId(id: String): String = if (isMapId(id)) id else throw IOException("not a map id: $id")
+
+        private fun readCapped(stream: InputStream): ByteArray = stream.use { input ->
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                out.write(buffer, 0, n)
+                if (out.size() > MAX_BODY) throw IOException("reply too big")
+            }
+            out.toByteArray()
+        }
+
+        /**
+         * Decodes a PNG (or any image ImageIO reads), refusing one wider or taller than
+         * [maxSide] before decoding it, so a small file claiming a huge picture cannot use up memory.
+         */
+        @Throws(IOException::class)
+        fun readImage(bytes: ByteArray, maxSide: Int): BufferedImage {
+            val input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)) ?: throw IOException("not an image")
+            input.use {
+                val reader = ImageIO.getImageReaders(input).asSequence().firstOrNull() ?: throw IOException("not an image")
+                try {
+                    reader.input = input
+                    val width = reader.getWidth(0)
+                    val height = reader.getHeight(0)
+                    if (width !in 1..maxSide || height !in 1..maxSide) throw IOException("image too big: ${width}x$height")
+                    return reader.read(0)
+                } finally {
+                    reader.dispose()
+                }
+            }
+        }
 
         private fun splitDigits(value: Int): String {
             val text = value.toString()

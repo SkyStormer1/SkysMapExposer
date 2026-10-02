@@ -52,6 +52,12 @@ object Config {
      */
     var guessBiomes: Boolean = true
 
+    /**
+     * Whether the world map shows, under Xaero's readout of the block under the mouse, that
+     * block's coordinates in the other dimension (Overworld from the Nether, Nether from the Overworld).
+     */
+    var otherDimensionCoords: Boolean = true
+
     /** Which of those players the minimap shows. */
     var minimapPlayers: MinimapPlayers = MinimapPlayers.FAR_ONLY
 
@@ -188,12 +194,13 @@ object Config {
             json.get("showPlayers")?.let { showPlayers = it.asBoolean }
             json.get("matchWaypointsToDimension")?.let { matchWaypointsToDimension = it.asBoolean }
             json.get("guessBiomes")?.let { guessBiomes = it.asBoolean }
+            json.get("otherDimensionCoords")?.let { otherDimensionCoords = it.asBoolean }
             json.get("barOpen")?.let { barOpen = it.asBoolean }
             json.get("barLeft")?.let { barLeft = it.asInt }
             json.get("barTop")?.let { barTop = it.asInt }
             json.get("barRows")?.let { barRows = it.asInt.coerceIn(1, 40) }
             json.get("minimapBiomes")?.let { minimapBiomes = it.asBoolean }
-            json.get("barScale")?.let { barScale = it.asFloat.coerceIn(1f, 4f) }
+            json.get("barScale")?.let { barScale = it.asFloat.coerceIn(0.5f, 4f) }
             json.get("barExtra")?.let { barExtra = it.asInt.coerceIn(0, 1000) }
             json.get("barUnder")?.let { barUnder = it.asString }
             json.get("panelMaxScale")?.let { panelMaxScale = it.asFloat.coerceIn(1f, 4f) }
@@ -239,6 +246,7 @@ object Config {
         json.addProperty("minimapPlayers", minimapPlayers.name)
         json.addProperty("matchWaypointsToDimension", matchWaypointsToDimension)
         json.addProperty("guessBiomes", guessBiomes)
+        json.addProperty("otherDimensionCoords", otherDimensionCoords)
         json.addProperty("barOpen", barOpen)
         json.addProperty("barLeft", barLeft)
         json.addProperty("barTop", barTop)
@@ -276,8 +284,7 @@ object Config {
         }
         json.add("servers", array)
         try {
-            Files.createDirectories(file.parent)
-            Files.writeString(file, GSON.toJson(json))
+            SafeFiles.writeString(file, GSON.toJson(json))
         } catch (e: Exception) {
             Log.error("Could not write $file", e)
         }
