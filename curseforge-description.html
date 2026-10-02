@@ -1,0 +1,159 @@
+<p>A client-side Fabric mod for Minecraft 26.2 that brings a server's <strong>BlueMap</strong> into <strong>Xaero's World Map</strong> and <strong>Xaero's Minimap</strong>.</p>
+
+<p><img src="https://raw.githubusercontent.com/SkyStormer1/SkysMapExposer/main/docs/world-map.png" alt="Xaero's World Map on its own, with black unexplored areas, next to the same map with Sky's Map Exposer: the gaps filled from BlueMap, a red world border, shop and banner markers, a hover label and a player's head" width="800"></p>
+
+<p><em>An unofficial, fan-made mod. Not made by, endorsed by or affiliated with the BlueMap or Xaero's Minimap / World Map projects.</em></p>
+
+<h2>What it does</h2>
+<ul>
+<li><strong>Fills in your map.</strong> Anywhere your map is blank shows BlueMap's terrain instead, including the gaps inside areas you explored. So does any part you haven't seen for a while (7 days by default) if BlueMap has a newer picture, and anything mapped before a date you choose, for a map left over from a previous season. While BlueMap's detailed pictures download, a blurry one from BlueMap's coarser tiles stands in, with a small spinner, so nothing waits on a blank map.</li>
+<li><strong>Finds biomes.</strong> Search for a biome in the bar on the world map and click it: every place your map recorded it is tinted in its own colour, on the minimap too if you like. Pick several to see them side by side.</li>
+<li><strong>Shows the world border and zones.</strong> BlueMap's outlines are drawn on both maps in their own colours, and update when the server changes them.</li>
+<li><strong>Shows BlueMap's markers.</strong> Shops, banners and the like appear as icons on the world map and minimap only, never floating in the world. Hover one for its name. Right-click it on the world map and choose <strong>Save as waypoint</strong> to turn it into an ordinary, permanent Xaero waypoint, or <strong>Set temporary waypoint</strong> for one that goes when you leave. With <a href="https://github.com/SkyStormer1/SkysMapShapes">Sky's Map Shapes</a> installed, <strong>Add shape here</strong> draws a shape centred on it. The <strong>Markers</strong> switch in the bar on the world map hides or shows them all in one click.</li>
+<li><strong>Shows other players</strong> on the world map and minimap of the dimension they are in, with their face. BlueMap knows where everyone is, so they stay on your minimap after they walk out of your render distance and Xaero's own radar loses them.</li>
+<li><strong>Locks on to a player.</strong> Right-click someone and choose <strong>Lock on</strong>: their pin follows them wherever they go, and their head floats over them in the world like a waypoint, until you unlock them. The head hides itself the moment you can actually see the player.</li>
+<li><strong>Lists everyone online.</strong> <strong>List</strong> in the bar on the world map opens a screen with search, distance and coordinates, a <strong>Go to</strong> that jumps the map to anyone, and <strong>Lock</strong>.</li>
+<li><strong>Copies coordinates.</strong> Right-click anywhere on the world map, or any marker or player, and choose <strong>Copy coordinates</strong>. The dimension comes with them.</li>
+<li><strong>Keeps up live.</strong> Terrain on screen is re-checked every minute, markers every 30 seconds, players every 2 seconds.</li>
+<li><strong>Downloads BlueMap into your own map, if you ask it to.</strong> Write BlueMap's terrain into Xaero's map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See "Downloading into your own map" below.</li>
+</ul>
+<p>Until you download, your own map is never changed. Remove the mod and Xaero's map is exactly as it was, and wherever you go, Xaero maps the area again and your own map takes over from BlueMap.</p>
+
+<h2>Installing</h2>
+<p>You need:</p>
+<ul>
+<li>Minecraft <strong>26.2</strong> with <strong>Fabric Loader</strong> 0.19.3 or newer</li>
+<li><strong>Fabric API</strong> and <strong>Fabric Language Kotlin</strong></li>
+<li><strong>Xaero's World Map</strong> 1.44 or newer</li>
+<li>Recommended: <strong>Xaero's Minimap</strong> (for the minimap and for saving waypoints) and <strong>Mod Menu</strong> (for the settings screen)</li>
+</ul>
+<p>Then download the file and put it in your <code>mods</code> folder with the others.</p>
+
+<h2>Setting up a server</h2>
+<p>The mod does nothing until you tell it where a server's BlueMap is. You do this once per server.</p>
+<ol>
+<li><strong>Find the server's BlueMap.</strong> It is a website, usually linked from the server's Discord or website, and often at the server's address on port 8100. Open it in your browser and copy the address from the address bar, for example <code>https://map.example.com/</code>.</li>
+<li><strong>Join the server</strong>, then open the settings: press Esc, click <strong>Mods</strong>, find <strong>Sky's Map Exposer</strong> and click the cog.</li>
+<li>The screen opens on the server you are on, with <strong>Server address</strong> already filled in. Paste the address from step 1 into <strong>BlueMap address</strong>.</li>
+<li>Press <strong>Find maps</strong>. The line above the buttons lists the maps that BlueMap has, and the overworld is filled in for you. Type the right map names into <strong>Nether map</strong> and <strong>End map</strong> if you want them. Leave a box blank to not use BlueMap there.</li>
+<li>Press <strong>Done</strong>. Open the world map (M). Unexplored areas now show BlueMap's terrain.</li>
+</ol>
+
+<p><img src="https://raw.githubusercontent.com/SkyStormer1/SkysMapExposer/main/docs/settings.png" alt="The Sky's Map Exposer settings screen, filled in for play.example.com"></p>
+
+<h3>The settings</h3>
+<p>Hover over any setting in the game for an explanation.</p>
+<table>
+<thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Terrain / Markers / Borders / Players</strong></td><td>Switch each part on or off, for every server.</td></tr>
+<tr><td><strong>Minimap players</strong></td><td>Which players the minimap shows: none, only the ones out of your render distance (so Xaero's radar handles the rest and nobody is drawn twice), or all of them.</td></tr>
+<tr><td><strong>Players…</strong></td><td>Opens the player list.</td></tr>
+<tr><td><strong>Replace after … days</strong></td><td>How old your own map must be before BlueMap's newer picture replaces it.</td></tr>
+<tr><td><strong>Markers within … chunks</strong></td><td>How far away BlueMap markers show on the minimap.</td></tr>
+<tr><td><strong>Map icons / Heads / Minimap</strong></td><td>How big markers and players' heads are drawn. <strong>Heads</strong> covers the world map, the minimap and locked players' heads in the world.</td></tr>
+<tr><td><strong>Server</strong></td><td>Which server you are editing. Click through to switch, or to add one.</td></tr>
+<tr><td><strong>Server address</strong></td><td>Every name you join this server by, separated by commas, e.g. <code>play.example.com, 203.0.113.7</code>.</td></tr>
+<tr><td><strong>BlueMap address</strong></td><td>The web page of the server's BlueMap.</td></tr>
+<tr><td><strong>Overworld / Nether / End map</strong></td><td>Which BlueMap map to use for each dimension. The <strong>ON/OFF</strong> button beside it switches that dimension's <em>terrain</em>. Borders, markers and players still show with terrain off.</td></tr>
+<tr><td><strong>Cover map before</strong></td><td>Your overworld map from before this date and time (<code>yyyy-MM-dd HH:mm</code>) is covered by BlueMap however recent it is. Useful when a new season starts on a new world. <strong>Now</strong> fills in the current time. Leave blank for never.</td></tr>
+<tr><td><strong>Find maps</strong></td><td>Asks the BlueMap which maps it has.</td></tr>
+<tr><td><strong>Download…</strong></td><td>Downloads BlueMap into your own map; see below. While a download runs, this button stops it.</td></tr>
+<tr><td><strong>Remove server</strong></td><td>Forgets the server shown.</td></tr>
+</tbody>
+</table>
+<p><strong>The nether:</strong> many servers render their nether BlueMap from above the roof, which looks nothing like Xaero's nether map. So nether terrain starts <strong>OFF</strong>. Its world border, markers and players still show. Switch it on if your server's nether map shows the inside.</p>
+
+<h2>The bar on the world map</h2>
+<p>A small see-through panel on the world map holds the mod's switches and the biome finder.</p>
+<ul>
+<li><strong>Terrain / Markers / Borders / Players</strong> switch each part on or off, as the settings do. <strong>Minimap</strong> (only with Xaero's Minimap) chooses whether picked biomes are tinted there too. <strong>List</strong> opens the player list, and <strong>Set</strong> the settings.</li>
+<li><strong>The biome finder</strong> lists the biomes of the dimension the map is showing. Type to search and click a biome to tint it; click again to stop, or <strong>Clear</strong> to stop them all. The tint shows wherever Xaero recorded that biome, so it covers the parts of the map Xaero has, not BlueMap's terrain.</li>
+<li><strong>Moving and folding:</strong> drag the title to move the bar, click it to fold the bar down to its title.</li>
+<li><strong>Sizing:</strong> drag the bottom edge for more or fewer lines, the right edge to widen it, and the bottom-right corner to make everything bigger (only when you drag right and down together). The list scrolls with the mouse wheel, or drag its scroll bar.</li>
+<li><strong>Docking:</strong> with <a href="https://github.com/SkyStormer1/SkysStructureMap">Sky's Structure Map</a> installed, drag one panel's title up under the other's bottom edge and it docks there: the two move as one, share a width and a size, and the lower one comes off again when dragged away. Neither mod needs the other.</li>
+</ul>
+<p>Nothing is ever pushed off screen, and everything is remembered. <code>panelMaxScale</code> in <code>config/skysmapexposer.json</code> sets how big the corner may make it (2 by default).</p>
+
+<h2>Markers on the minimap</h2>
+<p>The minimap only shows BlueMap markers near you, so a busy server doesn't crowd its edge. The world map always shows every marker.</p>
+<p><img src="https://raw.githubusercontent.com/SkyStormer1/SkysMapExposer/main/docs/minimap-edge.png" alt="A minimap crowded with every marker at full size, next to one showing only nearby markers, smaller the further away they are"></p>
+
+<h2>Saving a marker as a waypoint</h2>
+<p>On the world map, hover over a BlueMap marker to see its name, right-click it, and choose <strong>Save as waypoint</strong>. It becomes a normal Xaero waypoint in your current waypoint set, with its name, initials and colour, and stays even if the marker is later removed from BlueMap. Waypoints are saved to the dimension you are standing in, so the world map must be showing that dimension.</p>
+<p><strong>Set temporary waypoint</strong> puts one of Xaero's own temporary waypoints on the marker instead, the same as Xaero's "Set Temporary Waypoint": handy for walking to a shop, and gone when you leave.</p>
+
+<h2>Players</h2>
+<p>Everyone BlueMap can see shows up as their face, on the world map and on the minimap of the dimension they are in. The minimap keeps them after they leave your render distance, which is the point: zoomed out, you can watch someone cross the map.</p>
+<p>By default the minimap only draws the players your game has <em>not</em> loaded, because Xaero's own radar already draws the near ones and you would otherwise see two heads for the same person. If you have that radar switched off, set <strong>Minimap players</strong> to <strong>All players</strong>.</p>
+
+<h3>Locking on</h3>
+<p>Right-click a player on the world map and choose <strong>Lock on</strong>. From then on:</p>
+<ul>
+<li>their pin keeps following them on both maps, and is pinned to the edge of the minimap when they are off it, the way a waypoint is;</li>
+<li>their head floats over them in the world, with their name and how far away they are, whenever you look their way;</li>
+<li>that head disappears as soon as you can genuinely see the player: loaded, visible and with nothing between you. Behind a hill, through a wall, or far out of render distance, it stays.</li>
+</ul>
+<p>Locks are remembered per server, so they survive relogging. Right-click them again to unlock, or use <strong>Unlock all</strong> in the player list.</p>
+
+<h3>The player list</h3>
+<p>Open it with <strong>List</strong> in the bar on the world map, from the map's right-click menu, from the <strong>Players…</strong> button in the settings, or with <code>/mapexposer players</code>. Search by name, switch between your dimension and all of them, and for anyone: <strong>Go to</strong> (jumps the world map to them) and <strong>Lock</strong> / <strong>Unlock</strong>. Locked players sort to the top, then the nearest.</p>
+<p><strong>Go to</strong> works across dimensions: for someone in the Nether while your map is showing the Overworld, the map switches to the Nether to show them, and switches back to what it was on as soon as you leave the map.</p>
+
+<h2>Looking at another dimension</h2>
+<p>Under the coordinates of the block under your mouse, the world map also shows the same spot in the other dimension: the Overworld's coordinates while you look at the Nether, and the Nether's while you look at the Overworld. <strong>Other dimension XZ</strong> in the settings switches it off.</p>
+<p>The world map can be switched to a dimension you are not standing in. Xaero draws your own arrow, your own waypoints and the entities around you there anyway, converted into that dimension's coordinates, which is useful for lining a Nether tunnel up with the Overworld, and confusing the rest of the time, because none of it is where it appears to be. While the map is showing somewhere you are not, this mod:</p>
+<ul>
+<li>hides your player arrow and the entity radar, leaving your own dimension's map untouched;</li>
+<li>starts you at 0, 0 rather than eight times further out on chunks nobody has mapped;</li>
+<li>switches on Xaero's own "only display current map waypoints" the first time you join a world, so the waypoints change with the dimension. It is only ever turned on, never off: undo it from the toggle in the world map's waypoint menu, or set <code>matchWaypointsToDimension</code> to <code>false</code> in <code>config/skysmapexposer.json</code> to stop the mod touching it.</li>
+</ul>
+
+<h2>Downloading into your own map</h2>
+<p>Everything above only draws BlueMap over Xaero's map. A download goes further and writes BlueMap's terrain into Xaero's own map files, so it becomes part of your map.</p>
+<p><strong>Starting one</strong>, for the dimension the world map is showing:</p>
+<ul>
+<li><strong>A selection:</strong> on the world map, hold the right mouse button and drag over the chunks you want, then choose <strong>Download</strong> from the menu. A single right-click picks the chunk under the mouse.</li>
+<li><strong>Everything:</strong> the <strong>Download…</strong> button in the settings, then <strong>Unexplored only</strong> (fills in chunks you have never mapped and leaves everything you explored as it is) or <strong>Everything</strong> (also updates what you mapped wherever BlueMap shows something different).</li>
+<li>Or type <code>/mapexposer download all</code>, <code>/mapexposer download unexplored</code>, or <code>/mapexposer download cancel</code>.</li>
+</ul>
+<p>You can close the map and keep playing while it runs; its progress shows at the top of the world map and in the action bar. A whole server takes a few minutes.</p>
+<p><strong>What gets written.</strong> BlueMap publishes a finished picture, but Xaero stores a block, a height and a biome for every spot and draws the picture itself. So each spot gets the block Xaero draws closest to BlueMap's colour, BlueMap's height, and water as deep as BlueMap's colour suggests. The biome is the one your map recorded, or else a guess from the colours around it (right about three times in four in the overworld; set <code>guessBiomes</code> to <code>false</code> in <code>config/skysmapexposer.json</code> for a plain placeholder). It looks like BlueMap, but the blocks are stand-ins: hovering a spot on the map may name a block that is not really there. Where BlueMap has nothing, nothing is written, and anything of yours that already looks like BlueMap is left exactly as it was.</p>
+<p><strong>Backups.</strong> Each region of your map is copied just before a download first changes it, into <code>skysmapexposer/&lt;server&gt;/backups/</code> in your game folder, one folder per download. To undo:</p>
+<ul>
+<li><code>/mapexposer backups</code> lists them, newest first;</li>
+<li><code>/mapexposer restore &lt;name&gt;</code> puts one back, with the world map showing the same dimension;</li>
+<li><code>/mapexposer backup</code> copies the whole dimension's map at any time, to go back to later.</li>
+</ul>
+
+<h2>Copying coordinates</h2>
+<p>Right-click anywhere on the world map for <strong>Copy coordinates</strong>, which puts <code>-350 200 (Overworld)</code> on your clipboard. On a marker or a player you get their height too, as <code>-350 72 200 (Overworld)</code>. The numbers come first, the way <code>/tp</code> and most chat messages want them, with the dimension after: the map can be switched between dimensions, so coordinates without it can mean the wrong place.</p>
+
+<h2>How "old" is decided</h2>
+<ul>
+<li><strong>Your map:</strong> from the moment the mod is installed, it records when each chunk was last loaded, which is when Xaero last redrew it. For areas mapped before that, the date of Xaero's own save file for that area is used.</li>
+<li><strong>BlueMap's map:</strong> BlueMap does not say when it drew each part, so the mod dates each part by the first time it saw the current picture.</li>
+</ul>
+
+<h2>Privacy</h2>
+<p>Everything stays on your computer. The mod only downloads from the BlueMap address you enter, and sends nothing to the Minecraft server or anywhere else. Its data is kept in <code>skysmapexposer/</code> in your game folder, and its settings in <code>config/skysmapexposer.json</code>.</p>
+
+<h2>Limits</h2>
+<ul>
+<li>Surface only: in Xaero's cave mode only borders and markers are drawn, not terrain, and a download writes only the surface.</li>
+<li>Biomes are only guessed in the overworld; downloads into the nether and the end use one biome each.</li>
+<li>Gaps inside explored areas are found by asking Xaero, which only knows while that area is loaded on its map, which it always is around you and when you zoom in. Once seen, a gap is remembered, including after you rejoin.</li>
+<li>Typing <code>/mapexposer</code> shows a status line if something is not drawing. It stays on your computer and is never sent to the server.</li>
+</ul>
+
+<h2>Originality</h2>
+<p>Written from scratch; no code was copied from any other project.</p>
+<ul>
+<li><a href="https://github.com/thebuildcraft/MapLink">MapLink</a> (GPL-3.0) does similar things. It was looked at only to see what it does, not how.</li>
+<li>BlueMap (MIT) is used only as a website: its tile, marker and player files were checked against a live server.</li>
+<li>Xaero's World Map and Minimap are closed source. They are compiled against, never bundled. Their class, method and field names, and the layout of their map files, were read to place the mixins, use their element and waypoint systems, and write downloads through Xaero's own map code. None of their code was copied.</li>
+</ul>
+<p>The pictures of the maps are illustrations drawn for this page; the settings screen is a real screenshot.</p>
+
+<h2>Source and licence</h2>
+<p>Source code, issues and the latest builds: <a href="https://github.com/SkyStormer1/SkysMapExposer">github.com/SkyStormer1/SkysMapExposer</a>. MIT © 2026 SkyStormer1.</p>
