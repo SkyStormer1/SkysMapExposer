@@ -274,6 +274,9 @@ your game folder, and its settings in `config/skysmapexposer.json`.
   download writes only the surface.
 - Biomes are only guessed in the overworld; downloads into the nether and the end use one biome
   each.
+- Biome guessing can be inaccurate, mainly in areas that are similar like old birch and birch biomes,
+  but as you explore, it will be corrected. At the time of writing, it has a general accuracy of 74%-85%
+  off of a blank downloaded map.
 - Gaps inside explored areas are found by asking Xaero, which only knows while that area is
   loaded on its map, which it always is around you and when you zoom in. Once seen, a gap is
   remembered, including after you rejoin.
