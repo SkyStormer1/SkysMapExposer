@@ -23,6 +23,8 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
 
 ![Xaero's World Map on its own, with black unexplored areas, next to the same map with Sky's Map Exposer: the gaps filled from BlueMap, a red world border, shop and banner markers, a hover label and a player's head](docs/world-map.png)
 
+<sub>An unofficial, fan-made mod. Not made by, endorsed by or affiliated with the BlueMap or Xaero's Minimap / World Map projects.</sub>
+
 ## What it does
 
 - **Fills in your map.** Anywhere your map is blank shows BlueMap's terrain instead, including the
