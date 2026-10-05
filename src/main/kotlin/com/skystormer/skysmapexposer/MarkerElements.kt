@@ -8,6 +8,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
+import net.minecraft.util.Util
 import org.joml.Matrix4f
 import xaero.lib.client.graphics.XaeroBufferProvider
 import xaero.lib.client.gui.widget.Tooltip
@@ -23,6 +24,7 @@ import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRenderer
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider
 import xaero.map.gui.IRightClickableElement
 import xaero.map.gui.dropdown.rightclick.RightClickOption
+import java.awt.Color
 import kotlin.math.floor
 
 /**
@@ -215,6 +217,8 @@ object MarkerElements {
             pose.scale(scale, scale, 1f)
             val half = halfOf(pin)
             val icon = iconFor(pin)
+            // Drawn first and a little bigger than the face, which is batched and lands on top.
+            if (pin is Markers.Player && pin.uuid == MapView.highlighted) rainbowOutline(graphics, half)
             val renderer = context.iconRenderer
             if (icon != null && renderer != null) {
                 PinDrawing.quad(renderer.begin(icon.view), pose.last().pose(), icon, sizeOf(pin))
@@ -230,6 +234,37 @@ object MarkerElements {
             }
             pose.popPose()
             return true
+        }
+    }
+
+    /**
+     * A ring [OUTLINE] wide around a square of half-size [half], in small pieces whose colours run
+     * through the rainbow around it and drift with time, so the ring looks like it is flowing.
+     */
+    private fun rainbowOutline(graphics: MapElementGraphics, half: Int) {
+        val outer = half + OUTLINE
+        val side = outer * 2
+        val pieces = maxOf(4, side / 2)
+        val shift = (Util.getMillis() % WAVE_MILLIS) / WAVE_MILLIS.toFloat()
+        // A thin dark edge round the ring, so it reads over light and dark map alike. Only round
+        // the face, never across it: Xaero may flush these after the face is drawn.
+        graphics.fill(-outer - 1, -outer - 1, outer + 1, -half, OUTLINE_EDGE)
+        graphics.fill(-outer - 1, half, outer + 1, outer + 1, OUTLINE_EDGE)
+        graphics.fill(-outer - 1, -half, -half, half, OUTLINE_EDGE)
+        graphics.fill(half, -half, outer + 1, half, OUTLINE_EDGE)
+        // Clockwise from the top-left corner. Each side carries on a quarter of the way round the
+        // colour wheel from where the last one ended, so the hues flow unbroken round the ring.
+        for (i in 0 until pieces) {
+            val start = -outer + side * i / pieces
+            val end = -outer + side * (i + 1) / pieces
+            fun hue(sideIndex: Int): Int {
+                val around = (sideIndex + i / pieces.toFloat()) / 4f
+                return Color.HSBtoRGB((around - shift + 1f) % 1f, OUTLINE_SATURATION, 1f)
+            }
+            graphics.fill(start, -outer, end, -outer + OUTLINE, hue(0))
+            graphics.fill(outer - OUTLINE, start, outer, end, hue(1))
+            graphics.fill(-end, outer - OUTLINE, -start, outer, hue(2))
+            graphics.fill(-outer, -end, -outer + OUTLINE, -start, hue(3))
         }
     }
 
@@ -277,6 +312,11 @@ object MarkerElements {
     fun halfOf(pin: Markers.Pin): Int = (sizeOf(pin) / 2).toInt().coerceAtLeast(2)
 
     const val HALF = 6
+    private const val OUTLINE = 2
+    private const val OUTLINE_EDGE = 0xFF000000.toInt()
+    private const val OUTLINE_SATURATION = 0.8f
+    /** How long the rainbow takes to go once round the outline. */
+    private const val WAVE_MILLIS = 1500L
     private const val TITLE_BACKGROUND = 0xFF2A4A6A.toInt()
 }
 

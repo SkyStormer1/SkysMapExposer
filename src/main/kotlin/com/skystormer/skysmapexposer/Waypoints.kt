@@ -3,9 +3,11 @@ package com.skystormer.skysmapexposer
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
+import net.minecraft.world.level.Level
 import xaero.common.minimap.waypoints.Waypoint
 import xaero.hud.minimap.BuiltInHudModules
 import xaero.hud.minimap.waypoint.WaypointColor
+import xaero.map.mods.SupportMods
 import kotlin.math.floor
 
 /**
@@ -50,6 +52,66 @@ object Waypoints {
         val world = session.worldManager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
         session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt())
         return "Temporary waypoint set on ${pin.label}"
+    }
+
+    /** "Nether" for the Overworld and "Overworld" for the Nether: the dimensions with a counterpart. */
+    fun counterpartName(dimension: String?): String? = when (dimension) {
+        Config.OVERWORLD -> "Nether"
+        Config.NETHER -> "Overworld"
+        else -> null
+    }
+
+    /** Block ([x], [z]) of [dimension] in the other one, written as the waypoint will have it. */
+    private fun counterpartCoordinates(x: Int, z: Int, dimension: String): String =
+        if (dimension == Config.OVERWORLD) "${Math.floorDiv(x, NETHER_SCALE)}, $NETHER_Y, ${Math.floorDiv(z, NETHER_SCALE)}"
+        else "${x * NETHER_SCALE}, ${z * NETHER_SCALE}"
+
+    /** What [setCounterpart] would do for this block, for the menu's tooltip. */
+    fun counterpartTip(x: Int, z: Int, dimension: String): String =
+        if (dimension == Config.OVERWORLD) "At ${counterpartCoordinates(x, z, dimension)}, on the Nether roof. It shows when you are in the Nether."
+        else "At ${counterpartCoordinates(x, z, dimension)}, height unknown. It shows when you are in the Overworld."
+
+    /**
+     * A temporary waypoint at the other dimension's counterpart of block ([x], [z]) of [dimension]:
+     * an eighth as far out in the Nether, eight times in the Overworld. It goes in that dimension's
+     * own waypoints, so it is there when you arrive, wherever you are when you set it.
+     *
+     * In the Nether it is put at Y [NETHER_Y], on top of the bedrock roof, where Nether highways
+     * usually run. The Overworld has no such height, so there Y is left out and Xaero shows it as
+     * unknown.
+     */
+    fun setCounterpart(x: Int, z: Int, dimension: String) {
+        say(
+            try {
+                counterpart(x, z, dimension)
+            } catch (e: Throwable) {
+                Log.error("Could not set a temporary waypoint in the other dimension", e)
+                "Could not set the waypoint: ${e.message ?: e.javaClass.simpleName}"
+            }
+        )
+    }
+
+    private fun counterpart(x: Int, z: Int, dimension: String): String {
+        if (!available()) return "Temporary waypoints need Xaero's Minimap"
+        val toNether = dimension == Config.OVERWORLD
+        val target = if (toNether) Level.NETHER else Level.OVERWORLD
+        val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
+        val manager = session.worldManager
+        val current = manager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
+        val world = if (current.dimId == target) current else {
+            // Where Xaero keeps that dimension's waypoints on this server, found the way its world
+            // map finds them: the dimension's folder under the same root as the world you are in.
+            val path = current.container.root.path.resolve(session.dimensionHelper.getDimensionDirectoryName(target))
+            val container = manager.getWorldContainerNullable(path)
+            container?.getFirstWorldConnectedTo(current) ?: container?.firstWorld ?: manager.getWorld(path.resolve("waypoints"))
+        } ?: return "Xaero's Minimap has no waypoints for the ${counterpartName(dimension)} yet"
+        // Xaero converts from the scale it is given to the world's own, so the coordinates go in as
+        // they are in the dimension clicked, with that dimension's scale.
+        val scale = if (toNether) 1.0 else NETHER_SCALE.toDouble()
+        val y = if (toNether) NETHER_Y else 0
+        session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, x, y, z, toNether, scale)
+        SupportMods.xaeroMinimap?.requestWaypointsRefresh()
+        return "Temporary waypoint set in the ${counterpartName(dimension)} at ${counterpartCoordinates(x, z, dimension)}"
     }
 
     /** Why a waypoint cannot go on a pin of the map's dimension from here, or null when it can. */
@@ -113,4 +175,10 @@ object Waypoints {
             else -> WaypointColor.AQUA
         }
     }
+
+    /** Height of a waypoint put in the Nether from the Overworld. */
+    private const val NETHER_Y = 128
+
+    /** Overworld blocks to one Nether block. */
+    private const val NETHER_SCALE = 8
 }

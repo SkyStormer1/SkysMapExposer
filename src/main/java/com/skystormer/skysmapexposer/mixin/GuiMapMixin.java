@@ -79,6 +79,7 @@ public abstract class GuiMapMixin implements MapCamera {
     @Shadow private SlowingAnimation cameraDestinationAnimZ;
     @Shadow private boolean shouldResetCameraPos;
     @Shadow private static boolean attachedCamera;
+    @Shadow private static double destScale;
 
     /**
      * Moves the camera the way Xaero's own "hop to coordinates" does: detached from the player
@@ -112,6 +113,15 @@ public abstract class GuiMapMixin implements MapCamera {
         cameraDestination = null;
         cameraDestinationAnimX = null;
         cameraDestinationAnimZ = null;
+    }
+
+    /**
+     * Xaero eases its zoom toward {@code destScale} every frame, and clamps it to its own limits, so
+     * setting that is the same smooth zoom the mouse wheel gives.
+     */
+    @Override
+    public void skysmapexposerZoomIn(double scale) {
+        if (destScale < scale) destScale = scale;
     }
 
     /**

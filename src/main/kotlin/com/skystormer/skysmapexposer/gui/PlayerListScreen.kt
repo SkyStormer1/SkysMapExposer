@@ -213,9 +213,10 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
             val go = Button.builder(Component.literal("Go to")) { goTo(entry) }
                 .bounds(x, y, buttonWidth, ROW)
                 .tooltip(Tooltip.create(Component.literal(
-                    if (entry.dimension == mapDimension) "Show ${player.label} on the world map."
-                    else "Switch the world map to the ${dimensionName(entry.dimension)} and show " +
-                        "${player.label}. It switches back when you leave the map."
+                    (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
+                    else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
+                        "${player.label}. It switches back when you leave the map.") +
+                        " Their head gets a rainbow outline until you leave the map."
                 )))
                 .build()
             row(go)
@@ -267,7 +268,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     private fun goTo(entry: Row) {
         val x = floor(entry.player.x).toInt()
         val z = floor(entry.player.z).toInt()
-        if (MapView.goTo(entry.dimension, x, z, parent)) {
+        if (MapView.goTo(entry.dimension, x, z, parent, entry.player.uuid)) {
             // Only step back to a map that was already open. When it was not, MapView has just
             // opened one, and closing this list would put whatever was behind it back on top.
             if (parent is MapCamera) onClose()

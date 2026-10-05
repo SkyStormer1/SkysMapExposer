@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.core.registries.Registries
@@ -7,6 +8,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import xaero.map.WorldMapSession
+import java.util.UUID
 
 /**
  * Sending Xaero's world map to someone in another dimension, and putting it back afterwards.
@@ -41,6 +43,16 @@ object MapView {
      * after Xaero's shift and stays.
      */
     private const val SETTLE = 10
+
+    /** How far "Go to" zooms in: close enough to pick one player out of a crowd. A closer zoom is kept. */
+    const val GO_TO_ZOOM = 3.0
+
+    /**
+     * The player the last "Go to" was for. Their head on the world map gets a moving rainbow
+     * outline until you leave the map, so they stand out from everyone around them.
+     */
+    var highlighted: UUID? = null
+        private set
 
     /**
      * Where to send the camera once the map is showing [dimension]. [toPlayer] means "back onto
@@ -92,7 +104,8 @@ object MapView {
      * if it is showing another one. [screen] is the screen the request came from, so that an open
      * map is moved rather than a second one opened. Returns whether anything could be done.
      */
-    fun goTo(dimension: String, x: Int, z: Int, screen: Screen?): Boolean {
+    fun goTo(dimension: String, x: Int, z: Int, screen: Screen?, player: UUID? = null): Boolean {
+        highlighted = player
         if (dimension == MarkerElements.worldMapDimension()) {
             move = null
             return MapMenus.goTo(screen, x, z)
@@ -111,6 +124,12 @@ object MapView {
         watchDimension(minecraft)
         finishMove(minecraft)
         restoreIfLeft(minecraft)
+        clearHighlightIfLeft(minecraft)
+    }
+
+    /** The outline is for this look at the map, so it goes once you leave it. */
+    private fun clearHighlightIfLeft(minecraft: Minecraft) {
+        if (highlighted != null && move == null && !stillOnTheMap(minecraft.gui.screen())) highlighted = null
     }
 
     /**
@@ -192,6 +211,7 @@ object MapView {
     /** Nothing survives leaving the server: the next one has its own map and dimensions. */
     fun forget() {
         move = null
+        highlighted = null
         restoreTo = null
         owesRestore = false
         lastViewed = null
@@ -212,6 +232,7 @@ object MapView {
         // of blocks between two dimensions' coordinates it crawls. Repeated for [SETTLE] ticks so
         // that it outlives Xaero's own shift on the frame the dimension scale changes.
         if (wanted.toPlayer) screen.skysmapexposerFollowPlayer() else screen.skysmapexposerJumpTo(wanted.x, wanted.z)
+        if (wanted.fromGoTo) screen.skysmapexposerZoomIn(GO_TO_ZOOM)
         if (++wanted.applied >= SETTLE) move = null
     }
 
@@ -222,8 +243,7 @@ object MapView {
      */
     private fun restoreIfLeft(minecraft: Minecraft) {
         if (!owesRestore || move != null) return
-        val screen = minecraft.gui.screen()
-        if (onTheMap(screen) || screen is com.skystormer.skysmapexposer.gui.PlayerListScreen) return
+        if (stillOnTheMap(minecraft.gui.screen())) return
         owesRestore = false
         val back = restoreTo
         restoreTo = null
@@ -271,6 +291,9 @@ object MapView {
      */
     private fun onTheMap(screen: Screen?): Boolean =
         screen is MapCamera || screen?.javaClass?.name == "xaero.map.gui.GuiMap"
+
+    /** On the map, or in the player list, which closes the map for a moment and counts as on it. */
+    private fun stillOnTheMap(screen: Screen?): Boolean = onTheMap(screen) || screen is PlayerListScreen
 
     private fun keyOf(dimension: String): ResourceKey<Level>? = try {
         ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension))

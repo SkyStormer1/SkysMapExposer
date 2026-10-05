@@ -19,4 +19,7 @@ interface MapCamera {
      * the camera was following you rather than detaching it.
      */
     fun skysmapexposerFollowPlayer()
+
+    /** Zooms the map in until it is at least [scale] (Xaero's zoom, 1 = one pixel per block), never out. */
+    fun skysmapexposerZoomIn(scale: Double)
 }

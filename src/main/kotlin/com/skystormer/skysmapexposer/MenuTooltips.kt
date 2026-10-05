@@ -1,8 +1,8 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.gui.DockPanel
 import com.skystormer.skysmapexposer.mixin.menu.DropDownWidgetAccess
 import com.skystormer.skysmapexposer.mixin.menu.RightClickMenuAccess
-import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -43,7 +43,8 @@ object MenuTooltips {
             val id = sums.`skysmapexposer$hoveredId`(mouseX, mouseY, sums.`skysmapexposer$scrolling`(limit), limit)
             if (id < 0) return
             val option = (widget as RightClickMenuAccess).`skysmapexposer$options`().getOrNull(id) as? Option ?: return
-            graphics.setComponentTooltipForNextFrame(Minecraft.getInstance().font, option.tooltip, mouseX, mouseY)
+            // Wrapped and kept on screen, which vanilla's tooltip is not at a big GUI scale.
+            DockPanel.tooltip(graphics, option.tooltip.joinToString("\n") { it.string }, mouseX, mouseY)
         } catch (e: Throwable) {
             broken = true
             Log.warn("Could not show tooltips on Xaero's right-click menu: {}", e.toString())

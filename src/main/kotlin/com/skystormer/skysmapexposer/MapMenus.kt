@@ -37,12 +37,36 @@ object MapMenus {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
             options.add(option("Copy coordinates", options.size, target) { copy(x, null, z, where) })
+            if (where != null) addCounterpartOption(options, target, x, z, where)
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
                 options.add(option("Players…", options.size, target) { parent -> open(PlayerListScreen(parent)) })
                 if (selection != null) options.add(downloadOption(options.size, target, selection))
             }
         }
+    }
+
+    /**
+     * A temporary waypoint at this block's counterpart in the other dimension, for the Overworld
+     * and the Nether. Xaero's menu is 150 wide at every GUI scale and cuts off anything longer, so
+     * the name is short and the tooltip says the rest.
+     */
+    private fun addCounterpartOption(
+        options: ArrayList<RightClickOption>,
+        target: IRightClickableElement,
+        x: Int,
+        z: Int,
+        dimension: String,
+    ) {
+        val other = Waypoints.counterpartName(dimension) ?: return
+        val tooltip = listOf(
+            Component.literal("Temporary waypoint in the $other"),
+            Component.literal("§7" + Waypoints.counterpartTip(x, z, dimension)),
+        )
+        options.add(
+            MenuTooltips.Option("$other temp waypoint", options.size, target, tooltip) { Waypoints.setCounterpart(x, z, dimension) }
+                .also { it.setActive(Waypoints.available()) }
+        )
     }
 
     /**
@@ -106,6 +130,7 @@ object MapMenus {
     fun goTo(screen: Screen?, x: Int, z: Int): Boolean {
         if (screen is MapCamera) {
             screen.skysmapexposerCentreOn(x, z)
+            screen.skysmapexposerZoomIn(MapView.GO_TO_ZOOM)
             return true
         }
         return try {
@@ -119,6 +144,7 @@ object MapMenus {
                 return false
             }
             camera.skysmapexposerCentreOn(x, z)
+            camera.skysmapexposerZoomIn(MapView.GO_TO_ZOOM)
             open(map)
             true
         } catch (e: Throwable) {
