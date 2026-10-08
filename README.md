@@ -58,6 +58,12 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
 - **Downloads BlueMap into your own map, if you ask it to.** Write BlueMap's terrain into Xaero's
   map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See
   [Downloading into your own map](#downloading-into-your-own-map).
+- **Shares your map with friends.** Send another player who has the mod the biomes of part of your
+  map or some of your waypoints by private message, or save a piece of your map to a file they drop
+  onto their game. See [Sharing with other players](#sharing-with-other-players).
+- **Clears out old map.** Take your map from a previous season, or everything past the world
+  border, off your map in one go, with a backup to undo it. See
+  [Seasons and clearing your map](#seasons-and-clearing-your-map).
 
 Until you download, your own map is never changed. Remove the mod and Xaero's map is exactly as it
 was, and wherever you go, Xaero maps the area again and your own map takes over from BlueMap.
@@ -113,6 +119,7 @@ Hover over any setting in the game for an explanation.
 | **Find maps** | Asks the BlueMap which maps it has. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
+| **Experimental** tab | Settings that may get you warned on some servers, all off as the mod comes. **Share through spam warnings**: sharing in chat normally stops at the first spam warning from the server; with this on it waits, slows down and only stops at a second. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
 like Xaero's nether map. So nether terrain starts **OFF**. Its world border, markers and players
@@ -134,10 +141,6 @@ A small see-through panel on the world map holds the mod's switches and the biom
 - **Sizing:** drag the bottom edge for more or fewer lines, the right edge to widen it, and the
   bottom-right corner to make everything bigger (only when you drag right and down together).
   The list scrolls with the mouse wheel, or drag its scroll bar.
-- **Docking:** with [Sky's Structure Map](https://github.com/SkyStormer1/SkysStructureMap)
-  installed, drag one panel's title up under the other's bottom edge and it docks there: the two
-  move as one, share a width and a size, and the lower one comes off again when dragged away.
-  Neither mod needs the other.
 
 Nothing is ever pushed off screen, and everything is remembered. `panelMaxScale` in
 `config/skysmapexposer.json` sets how big the corner may make it (2 by default).
@@ -244,8 +247,60 @@ anything of yours that already looks like BlueMap is left exactly as it was.
 `skysmapexposer/<server>/backups/` in your game folder, one folder per download. To undo:
 
 - `/mapexposer backups` lists them, newest first;
-- `/mapexposer restore <name>` puts one back, with the world map showing the same dimension;
+- `/mapexposer restore <name>` puts one back, with the world map showing the same dimension.
+  `/mapexposer restore` on its own puts back the newest, and pressing Tab after `restore ` lists
+  their names;
 - `/mapexposer backup` copies the whole dimension's map at any time, to go back to later.
+
+Restored regions are read again as soon as you zoom in on them. The ones right around you, which
+Xaero is busy mapping, show as restored once you move a few regions away or after a restart.
+
+## Sharing with other players
+
+Right-click the world map for these. The ones that send by private message only work with a player
+who also has the mod: they are asked first, with one readable line, and if they don't answer,
+nothing more is sent. Everything else travels hidden from both chats.
+
+- **Share biomes…**: drag over some chunks with the right mouse button, then pick a player. They get
+  which biome is where, at Minecraft's own 4×4-block detail, in a few messages even for a big area.
+  An **[Add biomes]** button keeps them. They are kept by the mod, not written into their map: picked
+  biomes in the biome finder are tinted there too, and the world map names the biome under the
+  mouse where their own map has none.
+- **Share waypoints…**: tick some waypoints of the dimension you are in, then pick a player. An
+  **[Add waypoints]** button adds them to their selected waypoint set, leaving out any they already
+  have. Needs Xaero's Minimap at both ends.
+- **Save terrain file**: drag over some chunks, then choose it. Every block of your map there,
+  exactly as Xaero keeps it, is saved to a `.smemap` file in the `shared maps` folder of your game
+  folder; a link in chat opens the folder. Send the file however you like. Whoever gets it drops it
+  onto their game window, then chooses **[Add to unexplored only]** or **[Add all]**. Each of their
+  regions is backed up first, the same as a download. In the Nether it saves and adds the cave layer
+  the world map is showing, not the roof.
+
+Messages go out slowly, well under a vanilla server's spam limit, and at half speed on a server with
+a chat plugin. A spam warning from the server stops sharing; whatever arrived is kept.
+`/mapexposer share cancel` and `/mapexposer terrain cancel` stop a share or a save.
+
+## Seasons and clearing your map
+
+**A new season.** `/mapexposer season set <yyyy-MM-dd HH:mm>` (or a date alone, or `now`) sets when
+the season began, for the dimension the world map is showing. Your map from before then counts as
+never explored: downloads and maps shared with you write over it even with **Unexplored only**, and
+it is left out of anything you share or save. `/mapexposer season` lists the dates and
+`/mapexposer season remove` takes one away. The Overworld's is the same date as **Cover map
+before** in the settings, and the other dimensions' cover your map the same way.
+
+**Clearing.** Right-click the world map:
+
+- **Clear old season…** takes your map from before the season began off the dimension the world map
+  is showing.
+- **Clear past border…** takes off everything wholly beyond the world border. It uses the border
+  BlueMap draws (as a border plugin such as Chunky puts on it), so a round border works, and else the
+  game's own world border. For a border neither shows, type
+  `/mapexposer clear border <radius> [<centerX> <centerZ>]`.
+
+Each says in chat what it would take off and waits for you to click **[Clear]**. Every region is
+backed up just before it is changed, and a **[Restore]** button at the end puts it all back. Zoomed
+out, a cleared region may look blank until you zoom in on it once.
 
 ## Copying coordinates
 
@@ -265,13 +320,16 @@ the map can be switched between dimensions, so coordinates without it can mean t
 ## Privacy
 
 Everything stays on your computer. The mod only downloads from the BlueMap address you enter, and
-sends nothing to the Minecraft server or anywhere else. Its data is kept in `skysmapexposer/` in
+sends nothing to the Minecraft server or anywhere else. The one exception is sharing: when you
+share biomes or waypoints with a player, they go to that player as private messages through the
+server. Its data is kept in `skysmapexposer/` in
 your game folder, and its settings in `config/skysmapexposer.json`.
 
 ## Limits
 
 - Surface only: in Xaero's cave mode only borders and markers are drawn, not terrain, and a
-  download writes only the surface.
+  download writes only the surface. Shared terrain files and clearing work on the layer the world
+  map is showing.
 - Biomes are only guessed in the overworld; downloads into the nether and the end use one biome
   each.
 - Biome guessing can be inaccurate, mainly in areas that are similar like old birch and birch biomes,

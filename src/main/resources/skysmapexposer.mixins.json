@@ -4,7 +4,9 @@
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
     "GuiMapMixin",
-    "MinimapElementWrapperMixin"
+    "MapPixelAccess",
+    "MinimapElementWrapperMixin",
+    "MouseHandlerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

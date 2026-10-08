@@ -11,6 +11,11 @@ import java.nio.file.StandardCopyOption
  */
 object SafeFiles {
 
+    private val UNSAFE = Regex("[^A-Za-z0-9_-]")
+
+    /** [text] as part of a file name: anything but letters, digits, `_` and `-` becomes `_`. */
+    fun name(text: String): String = text.replace(UNSAFE, "_")
+
     fun write(path: Path, bytes: ByteArray) {
         Files.createDirectories(path.parent)
         val temporary = path.resolveSibling(path.fileName.toString() + ".tmp")

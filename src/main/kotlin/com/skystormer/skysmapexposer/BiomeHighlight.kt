@@ -24,6 +24,9 @@ import xaero.map.region.texture.RegionTexture
  *
  * Each 64-pixel square is turned into as few rectangles as it takes and kept until Xaero redraws
  * the square or the choice of biomes changes. Client thread only.
+ *
+ * Where Xaero has no biome — land you know only from BlueMap — biomes other players shared with
+ * you ([SharedBiomes]) are tinted the same way, one 4×4-block cell at a time.
  */
 object BiomeHighlight {
 
@@ -130,6 +133,43 @@ object BiomeHighlight {
             }
         }
         if (squares[slot].size > MAX_SQUARES) squares[slot].clear()
+        drawShared(processor, buffer, matrix, level, originX, originZ, minX, maxX, minZ, maxZ)
+    }
+
+    /** The picked biomes among those shared with you, wherever Xaero has no biome of its own. */
+    private fun drawShared(
+        processor: MapProcessor, buffer: VertexConsumer, matrix: Matrix4f, level: Int,
+        originX: Int, originZ: Int, minX: Double, maxX: Double, minZ: Double, maxZ: Double,
+    ) {
+        val dimensionId = processor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
+        val cell = IntArray(5)
+        SharedBiomes.forEachIn(dimensionId, minX, maxX, minZ, maxZ) { blockX, blockZ, cells ->
+            if (cells.none { it != null && it in picked }) return@forEachIn
+            if (xaeroHasBiome(processor, blockX + 8, blockZ + 8, level)) return@forEachIn
+            for (i in 0 until 16) {
+                val colour = cells[i]?.let(picked::get) ?: continue
+                cell[0] = (i shr 2) * 4
+                cell[1] = (i and 3) * 4
+                cell[2] = cell[0] + 4
+                cell[3] = cell[1] + 4
+                cell[4] = colour
+                drawRects(buffer, matrix, cell, 1, blockX - originX, blockZ - originZ)
+            }
+        }
+    }
+
+    /**
+     * Whether Xaero has a biome for block ([x], [z]) at map level [level] (the one on screen by
+     * default) of the cave layer it is showing.
+     */
+    fun xaeroHasBiome(processor: MapProcessor, x: Int, z: Int, level: Int = processor.mapSaveLoad.mainTextureLevel.coerceIn(0, 3)): Boolean {
+        val square = SIDE shl level
+        val squareX = Math.floorDiv(x, square)
+        val squareZ = Math.floorDiv(z, square)
+        val leveled = processor.getLeveledRegion(processor.currentCaveLayer, Math.floorDiv(squareX, 8), Math.floorDiv(squareZ, 8), level) ?: return false
+        if (!leveled.hasTextures()) return false
+        val texture = leveled.getTexture(Math.floorMod(squareX, 8), Math.floorMod(squareZ, 8)) ?: return false
+        return texture.getBiome((x - squareX * square) shr level, (z - squareZ * square) shr level) != null
     }
 
     private fun giveUp(where: String, e: Throwable) {

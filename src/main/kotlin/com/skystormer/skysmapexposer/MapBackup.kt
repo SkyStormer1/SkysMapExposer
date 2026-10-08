@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer
 
+import net.minecraft.client.Minecraft
 import xaero.map.WorldMapSession
 import java.io.IOException
 import java.nio.file.Files
@@ -36,6 +37,15 @@ object MapBackup {
      */
     private val kept = HashSet<String>()
 
+    /**
+     * The name a batch's folder carries for [dimension]'s cave [layer]: just the dimension for the
+     * surface, so [restore] knows which of Xaero's folders the copies go back into.
+     */
+    fun label(dimension: String, layer: Int): String = if (layer == XaeroWriter.SURFACE) dimension else "$dimension$LAYER$layer"
+
+    private const val LAYER = "_cave_layer_"
+    private val LAYER_SUFFIX = Regex(LAYER + "(-?\\d+)$")
+
     /** Where Xaero keeps the regions of the dimension the map is showing. */
     fun dimensionFolder(): Path? {
         val dimension = WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension ?: return null
@@ -43,8 +53,12 @@ object MapBackup {
         return dimension.mainFolderPath?.resolve(multiworld)
     }
 
-    /** Where this mod keeps its copies for the server you are on. */
-    fun backupRoot(): Path? = Session.current?.folder?.resolve("backups")
+    /**
+     * Where this mod keeps its copies for the server you are on — also on one with no BlueMap,
+     * where a map shared in chat can still be added.
+     */
+    fun backupRoot(): Path? = (Session.current?.folder
+        ?: MapExposerClient.addressOf(Minecraft.getInstance())?.let(Session::folderFor))?.resolve("backups")
 
     /**
      * Copies region ([x], [z]) out of Xaero's region folder [from] if it has not been copied
@@ -119,14 +133,24 @@ object MapBackup {
      * so it reads them again. Returns how many files were put back, or -1 if the copy could not be
      * read.
      */
+    /**
+     * Regions the last [restore] put back right around you, which Xaero keeps writing what you see
+     * into and does not read again until you move away or restart.
+     */
+    var nearYou = 0
+        private set
+
     fun restore(name: String): Int {
         val root = backupRoot() ?: return -1
         val from = root.resolve(name)
         // A name is one of ours or it is nothing: no walking out of the folder with it.
         if (from.normalize().parent != root.normalize() || Files.notExists(from)) return -1
-        val into = dimensionFolder() ?: return -1
+        val layer = LAYER_SUFFIX.find(name)?.groupValues?.get(1)?.toIntOrNull() ?: XaeroWriter.SURFACE
+        val into = XaeroWriter.layerFolder(dimensionFolder() ?: return -1, layer)
         return try {
             var restored = 0
+            nearYou = 0
+            val player = Minecraft.getInstance().player
             Files.list(from).use { entries ->
                 for (entry in entries) {
                     if (!Files.isRegularFile(entry)) continue
@@ -136,8 +160,12 @@ object MapBackup {
                     val region = regionOf(regionName) ?: continue
                     if (absent) Files.deleteIfExists(into.resolve(regionName))
                     else Files.copy(entry, into.resolve(regionName), StandardCopyOption.REPLACE_EXISTING)
-                    dropFromMemory(region.first, region.second)
+                    forgetPicture(into, regionName.removeSuffix(".zip"))
+                    reread(region.first, region.second, layer)
                     restored++
+                    if (player != null && kotlin.math.abs(region.first - (player.blockX shr 9)) <= 1 &&
+                        kotlin.math.abs(region.second - (player.blockZ shr 9)) <= 1
+                    ) nearYou++
                 }
             }
             restored
@@ -148,18 +176,49 @@ object MapBackup {
     }
 
     /**
-     * Unhooks a region from Xaero's memory so the file is read again. Xaero's own `removeMapRegion`
-     * does not save on the way out, so the copy it was holding is not written back over the file
-     * that has just been put there.
+     * Takes away Xaero's cached picture of a region put back. The file put back is older than that
+     * picture, so Xaero would otherwise go on showing the picture (of what was there before the
+     * restore) as if it were up to date. Xaero draws it again from the file.
      */
-    fun dropFromMemory(x: Int, z: Int) {
+    private fun forgetPicture(folder: Path, region: String) {
+        try {
+            Files.list(folder).use { entries ->
+                for (cache in entries.toList()) {
+                    if (!Files.isDirectory(cache) || !cache.fileName.toString().startsWith("cache")) continue
+                    Files.deleteIfExists(cache.resolve("$region.xwmc"))
+                    Files.deleteIfExists(cache.resolve("$region.xwmc.outdated"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.error("Could not take away Xaero's cached picture of region $region", e)
+        }
+    }
+
+    /** The copies there are, newest first. */
+    fun names(): List<String> = try {
+        val root = backupRoot()
+        if (root == null || Files.notExists(root)) emptyList()
+        else Files.list(root).use { entries -> entries.toList().filter { Files.isDirectory(it) }.map { it.fileName.toString() }.sortedDescending() }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /**
+     * Has Xaero read region ([x], [z]) of [layer] from its file again, the next time it is on
+     * screen. The region stays where Xaero keeps it (taking it out leaves a hole Xaero does not fill
+     * until the game restarts); instead its picture is marked as made under other settings, which
+     * is Xaero's own cue to reload a region, as after a resource pack change.
+     */
+    private fun reread(x: Int, z: Int, layer: Int) {
         try {
             val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return
-            // Int.MAX_VALUE is Xaero's cave layer for the surface.
-            val region = processor.getLeafMapRegion(Int.MAX_VALUE, x, z, false) ?: return
-            processor.removeMapRegion(region)
+            val region = processor.getLeafMapRegion(layer, x, z, false) ?: return
+            synchronized(region) {
+                region.setHasHadTerrain()
+                region.cacheHashCode = region.cacheHashCode + 1
+            }
         } catch (e: Throwable) {
-            Log.error("Could not drop region ${x}_$z from memory after putting it back", e)
+            Log.error("Could not have Xaero read region ${x}_$z again after putting it back", e)
         }
     }
 
@@ -184,9 +243,12 @@ object MapBackup {
 
     private fun key(x: Int, z: Int) = "${x}_$z"
 
+    /** The name of this batch's copies for [label], to put them back with; null if none were made. */
+    fun batchName(label: String): String? = launch?.let { "$it-${SafeFiles.name(label)}" }
+
     private fun folderForThisLaunch(label: String): Path? {
         val root = backupRoot() ?: return null
-        val name = launch ?: LocalDateTime.now().format(STAMP).also { launch = it }
-        return root.resolve("$name-${label.replace(Regex("[^A-Za-z0-9_-]"), "_")}")
+        if (launch == null) launch = LocalDateTime.now().format(STAMP)
+        return root.resolve(batchName(label)!!)
     }
 }

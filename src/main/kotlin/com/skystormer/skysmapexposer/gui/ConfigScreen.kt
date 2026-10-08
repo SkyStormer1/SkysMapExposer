@@ -25,8 +25,9 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /**
- * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on two
- * tabs: Map (what is shown, and how big) and Server (where BlueMap is, and downloading from it).
+ * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on three
+ * tabs: Map (what is shown, and how big), Server (where BlueMap is, and downloading from it) and
+ * Experimental (settings that may get you in trouble, off unless you turn them on).
  *
  * The Server tab opens on the server you are connected to: its BlueMap address, which BlueMap map to use for each
  * dimension and whether its terrain is used, and the date before which your own overworld map is
@@ -61,7 +62,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         )
     }.toMutableList()
 
-    private enum class Page(val title: String) { MAP("Map"), SERVER("Server") }
+    private enum class Page(val title: String) { MAP("Map"), SERVER("Server"), EXPERIMENTAL("Experimental") }
 
     private var page = Page.MAP
     private var enabled = Config.enabled
@@ -79,6 +80,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapBiomes = Config.minimapBiomes
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
+    private var shareThroughWarnings = Config.shareThroughWarnings
     private var message: Component = Component.literal(Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -128,6 +130,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         minimapBiomes = true
         matchWaypoints = true
         guessBiomes = true
+        shareThroughWarnings = false
         staleDays = formatDays(7.0)
     }
 
@@ -137,17 +140,34 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val left = width / 2 - WIDTH / 2
         var y = top
 
-        // The tabs: the one showing is greyed out.
-        val half = (WIDTH - GAP) / 2
+        // The tabs: the one showing is greyed out. The last takes what rounding leaves.
+        val tabs = Page.entries.size
+        val tabWidth = (WIDTH - GAP * (tabs - 1)) / tabs
         Page.entries.forEachIndexed { i, tab ->
-            val x = left + i * (half + GAP)
+            val x = left + i * (tabWidth + GAP)
             addRenderableWidget(Button.builder(Component.literal(tab.title)) { switchPage(tab) }
-                .bounds(x, y, if (i == 0) half else WIDTH - half - GAP, ROW).build()
+                .bounds(x, y, if (i < tabs - 1) tabWidth else WIDTH - (tabWidth + GAP) * i, ROW).build()
                 .also { it.active = tab != page })
         }
         y += ROW + GAP * 3
 
-        if (page == Page.MAP) mapPage(left, y) else serverPage(left, y)
+        when (page) {
+            Page.MAP -> mapPage(left, y)
+            Page.SERVER -> serverPage(left, y)
+            Page.EXPERIMENTAL -> experimentalPage(left, y)
+        }
+    }
+
+    /** Settings that may get you in trouble on some servers; all off as the mod comes. */
+    private fun experimentalPage(left: Int, top: Int) {
+        var y = top
+        addRenderableWidget(MultiLineTextWidget(left, y, Component.literal(
+            "These may get you warned, muted or kicked on some servers. Use them where you know the rules."
+        ), font).setMaxWidth(WIDTH))
+        y += font.lineHeight * 2 + GAP * 2
+        addRenderableWidget(toggle(left, y, WIDTH, "Share through spam warnings", shareThroughWarnings,
+            "Off: sharing a map in chat stops as soon as the server warns about spam. On: it waits 30 s, " +
+                "sends the last messages again and carries on at half speed, stopping only at a second warning.") { shareThroughWarnings = it })
     }
 
     /** What is shown on the maps, how big, and the players. */
@@ -484,6 +504,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.minimapBiomes = minimapBiomes
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
+        Config.shareThroughWarnings = shareThroughWarnings
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }

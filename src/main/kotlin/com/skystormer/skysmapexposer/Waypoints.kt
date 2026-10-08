@@ -3,10 +3,12 @@ package com.skystormer.skysmapexposer
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
+import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import xaero.common.minimap.waypoints.Waypoint
 import xaero.hud.minimap.BuiltInHudModules
 import xaero.hud.minimap.waypoint.WaypointColor
+import xaero.hud.minimap.world.MinimapWorld
 import xaero.map.mods.SupportMods
 import kotlin.math.floor
 
@@ -96,15 +98,8 @@ object Waypoints {
         val toNether = dimension == Config.OVERWORLD
         val target = if (toNether) Level.NETHER else Level.OVERWORLD
         val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
-        val manager = session.worldManager
-        val current = manager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
-        val world = if (current.dimId == target) current else {
-            // Where Xaero keeps that dimension's waypoints on this server, found the way its world
-            // map finds them: the dimension's folder under the same root as the world you are in.
-            val path = current.container.root.path.resolve(session.dimensionHelper.getDimensionDirectoryName(target))
-            val container = manager.getWorldContainerNullable(path)
-            container?.getFirstWorldConnectedTo(current) ?: container?.firstWorld ?: manager.getWorld(path.resolve("waypoints"))
-        } ?: return "Xaero's Minimap has no waypoints for the ${counterpartName(dimension)} yet"
+        session.worldManager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
+        val world = worldFor(target) ?: return "Xaero's Minimap has no waypoints for the ${counterpartName(dimension)} yet"
         // Xaero converts from the scale it is given to the world's own, so the coordinates go in as
         // they are in the dimension clicked, with that dimension's scale.
         val scale = if (toNether) 1.0 else NETHER_SCALE.toDouble()
@@ -112,6 +107,21 @@ object Waypoints {
         session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, x, y, z, toNether, scale)
         SupportMods.xaeroMinimap?.requestWaypointsRefresh()
         return "Temporary waypoint set in the ${counterpartName(dimension)} at ${counterpartCoordinates(x, z, dimension)}"
+    }
+
+    /**
+     * Where Xaero's Minimap keeps [target]'s waypoints on this server: the world you are in if it
+     * is of [target], else the one found the way its world map finds it — the dimension's folder
+     * under the same root as the world you are in. Null if there is none yet.
+     */
+    fun worldFor(target: ResourceKey<Level>): MinimapWorld? {
+        val session = BuiltInHudModules.MINIMAP.currentSession ?: return null
+        val manager = session.worldManager
+        val current = manager.currentWorld ?: return null
+        if (current.dimId == target) return current
+        val path = current.container.root.path.resolve(session.dimensionHelper.getDimensionDirectoryName(target))
+        val container = manager.getWorldContainerNullable(path)
+        return container?.getFirstWorldConnectedTo(current) ?: container?.firstWorld ?: manager.getWorld(path.resolve("waypoints"))
     }
 
     /** Why a waypoint cannot go on a pin of the map's dimension from here, or null when it can. */

@@ -77,9 +77,15 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
             end()
             val server = Config.serverFor(address)
             if (server == null) return
-            val name = Config.normalise(server.addresses.first()).replace(Regex("[^a-z0-9._-]"), "_")
-            val folder = Minecraft.getInstance().gameDirectory.toPath().resolve("skysmapexposer").resolve(name)
-            current = Session(server, folder)
+            current = Session(server, folderFor(server.addresses.first()))
+        }
+
+        private val UNSAFE = Regex("[^a-z0-9._-]")
+
+        /** This mod's folder for the server at [address], whether or not it has a BlueMap. */
+        fun folderFor(address: String): Path {
+            val name = Config.normalise(address).replace(UNSAFE, "_")
+            return Minecraft.getInstance().gameDirectory.toPath().resolve("skysmapexposer").resolve(name)
         }
 
         fun end() {
