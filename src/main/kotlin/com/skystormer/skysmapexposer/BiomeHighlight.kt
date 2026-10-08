@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer
 
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.Minecraft
+import net.minecraft.core.registries.Registries
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.biome.Biome
 import org.joml.Matrix4f
@@ -46,6 +47,20 @@ object BiomeHighlight {
 
     val any: Boolean get() = picked.isNotEmpty()
 
+    /**
+     * Biomes the map has recorded that this version of the game does not know, by dimension: from
+     * a map made with a newer version, or a server running one. The game has no list of them, so
+     * they are noticed on the map as it is drawn ([notice]) and offered alongside the rest.
+     */
+    private val unknown = HashMap<String, MutableSet<ResourceKey<Biome>>>()
+    private var lastNotice = 0L
+
+    /** Bumped whenever a new one is noticed, so the list is worked out again. */
+    var unknownVersion = 0
+        private set
+
+    fun unknownIn(dimension: String?): Set<ResourceKey<Biome>> = dimension?.let { unknown[it] }.orEmpty()
+
     fun isPicked(biome: ResourceKey<Biome>): Boolean = biome in picked
 
     /** The tint of [biome], or null if it is not picked. */
@@ -76,6 +91,11 @@ object BiomeHighlight {
     /** The world map, from Xaero's `GuiMap`, with the matrix and origin its terrain was drawn with. */
     @JvmStatic
     fun draw(processor: MapProcessor, matrix: Matrix4f, originX: Int, originZ: Int, cameraX: Double, cameraZ: Double) {
+        try {
+            notice(processor, matrix, cameraX, cameraZ)
+        } catch (e: Throwable) {
+            Log.warn("Could not look for biomes this game version does not know: {}", e.toString())
+        }
         if (picked.isEmpty()) return
         try {
             val view = MapViewport.of(matrix, cameraX, cameraZ)
@@ -172,6 +192,42 @@ object BiomeHighlight {
         return texture.getBiome((x - squareX * square) shr level, (z - squareZ * square) shr level) != null
     }
 
+    /**
+     * Every couple of seconds, looks over the regions on screen (every 16th pixel) for biomes the
+     * game's own list does not have.
+     */
+    private fun notice(processor: MapProcessor, matrix: Matrix4f, cameraX: Double, cameraZ: Double) {
+        val now = System.currentTimeMillis()
+        if (now - lastNotice < NOTICE_MILLIS) return
+        lastNotice = now
+        val dimension = processor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
+        val registry = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME) ?: return
+        val view = MapViewport.of(matrix, cameraX, cameraZ)
+        val level = processor.mapSaveLoad.mainTextureLevel.coerceIn(0, 3)
+        val region = REGION shl level
+        val layer = processor.currentCaveLayer
+        val known = unknown.getOrPut(dimension) { HashSet() }
+        val seen = HashSet<ResourceKey<Biome>>()
+        for (rx in Math.floorDiv(view.minX.toInt(), region)..Math.floorDiv(view.maxX.toInt(), region)) {
+            for (rz in Math.floorDiv(view.minZ.toInt(), region)..Math.floorDiv(view.maxZ.toInt(), region)) {
+                val leveled = processor.getLeveledRegion(layer, rx, rz, level) ?: continue
+                if (!leveled.hasTextures()) continue
+                for (cx in 0 until 8) for (cz in 0 until 8) {
+                    val texture = leveled.getTexture(cx, cz) ?: continue
+                    for (x in 0 until SIDE step NOTICE_STEP) for (z in 0 until SIDE step NOTICE_STEP) {
+                        texture.getBiome(x, z)?.let(seen::add)
+                    }
+                }
+            }
+        }
+        val added = seen.filter { it !in known && registry.get(it).isEmpty }
+        if (added.isNotEmpty()) {
+            known.addAll(added)
+            unknownVersion++
+            Log.info("Biomes on the map this game version does not know: {}", added.joinToString { it.identifier().toString() })
+        }
+    }
+
     private fun giveUp(where: String, e: Throwable) {
         picked.clear()
         changed()
@@ -253,6 +309,8 @@ object BiomeHighlight {
     private const val REGION = 512
     private const val SIDE = 64
     private const val MAX_STEP = 16
+    private const val NOTICE_STEP = 16
+    private const val NOTICE_MILLIS = 2_000L
     private const val MAX_SQUARES = 50_000
     private const val MINIMAP = 4
 

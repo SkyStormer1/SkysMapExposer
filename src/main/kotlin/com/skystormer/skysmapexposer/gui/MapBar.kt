@@ -12,6 +12,7 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.core.registries.Registries
 import net.minecraft.network.chat.Component
+import net.minecraft.locale.Language
 import net.minecraft.resources.ResourceKey
 import net.minecraft.tags.BiomeTags
 import net.minecraft.world.level.biome.Biome
@@ -135,7 +136,7 @@ object MapBar {
         }
     }
 
-    private class Biomes(val dimension: String?, val all: List<Pair<ResourceKey<Biome>, String>>)
+    private class Biomes(val dimension: String?, val unknownVersion: Int, val all: List<Pair<ResourceKey<Biome>, String>>)
 
     class Panel(screen: Screen, private val search: SearchBox) : DockPanel(screen, "skysmapexposer:bar", TITLE) {
 
@@ -143,7 +144,7 @@ object MapBar {
         override var scrollOffset: Int
             get() = offset
             set(value) { offset = value }
-        private var biomes = Biomes(null, emptyList())
+        private var biomes = Biomes(null, 0, emptyList())
 
         private val font get() = Minecraft.getInstance().font
 
@@ -176,12 +177,14 @@ object MapBar {
 
         /**
          * The biomes that belong to the dimension the map is showing, by the game's own tags, by
-         * name; every biome for a dimension without a tag. Worked out again when the map changes
-         * dimension.
+         * name; every biome for a dimension without a tag. Biomes the map has that this game version
+         * does not know are added as they are noticed ([BiomeHighlight.unknownIn]). Worked out again
+         * when the map changes dimension or another of those turns up.
          */
         private fun allBiomes(): List<Pair<ResourceKey<Biome>, String>> {
             val shown = MarkerElements.worldMapDimension()
-            if (shown == biomes.dimension && biomes.all.isNotEmpty()) return biomes.all
+            val version = BiomeHighlight.unknownVersion
+            if (shown == biomes.dimension && version == biomes.unknownVersion && biomes.all.isNotEmpty()) return biomes.all
             val registry = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME) ?: return emptyList()
             val tag = when (shown) {
                 "minecraft:the_nether" -> BiomeTags.IS_NETHER
@@ -191,9 +194,10 @@ object MapBar {
             }
             val holders = registry.listElements().toList()
             val inDimension = tag?.let { t -> holders.filter { it.`is`(t) } }?.ifEmpty { null } ?: holders
-            val all = inDimension.map { it.key() to nameOf(it.key()) }.sortedBy { it.second.lowercase() }
-            biomes = Biomes(shown, all)
-            offset = 0
+            val all = (inDimension.map { it.key() } + BiomeHighlight.unknownIn(shown)).distinct()
+                .map { it to nameOf(it) }.sortedBy { it.second.lowercase() }
+            if (shown != biomes.dimension) offset = 0
+            biomes = Biomes(shown, version, all)
             return all
         }
 
@@ -362,7 +366,13 @@ object MapBar {
         }
     }
 
-    /** The biome's name in the game's language, as its own screens show it. */
-    private fun nameOf(key: ResourceKey<Biome>): String =
-        Component.translatable(key.identifier().toLanguageKey("biome")).string
+    /**
+     * The biome's name in the game's language, as its own screens show it; one this version has no
+     * name for is named from its id (`dappled_forest` is "Dappled Forest").
+     */
+    private fun nameOf(key: ResourceKey<Biome>): String {
+        val languageKey = key.identifier().toLanguageKey("biome")
+        if (Language.getInstance().has(languageKey)) return Component.translatable(languageKey).string
+        return key.identifier().path.split('_').joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+    }
 }
