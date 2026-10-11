@@ -46,7 +46,7 @@ class HiresTile private constructor(private val data: ByteBuffer, val triangles:
     fun texture(triangle: Int): Int = textureOf[triangle]
 
     companion object {
-        private const val MAX_CORNERS = 3 * 2_000_000
+        private const val MAX_CORNERS = 3 * 500_000
 
         /** Reads an unpacked tile; an empty file (BlueMap's empty tile) has no triangles. */
         @Throws(IOException::class)

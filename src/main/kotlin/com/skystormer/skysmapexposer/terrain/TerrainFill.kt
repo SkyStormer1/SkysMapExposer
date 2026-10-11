@@ -33,6 +33,12 @@ object TerrainFill {
     var radius = 500
 
     private const val BATCH = 4
+
+    /**
+     * The most one 3D tile may unpack to. Real ones are well under 10 MB; a server sending more is
+     * broken or hostile, and two of these at once must still fit in a small game's memory.
+     */
+    private const val MAX_TILE_BYTES = 32 * 1024 * 1024
     private const val KEEP_TILES_MS = 7L * 24 * 60 * 60 * 1000
 
     private class Job(
@@ -113,6 +119,7 @@ object TerrainFill {
             val textures = blueMap.textures(job.map)
             val rebuilder = job.rebuilderOf(job.minY, job.height)
             val cache = job.session.folder.resolve("hires").resolve(SafeFiles.name(job.map))
+            prune(cache)
 
             // Small square pieces, nearest first.
             val c = job.centre
@@ -147,7 +154,7 @@ object TerrainFill {
                     for (tz in layout.tileOf(minZ, layout.offsetZ)..layout.tileOf(maxZ, layout.offsetZ)) {
                         fetches += downloads.submit<ChunkRebuilder.Tile?> {
                             val bytes = cached(cache, tx, tz) { blueMap.hiresTile(job.map, tx, tz) } ?: return@submit null
-                            val faces = HiresTile.read(BlueMap.gunzipIfNeeded(bytes, 256 * 1024 * 1024))
+                            val faces = HiresTile.read(BlueMap.gunzipIfNeeded(bytes, MAX_TILE_BYTES))
                             ChunkRebuilder.Tile(faces, tx * layout.tileSize + layout.offsetX, tz * layout.tileSize + layout.offsetZ)
                         }
                     }
@@ -190,6 +197,16 @@ object TerrainFill {
 
     private fun summary(job: Job): String =
         job.sent.entries.joinToString(", ") { "${it.value} chunks to ${it.key}" }
+
+    /** Deletes cached tiles older than a week, so the cache doesn't grow for ever. */
+    private fun prune(folder: Path) {
+        if (!Files.isDirectory(folder)) return
+        val cutoff = System.currentTimeMillis() - KEEP_TILES_MS
+        Files.list(folder).use { files ->
+            files.filter { Files.isRegularFile(it) && Files.getLastModifiedTime(it).toMillis() < cutoff }
+                .forEach { runCatching { Files.delete(it) } }
+        }
+    }
 
     /** A tile from the disk cache if it is under a week old, else from BlueMap (and kept). Null: BlueMap has none. */
     private fun cached(folder: Path, tx: Int, tz: Int, fetch: () -> ByteArray?): ByteArray? {

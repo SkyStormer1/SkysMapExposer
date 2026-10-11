@@ -103,7 +103,11 @@ class ChunkRebuilder(
             val bz = floor(centre[2] - n[2] * 0.01f).toInt()
             if (bx < minX || bx > maxX || bz < minZ || bz > maxZ || by < minY || by >= minY + height) continue
             val key = pack(bx, by, bz)
-            val voxel = voxels.get(key) ?: Voxel().also { voxels.put(key, it) }
+            val voxel = voxels.get(key) ?: Voxel().also {
+                // A real piece has tens of thousands; this many means tiles built to use up memory.
+                if (voxels.size >= MAX_VOXELS) throw java.io.IOException("BlueMap's 3D tiles here have far more blocks than any real map")
+                voxels.put(key, it)
+            }
             voxel.textures += texture
             for (corner in 0..2) {
                 val y = faces.y(t, corner) - by
@@ -244,6 +248,7 @@ class ChunkRebuilder(
         ((x.toLong() and 0x3FFFFFF) shl 38) or ((z.toLong() and 0x3FFFFFF) shl 12) or (y.toLong() and 0xFFF)
 
     companion object {
+        private const val MAX_VOXELS = 400_000
         private val GRASS = setOf("grass_block_top", "short_grass", "tall_grass_top", "tall_grass_bottom", "fern", "large_fern_top")
         private val FOLIAGE = setOf("oak_leaves", "jungle_leaves", "acacia_leaves", "dark_oak_leaves", "mangrove_leaves", "vine")
         private val DIRT_TOPS = setOf(Blocks.GRASS_BLOCK, Blocks.PODZOL, Blocks.MYCELIUM, Blocks.DIRT_PATH, Blocks.FARMLAND, Blocks.SNOW, Blocks.MOSS_CARPET, Blocks.ROOTED_DIRT)

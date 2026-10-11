@@ -135,7 +135,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         val size = hires.getAsJsonArray("tileSize")[0].asInt
         val translate = hires.getAsJsonArray("translate")
         val layout = HiresLayout(size, translate?.get(0)?.asInt ?: 0, translate?.get(1)?.asInt ?: 0)
-        if (layout.tileSize !in 1..MAX_HIRES_TILE || layout.offsetX !in 0 until size || layout.offsetZ !in 0 until size) {
+        if (layout.tileSize !in MIN_HIRES_TILE..MAX_HIRES_TILE || layout.offsetX !in 0 until size || layout.offsetZ !in 0 until size) {
             throw IOException("$map has an unusable hires layout")
         }
         return layout
@@ -298,6 +298,9 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         }
 
         private const val MAX_HIRES_TILE = 1024
+
+        /** Smaller would mean thousands of downloads for a few chunks. */
+        private const val MIN_HIRES_TILE = 16
 
         /** [bytes], unpacked if they are gzip, never to more than [limit] bytes. */
         @Throws(IOException::class)
