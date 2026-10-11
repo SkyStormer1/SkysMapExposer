@@ -116,6 +116,61 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         }
     }
 
+    /**
+     * How one map lays out its hires tiles: [tileSize] blocks a side, with tile (0, 0) starting at
+     * block ([offsetX], [offsetZ]).
+     */
+    class HiresLayout(val tileSize: Int, val offsetX: Int, val offsetZ: Int) {
+        /** The tile holding block [block] along one axis. */
+        fun tileOf(block: Int, offset: Int): Int = Math.floorDiv(block - offset, tileSize)
+    }
+
+    /** Reads the hires part of `maps/<map>/settings.json`. Blocking. */
+    @Throws(IOException::class)
+    fun hiresLayout(map: String): HiresLayout {
+        val response = getText("maps/${checkMapId(map)}/settings.json")
+        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
+        val hires = JsonParser.parseString(response.body()).asJsonObject.getAsJsonObject("hires")
+            ?: throw IOException("$map has no hires tiles")
+        val size = hires.getAsJsonArray("tileSize")[0].asInt
+        val translate = hires.getAsJsonArray("translate")
+        val layout = HiresLayout(size, translate?.get(0)?.asInt ?: 0, translate?.get(1)?.asInt ?: 0)
+        if (layout.tileSize !in 1..MAX_HIRES_TILE || layout.offsetX !in 0 until size || layout.offsetZ !in 0 until size) {
+            throw IOException("$map has an unusable hires layout")
+        }
+        return layout
+    }
+
+    /**
+     * Fetches one hires tile, BlueMap's 3D model of [HiresLayout.tileSize] blocks a side, as it is
+     * sent (usually gzip-compressed). Blocking.
+     *
+     * @return the file, or null if BlueMap has never rendered anything there.
+     */
+    @Throws(IOException::class)
+    fun hiresTile(map: String, tileX: Int, tileZ: Int): ByteArray? {
+        val response = getBytes("maps/${checkMapId(map)}/tiles/0/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.prbm")
+        return when (response.statusCode()) {
+            200 -> response.body()
+            204, 404 -> null
+            else -> throw IOException("HTTP ${response.statusCode()} for hires tile $map/$tileX,$tileZ")
+        }
+    }
+
+    /**
+     * The textures a map's hires tiles refer to by number, as resource paths such as
+     * `minecraft:block/stone`, from `maps/<map>/textures.json`. Blocking.
+     */
+    @Throws(IOException::class)
+    fun textures(map: String): List<String> {
+        val response = getBytes("maps/${checkMapId(map)}/textures.json")
+        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map textures")
+        val text = String(gunzipIfNeeded(response.body(), MAX_BODY), Charsets.UTF_8)
+        return JsonParser.parseString(text).asJsonArray.map { entry ->
+            entry.asJsonObject.get("resourcePath")?.asString ?: ""
+        }
+    }
+
     /** A map's live markers, `maps/<map>/live/markers.json`, or null if it has none. Blocking. */
     @Throws(IOException::class)
     fun markers(map: String): JsonObject? {
@@ -239,6 +294,25 @@ class BlueMap(baseUrl: String) : AutoCloseable {
                 } finally {
                     reader.dispose()
                 }
+            }
+        }
+
+        private const val MAX_HIRES_TILE = 1024
+
+        /** [bytes], unpacked if they are gzip, never to more than [limit] bytes. */
+        @Throws(IOException::class)
+        fun gunzipIfNeeded(bytes: ByteArray, limit: Int): ByteArray {
+            if (bytes.size < 2 || bytes[0] != 0x1f.toByte() || bytes[1] != 0x8b.toByte()) return bytes
+            java.util.zip.GZIPInputStream(ByteArrayInputStream(bytes)).use { input ->
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    out.write(buffer, 0, n)
+                    if (out.size() > limit) throw IOException("unpacks too big")
+                }
+                return out.toByteArray()
             }
         }
 

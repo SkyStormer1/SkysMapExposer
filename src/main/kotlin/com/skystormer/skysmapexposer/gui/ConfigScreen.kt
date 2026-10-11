@@ -8,6 +8,8 @@ import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Overlay
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.terrain.FillTarget
+import com.skystormer.skysmapexposer.terrain.TerrainFill
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.components.AbstractSliderButton
 import net.minecraft.client.gui.components.Button
@@ -135,7 +137,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     }
 
     override fun content(top: Int) {
-        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null
+        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null; fillWidget = null
         mapBoxes.clear()
         val left = width / 2 - WIDTH / 2
         var y = top
@@ -168,6 +170,65 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(toggle(left, y, WIDTH, "Share through spam warnings", shareThroughWarnings,
             "Off: sharing a map in chat stops as soon as the server warns about spam. On: it waits 30 s, " +
                 "sends the last messages again and carries on at half speed, stopping only at a second warning.") { shareThroughWarnings = it })
+        y += ROW + GAP * 3
+        terrainFillRows(left, y)
+    }
+
+    /**
+     * Filling Bobby, Voxy and Distant Horizons from BlueMap's 3D map ([TerrainFill]): which of them
+     * are installed, how far, and a start/stop button, with how it is going underneath.
+     */
+    private fun terrainFillRows(left: Int, top: Int) {
+        var y = top
+        val installed = FillTarget.installed()
+        val about = if (installed.isEmpty()) {
+            "Far terrain from BlueMap: install Bobby, Voxy or Distant Horizons and this can fill their far-away " +
+                "terrain from BlueMap's 3D map."
+        } else {
+            "Far terrain from BlueMap for ${installed.joinToString(", ")}: rebuilt from BlueMap's 3D map, only where " +
+                "${if (installed.size == 1) "it has" else "they have"} nothing of your own."
+        }
+        addRenderableWidget(MultiLineTextWidget(left, y, Component.literal(about), font).setMaxWidth(WIDTH))
+        y += font.lineHeight * 2 + GAP * 2
+        val half = (WIDTH - GAP) / 2
+        val size = CycleButton.builder<Int>({ Component.literal("$it blocks") }, TerrainFill.radius)
+            .withValues(TerrainFill.RADII)
+            .create(left, y, half, ROW, Component.literal("Around you")) { _, value -> TerrainFill.radius = value }
+        size.setTooltip(Tooltip.create(Component.literal(
+            "How far from where you stand to fill, in every direction. Bigger takes longer: BlueMap's 3D tiles are " +
+                "downloaded a couple at a time so the server is not slowed down.")))
+        size.active = installed.isNotEmpty() && !TerrainFill.running
+        addRenderableWidget(size)
+        val button = if (TerrainFill.running) {
+            Button.builder(Component.literal("Stop filling")) { TerrainFill.cancel(); rebuildWidgets() }
+        } else {
+            Button.builder(Component.literal("Fill from BlueMap")) {
+                fillStatus = TerrainFill.start()
+                com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
+                rebuildWidgets()
+            }.tooltip(Tooltip.create(Component.literal(
+                "Rebuilds the chunks around you from BlueMap's 3D map and hands them to " +
+                    (installed.joinToString(", ").ifEmpty { "Bobby, Voxy or Distant Horizons" }) +
+                    ". Chunks you have been to are left alone, and a chunk you load for real later replaces the filled one.")))
+        }
+        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = installed.isNotEmpty() })
+        y += ROW + GAP
+        fillWidget = MultiLineTextWidget(left, y + 1, Component.literal(TerrainFill.status() ?: fillStatus), font)
+            .setMaxWidth(WIDTH).setMaxRows(3).also { addRenderableWidget(it) }
+    }
+
+    private var fillStatus = ""
+    private var fillWidget: MultiLineTextWidget? = null
+    private var fillWasRunning = TerrainFill.running
+
+    override fun tick() {
+        super.tick()
+        fillWidget?.setMessage(Component.literal(TerrainFill.status() ?: fillStatus))
+        // The button turns back from Stop when the fill ends.
+        if (fillWasRunning != TerrainFill.running) {
+            fillWasRunning = TerrainFill.running
+            if (page == Page.EXPERIMENTAL) rebuildWidgets()
+        }
     }
 
     /** What is shown on the maps, how big, and the players. */

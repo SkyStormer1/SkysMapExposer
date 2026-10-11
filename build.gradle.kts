@@ -45,6 +45,12 @@ dependencies {
 
     modCompileOnly("com.terraformersmc:modmenu:${property("modmenu_version")}")
 
+    // Experimental terrain fill hands chunks to whichever of these is installed. Compiled against
+    // only, and only touched when the mod is loaded; never bundled.
+    modCompileOnly("maven.modrinth:bobby:${property("bobby_version")}")
+    modCompileOnly("maven.modrinth:voxy:${property("voxy_version")}")
+    modCompileOnly("maven.modrinth:distanthorizons:${property("distanthorizons_version")}")
+
     compileOnly(files(xaeroLibJar()))
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")

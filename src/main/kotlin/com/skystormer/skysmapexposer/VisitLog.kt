@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -37,6 +38,9 @@ class VisitLog(private val folder: Path, private val io: Executor) {
         visitsIn(dimension).get(key(chunkX, chunkZ))
 
     fun count(dimension: String): Int = visitsIn(dimension).size
+
+    /** A copy of the chunks seen in [dimension], keyed like [Session.chunkKey], safe to read on another thread. */
+    fun seen(dimension: String): LongOpenHashSet = LongOpenHashSet(visitsIn(dimension).keys)
 
     /** Writes every dimension that has changed, off the client thread. */
     fun save() {

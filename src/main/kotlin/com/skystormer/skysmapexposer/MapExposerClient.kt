@@ -81,6 +81,7 @@ object MapExposerClient : ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
             Session.end()
             BlueMapDownload.forget()
+            com.skystormer.skysmapexposer.terrain.TerrainFill.forget()
             ChatShare.forget()
             TerrainFiles.forget()
             SharedBiomes.forget()
