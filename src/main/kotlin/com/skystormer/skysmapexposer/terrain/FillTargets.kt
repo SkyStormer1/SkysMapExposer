@@ -130,7 +130,7 @@ class BobbyTarget private constructor(
     }
 
     companion object {
-        /** Marks a chunk this mod made, so other tools (and Sky's Structure Map) can tell it from a real one. */
+        /** Marks a chunk this mod made, so other tools can tell it from a real one. */
         const val MARKER = "skysmapexposer_bluemap"
 
         fun create(level: ClientLevel, factory: PalettedContainerFactory): Result<FillTarget> {

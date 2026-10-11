@@ -61,6 +61,9 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
 - **Shares your map with friends.** Send another player who has the mod the biomes of part of your
   map or some of your waypoints by private message, or save a piece of your map to a file they drop
   onto their game. See [Sharing with other players](#sharing-with-other-players).
+- **Fills far terrain for Bobby, Voxy and Distant Horizons.** One button rebuilds the land around
+  you from BlueMap's 3D map and hands it to whichever of them you have, so the far view isn't
+  patchy where you've never been. See [Far terrain from BlueMap](#far-terrain-from-bluemap).
 - **Clears out old map.** Take your map from a previous season, or everything past the world
   border, off your map in one go, with a backup to undo it. See
   [Seasons and clearing your map](#seasons-and-clearing-your-map).
@@ -119,7 +122,7 @@ Hover over any setting in the game for an explanation.
 | **Find maps** | Asks the BlueMap which maps it has. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
-| **Experimental** tab | Settings that may get you warned on some servers, all off as the mod comes. **Share through spam warnings**: sharing in chat normally stops at the first spam warning from the server; with this on it waits, slows down and only stops at a second. |
+| **Experimental** tab | **Share through spam warnings**: sharing in chat normally stops at the first spam warning from the server; with this on it waits, slows down and only stops at a second. Off as the mod comes, since it may get you warned on some servers. Also **Far terrain from BlueMap**; see below. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
 like Xaero's nether map. So nether terrain starts **OFF**. Its world border, markers and players
@@ -255,6 +258,32 @@ anything of yours that already looks like BlueMap is left exactly as it was.
 Restored regions are read again as soon as you zoom in on them. The ones right around you, which
 Xaero is busy mapping, show as restored once you move a few regions away or after a restart.
 
+## Far terrain from BlueMap
+
+Bobby, Voxy and Distant Horizons can only show land you have loaded yourself, so the far view is
+patchy wherever you have never been. BlueMap's 3D map has that land. On the **Experimental** tab,
+**Fill from BlueMap** rebuilds the chunks around you from it and hands them to these mods:
+
+- **Bobby** saves them as cached chunks, so they show inside your render distance where the server
+  sends nothing.
+- **Voxy** and **Distant Horizons** take them as far-away terrain.
+
+The tab finds which of the three you have installed and gives each a switch, so you choose which
+get filled. Pick how far (250 to 4,000 blocks around you) and press the button; the line under it
+says how far it has got and how many chunks each mod was given. **Stop filling** stops it.
+
+- **Only where they have nothing.** Each mod is asked whether it already has the chunk, and one it
+  has is left alone. When you load a chunk for real, the real one replaces the filled one as usual.
+- **What it looks like.** Every face BlueMap draws belongs to one block, so the visible surface is
+  rebuilt block by block: builds, trees, farms in the sky and the ground under them. Hidden ground
+  is filled in below, water down to its floor, light is the light BlueMap shows, and biomes are
+  guessed from the colour of grass, leaves and water. Stairs keep their default facing, and chests,
+  signs and other block entities are left out. Caves BlueMap leaves out stay solid.
+- **Light on memory and the server.** It works a few chunks at a time, nearest first, so memory use
+  stays the same however far you fill, and waits whenever a mod falls behind. BlueMap's 3D tiles
+  are downloaded two at a time, since BlueMap usually runs on the game server, and kept for a week,
+  so filling the same place again needs no downloading.
+
 ## Sharing with other players
 
 Right-click the world map for these. The ones that send by private message only work with a player
@@ -362,6 +391,10 @@ Written from scratch; no code was copied from any other project.
   at only to see what it does, not how.
 - BlueMap (MIT) is used only as a website: its tile, marker and player files were checked against
   a live server.
+- BlueMap's 3D tile files were read from their published format, checked against a live server.
+- Bobby (LGPL-3.0), Voxy (all rights reserved) and Distant Horizons (LGPL-3.0) are compiled against and called only
+  when installed, never bundled; Map Exposer hands them chunks through their own storage, ingest
+  and API. None of their code was copied.
 - Xaero's World Map and Minimap are closed source. They are compiled against, never bundled.
   Their class, method and field names, and the layout of their map files, were read to place the
   mixins, use their element and waypoint systems, and write downloads through Xaero's own map code.
