@@ -181,16 +181,31 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun terrainFillRows(left: Int, top: Int) {
         var y = top
         val installed = FillTarget.installed()
-        val about = if (installed.isEmpty()) {
-            "Far terrain from BlueMap: install Bobby, Voxy or Distant Horizons and this can fill their far-away " +
-                "terrain from BlueMap's 3D map."
-        } else {
-            "Fill ${installed.joinToString(" and ")} with terrain from BlueMap's 3D map, " +
-                "only where ${if (installed.size == 1) "it has" else "they have"} nothing of your own."
+        val chosen = FillTarget.chosen()
+        val about = when {
+            installed.isEmpty() -> "Far terrain from BlueMap: install Bobby, Voxy or Distant Horizons and this can fill " +
+                "their far-away terrain from BlueMap's 3D map."
+            chosen.isEmpty() -> "Far terrain from BlueMap: switch on the mods to fill below."
+            else -> "Fill ${chosen.joinToString(" and ")} with terrain from BlueMap's 3D map, " +
+                "only where ${if (chosen.size == 1) "it has" else "they have"} nothing of your own."
         }
         addRenderableWidget(MultiLineTextWidget(left, y, Component.literal(about), font).setMaxWidth(WIDTH))
         // As many lines as the text wraps to, so the buttons never sit on it.
         y += font.lineHeight * font.split(Component.literal(about), WIDTH).size + GAP * 2
+        // One switch per installed mod, so only the ones you want are filled.
+        if (installed.isNotEmpty()) {
+            val each = (WIDTH - GAP * (installed.size - 1)) / installed.size
+            installed.forEachIndexed { i, mod ->
+                val x = left + i * (each + GAP)
+                val w = if (i < installed.size - 1) each else WIDTH - (each + GAP) * i
+                addRenderableWidget(toggle(x, y, w, mod, mod !in Config.fillOff,
+                    "Whether the fill gives terrain to $mod.") { on ->
+                    if (on) Config.fillOff.remove(mod) else Config.fillOff.add(mod)
+                    rebuildWidgets()
+                }.also { it.active = !TerrainFill.running })
+            }
+            y += ROW + GAP
+        }
         val half = (WIDTH - GAP) / 2
         val size = CycleButton.builder<Int>({ Component.literal("$it blocks") }, TerrainFill.radius)
             .withValues(TerrainFill.RADII)
@@ -198,7 +213,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         size.setTooltip(Tooltip.create(Component.literal(
             "How far from where you stand to fill, in every direction. Bigger takes longer: BlueMap's 3D tiles are " +
                 "downloaded a couple at a time so the server is not slowed down.")))
-        size.active = installed.isNotEmpty() && !TerrainFill.running
+        size.active = chosen.isNotEmpty() && !TerrainFill.running
         addRenderableWidget(size)
         val button = if (TerrainFill.running) {
             Button.builder(Component.literal("Stop filling")) { TerrainFill.cancel(); rebuildWidgets() }
@@ -209,10 +224,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 rebuildWidgets()
             }.tooltip(Tooltip.create(Component.literal(
                 "Rebuilds the chunks around you from BlueMap's 3D map and hands them to " +
-                    (installed.joinToString(", ").ifEmpty { "Bobby, Voxy or Distant Horizons" }) +
+                    (chosen.joinToString(" and ").ifEmpty { "the mods switched on above" }) +
                     ". Chunks you have been to are left alone, and a chunk you load for real later replaces the filled one.")))
         }
-        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = installed.isNotEmpty() })
+        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = TerrainFill.running || chosen.isNotEmpty() })
         y += ROW + GAP
         fillWidget = MultiLineTextWidget(left, y + 1, Component.literal(TerrainFill.status() ?: fillStatus), font)
             .setMaxWidth(WIDTH).setMaxRows(3).also { addRenderableWidget(it) }

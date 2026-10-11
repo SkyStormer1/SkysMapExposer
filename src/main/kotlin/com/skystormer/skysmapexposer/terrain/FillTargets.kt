@@ -45,6 +45,9 @@ interface FillTarget {
     companion object {
         fun isInstalled(mod: String): Boolean = FabricLoader.getInstance().isModLoaded(mod)
 
+        /** The installed mods switched on in the settings. */
+        fun chosen(): List<String> = installed().filter { it !in com.skystormer.skysmapexposer.Config.fillOff }
+
         /** The installed mods' names, for the settings screen. */
         fun installed(): List<String> = buildList {
             if (isInstalled("bobby")) add("Bobby")
@@ -59,9 +62,9 @@ interface FillTarget {
         fun ready(level: ClientLevel, factory: PalettedContainerFactory, visited: (ChunkPos) -> Boolean): Pair<List<FillTarget>, List<String>> {
             val targets = ArrayList<FillTarget>()
             val notes = ArrayList<String>()
-            if (isInstalled("bobby")) BobbyTarget.create(level, factory).fold({ targets += it }, { notes += "Bobby: ${it.message}" })
-            if (isInstalled("voxy")) VoxyTarget.create(level, visited).fold({ targets += it }, { notes += "Voxy: ${it.message}" })
-            if (isInstalled("distanthorizons")) DhTarget.create(level, visited).fold({ targets += it }, { notes += "Distant Horizons: ${it.message}" })
+            if ("Bobby" in chosen()) BobbyTarget.create(level, factory).fold({ targets += it }, { notes += "Bobby: ${it.message}" })
+            if ("Voxy" in chosen()) VoxyTarget.create(level, visited).fold({ targets += it }, { notes += "Voxy: ${it.message}" })
+            if ("Distant Horizons" in chosen()) DhTarget.create(level, visited).fold({ targets += it }, { notes += "Distant Horizons: ${it.message}" })
             return targets to notes
         }
     }

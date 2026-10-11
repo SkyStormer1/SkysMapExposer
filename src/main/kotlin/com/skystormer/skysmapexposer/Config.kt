@@ -127,6 +127,9 @@ object Config {
      */
     var shareThroughWarnings: Boolean = false
 
+    /** Experimental: the mods ("Bobby", "Voxy", "Distant Horizons") the terrain fill is switched off for. */
+    val fillOff: MutableSet<String> = HashSet()
+
     /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
     var minimapBiomes: Boolean = true
 
@@ -207,6 +210,7 @@ object Config {
             json.get("barRows")?.let { barRows = it.asInt.coerceIn(1, 40) }
             json.get("minimapBiomes")?.let { minimapBiomes = it.asBoolean }
             json.get("shareThroughWarnings")?.let { shareThroughWarnings = it.asBoolean }
+            json.getAsJsonArray("fillOff")?.let { list -> fillOff.clear(); list.forEach { fillOff.add(it.asString) } }
             json.get("barScale")?.let { barScale = it.asFloat.coerceIn(0.5f, 4f) }
             json.get("barExtra")?.let { barExtra = it.asInt.coerceIn(0, 1000) }
             json.get("barUnder")?.let { barUnder = it.asString }
@@ -262,6 +266,7 @@ object Config {
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
         json.addProperty("shareThroughWarnings", shareThroughWarnings)
+        json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
         json.addProperty("barScale", barScale)
         json.addProperty("barExtra", barExtra)
         json.addProperty("barUnder", barUnder)

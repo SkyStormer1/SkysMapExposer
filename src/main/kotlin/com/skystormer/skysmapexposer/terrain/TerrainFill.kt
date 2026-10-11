@@ -84,8 +84,8 @@ object TerrainFill {
         val session = Session.current ?: return "This server has no BlueMap set up"
         val dimension = level.dimension().identifier().toString()
         val map = session.server.markersFor(dimension) ?: return "No BlueMap map is set for this dimension"
-        val installed = FillTarget.installed()
-        if (installed.isEmpty()) return "Install Bobby, Voxy or Distant Horizons to use this"
+        if (FillTarget.installed().isEmpty()) return "Install Bobby, Voxy or Distant Horizons to use this"
+        if (FillTarget.chosen().isEmpty()) return "Switch on at least one mod to fill"
 
         val seen = session.visits.seen(dimension)
         val factory = PalettedContainerFactory.create(level.registryAccess())
