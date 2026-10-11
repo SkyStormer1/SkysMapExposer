@@ -171,8 +171,14 @@ object TerrainFill {
                 if (empty > 0) " ($empty chunks BlueMap never drew)" else ""
             Log.info("Terrain fill: {} chunks built; {}", built, summary(job))
         } catch (e: Exception) {
-            job.message = "Failed: ${e.message ?: e.javaClass.simpleName}"
-            Log.error("Terrain fill failed", e)
+            if (job.cancelled) {
+                // Leaving the world closes the mods' storage under us; that is a stop, not a fault.
+                job.message = "Stopped. " + summary(job)
+                Log.info("Terrain fill stopped on leaving: {}", summary(job))
+            } else {
+                job.message = "Failed: ${e.message ?: e.javaClass.simpleName}"
+                Log.error("Terrain fill failed", e)
+            }
         } finally {
             job.targets.forEach { runCatching { it.afterBatch() } }
             downloads.shutdownNow()
