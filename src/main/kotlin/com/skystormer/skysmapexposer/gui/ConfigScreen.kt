@@ -185,11 +185,12 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "Far terrain from BlueMap: install Bobby, Voxy or Distant Horizons and this can fill their far-away " +
                 "terrain from BlueMap's 3D map."
         } else {
-            "Far terrain from BlueMap for ${installed.joinToString(", ")}: rebuilt from BlueMap's 3D map, only where " +
-                "${if (installed.size == 1) "it has" else "they have"} nothing of your own."
+            "Fill ${installed.joinToString(" and ")} with terrain from BlueMap's 3D map, " +
+                "only where ${if (installed.size == 1) "it has" else "they have"} nothing of your own."
         }
         addRenderableWidget(MultiLineTextWidget(left, y, Component.literal(about), font).setMaxWidth(WIDTH))
-        y += font.lineHeight * 2 + GAP * 2
+        // As many lines as the text wraps to, so the buttons never sit on it.
+        y += font.lineHeight * font.split(Component.literal(about), WIDTH).size + GAP * 2
         val half = (WIDTH - GAP) / 2
         val size = CycleButton.builder<Int>({ Component.literal("$it blocks") }, TerrainFill.radius)
             .withValues(TerrainFill.RADII)
