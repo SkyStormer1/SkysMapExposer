@@ -5,6 +5,8 @@ import com.seibel.distanthorizons.api.interfaces.world.IDhApiLevelWrapper
 import de.johni0702.minecraft.bobby.FakeChunkManager
 import de.johni0702.minecraft.bobby.FakeChunkStorage
 import de.johni0702.minecraft.bobby.ext.ClientChunkCacheExt
+import me.cortex.voxy.common.world.WorldSection
+import me.cortex.voxy.common.world.other.Mapper
 import me.cortex.voxy.common.world.service.VoxelIngestService
 import me.cortex.voxy.commonImpl.VoxyCommon
 import me.cortex.voxy.commonImpl.WorldIdentifier
@@ -57,14 +59,14 @@ interface FillTarget {
 
         /**
          * The targets ready in [level] right now, with a note for each installed one that is not.
-         * Call on the client thread. [visited] says whether you have been to a chunk yourself.
+         * Call on the client thread. Each mod is asked itself whether it already has a chunk.
          */
-        fun ready(level: ClientLevel, factory: PalettedContainerFactory, visited: (ChunkPos) -> Boolean): Pair<List<FillTarget>, List<String>> {
+        fun ready(level: ClientLevel, factory: PalettedContainerFactory): Pair<List<FillTarget>, List<String>> {
             val targets = ArrayList<FillTarget>()
             val notes = ArrayList<String>()
             if ("Bobby" in chosen()) BobbyTarget.create(level, factory).fold({ targets += it }, { notes += "Bobby: ${it.message}" })
-            if ("Voxy" in chosen()) VoxyTarget.create(level, visited).fold({ targets += it }, { notes += "Voxy: ${it.message}" })
-            if ("Distant Horizons" in chosen()) DhTarget.create(level, visited).fold({ targets += it }, { notes += "Distant Horizons: ${it.message}" })
+            if ("Voxy" in chosen()) VoxyTarget.create(level).fold({ targets += it }, { notes += "Voxy: ${it.message}" })
+            if ("Distant Horizons" in chosen()) DhTarget.create(level).fold({ targets += it }, { notes += "Distant Horizons: ${it.message}" })
             return targets to notes
         }
     }
@@ -141,14 +143,36 @@ class BobbyTarget private constructor(
     }
 }
 
-/** Voxy: each section goes straight into Voxy's own ingest, with the light BlueMap drew. */
+/**
+ * Voxy: each section goes straight into Voxy's own ingest, with the light BlueMap drew. A chunk is
+ * only filled when Voxy has nothing but air for it: Voxy keeps the world in 32-block cubes, and the
+ * chunk's quarter of each is looked at.
+ */
 class VoxyTarget private constructor(
     private val world: WorldIdentifier,
-    private val visited: (ChunkPos) -> Boolean,
+    private val minY: Int,
+    private val height: Int,
 ) : FillTarget {
     override val name = "Voxy"
 
-    override fun wants(pos: ChunkPos): Boolean = !visited(pos)
+    override fun wants(pos: ChunkPos): Boolean {
+        val engine = world.nullable ?: return true
+        val offsetX = (pos.x() and 1) * 16
+        val offsetZ = (pos.z() and 1) * 16
+        for (cubeY in Math.floorDiv(minY, 32)..Math.floorDiv(minY + height - 1, 32)) {
+            val cube = engine.acquireIfExists(0, pos.x() shr 1, cubeY, pos.z() shr 1) ?: continue
+            try {
+                if (cube.nonEmptyBlockCount == 0) continue
+                val data = cube._unsafeGetRawDataArray()
+                for (y in 0 until 32) for (z in offsetZ until offsetZ + 16) for (x in offsetX until offsetX + 16) {
+                    if (!Mapper.isAir(data[WorldSection.getIndex(x, y, z)])) return false
+                }
+            } finally {
+                cube.release()
+            }
+        }
+        return true
+    }
 
     override fun accept(chunk: BuiltChunk) {
         for (i in chunk.sections.indices) {
@@ -162,12 +186,12 @@ class VoxyTarget private constructor(
     override fun busy(): Boolean = (VoxyCommon.getInstance()?.ingestService?.taskCount ?: 0) > 2_000
 
     companion object {
-        fun create(level: ClientLevel, visited: (ChunkPos) -> Boolean): Result<FillTarget> {
+        fun create(level: ClientLevel): Result<FillTarget> {
             if (!VoxyCommon.isAvailable() || VoxyCommon.getInstance() == null) {
                 return Result.failure(IllegalStateException("switched off in its settings"))
             }
             val world = WorldIdentifier.of(level) ?: return Result.failure(IllegalStateException("has no world open"))
-            return Result.success(VoxyTarget(world, visited))
+            return Result.success(VoxyTarget(world, level.minY, level.height))
         }
     }
 }
@@ -179,11 +203,19 @@ class VoxyTarget private constructor(
 class DhTarget private constructor(
     private val level: ClientLevel,
     private val wrapper: IDhApiLevelWrapper,
-    private val visited: (ChunkPos) -> Boolean,
 ) : FillTarget {
     override val name = "Distant Horizons"
 
-    override fun wants(pos: ChunkPos): Boolean = !visited(pos)
+    /** Only where DH has nothing but air for the chunk. */
+    override fun wants(pos: ChunkPos): Boolean {
+        val result = DhApi.Delayed.terrainRepo.getAllTerrainDataAtChunkPos(wrapper, pos.x(), pos.z(), null)
+        val columns = result.payload ?: return true
+        if (!result.success) return true
+        for (row in columns) for (column in row ?: continue) for (point in column ?: continue) {
+            if (point != null && !point.blockStateWrapper.isAir) return false
+        }
+        return true
+    }
 
     override fun accept(chunk: BuiltChunk) {
         val sections = Array(chunk.sections.size) { chunk.sections[it].copy() }
@@ -193,12 +225,12 @@ class DhTarget private constructor(
     }
 
     companion object {
-        fun create(level: ClientLevel, visited: (ChunkPos) -> Boolean): Result<FillTarget> {
+        fun create(level: ClientLevel): Result<FillTarget> {
             val proxy = DhApi.Delayed.worldProxy
             if (proxy == null || !proxy.worldLoaded()) return Result.failure(IllegalStateException("has no world loaded"))
             val wrapper = proxy.allLoadedLevelWrappers.firstOrNull { it.wrappedMcObject === level }
                 ?: return Result.failure(IllegalStateException("has not loaded this dimension yet"))
-            return Result.success(DhTarget(level, wrapper, visited))
+            return Result.success(DhTarget(level, wrapper))
         }
     }
 }

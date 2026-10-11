@@ -49,7 +49,8 @@ object TerrainFill {
         @Volatile var cancelled = false
         @Volatile var finished = false
         @Volatile var message = "Starting…"
-        val sent = HashMap<String, Int>()
+        // Every target listed from the start, so one getting nothing shows as 0.
+        val sent = LinkedHashMap<String, Int>().also { map -> targets.forEach { map[it.name] = 0 } }
         var endedAt = 0L
     }
 
@@ -87,9 +88,8 @@ object TerrainFill {
         if (FillTarget.installed().isEmpty()) return "Install Bobby, Voxy or Distant Horizons to use this"
         if (FillTarget.chosen().isEmpty()) return "Switch on at least one mod to fill"
 
-        val seen = session.visits.seen(dimension)
         val factory = PalettedContainerFactory.create(level.registryAccess())
-        val (targets, notes) = FillTarget.ready(level, factory) { seen.contains(Session.chunkKey(it.x(), it.z())) }
+        val (targets, notes) = FillTarget.ready(level, factory)
         if (targets.isEmpty()) return "Nothing to fill: " + notes.joinToString("; ")
 
         val blocks = TextureBlocks.build(minecraft)
@@ -183,7 +183,7 @@ object TerrainFill {
     }
 
     private fun summary(job: Job): String =
-        if (job.sent.isEmpty()) "nothing sent yet" else job.sent.entries.joinToString(", ") { "${it.value} chunks to ${it.key}" }
+        job.sent.entries.joinToString(", ") { "${it.value} chunks to ${it.key}" }
 
     /** A tile from the disk cache if it is under a week old, else from BlueMap (and kept). Null: BlueMap has none. */
     private fun cached(folder: Path, tx: Int, tz: Int, fetch: () -> ByteArray?): ByteArray? {

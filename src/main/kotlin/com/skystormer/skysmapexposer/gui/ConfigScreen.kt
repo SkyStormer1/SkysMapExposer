@@ -225,7 +225,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             }.tooltip(Tooltip.create(Component.literal(
                 "Rebuilds the chunks around you from BlueMap's 3D map and hands them to " +
                     (chosen.joinToString(" and ").ifEmpty { "the mods switched on above" }) +
-                    ". Chunks you have been to are left alone, and a chunk you load for real later replaces the filled one.")))
+                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one.")))
         }
         addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = TerrainFill.running || chosen.isNotEmpty() })
         y += ROW + GAP
