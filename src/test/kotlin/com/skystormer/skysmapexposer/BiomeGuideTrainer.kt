@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
-import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Random
 
@@ -48,7 +47,7 @@ class BiomeGuideTrainer {
         println("${known.size} blocks with a recorded biome")
 
         val folders = tiles!!.split(';').map { Paths.get(it) }
-        val ground = LowresSource(TILE, hasSea = true) { tx, tz -> loadTile(folders, tx, tz) }
+        val ground = TileFolders.ground(folders)
         val random = Random(1)
 
         // Held-out check: learn from even regions, guess the odd ones.
@@ -77,7 +76,7 @@ class BiomeGuideTrainer {
 
     private fun guideFrom(from: List<Known>, ground: LowresSource, random: Random): BiomeGuide {
         val picked = from.shuffled(random).take(ROWS * 2)
-            .sortedWith(compareBy({ Math.floorDiv(it.x, TILE) }, { Math.floorDiv(it.z, TILE) }))
+            .sortedWith(compareBy({ Math.floorDiv(it.x, TileFolders.TILE) }, { Math.floorDiv(it.z, TileFolders.TILE) }))
         val samples = ArrayList<FloatArray>()
         val biomes = ArrayList<String>()
         val scratch = FloatArray(5)
@@ -91,19 +90,8 @@ class BiomeGuideTrainer {
         return BiomeGuide.build(keep.map { samples[it] }, keep.map { biomes[it] })
     }
 
-    private fun loadTile(dirs: List<Path>, tx: Int, tz: Int): BlueMapPicture.Tile? {
-        for (dir in dirs) {
-            for (name in listOf("${tx}_$tz.png", "t_${tx}_$tz.png")) {
-                val file = dir.resolve(name)
-                if (Files.exists(file)) return BlueMapPicture.decode(tx, tz, TILE, Files.readAllBytes(file))
-            }
-        }
-        return null
-    }
-
     private companion object {
         const val STEP = 8
-        const val TILE = 500
         const val ROWS = 12_000
         const val CHECK_REGIONS = 12
     }

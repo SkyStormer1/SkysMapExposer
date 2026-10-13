@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Random
 
@@ -42,9 +43,7 @@ class BiomeGuideAdder {
             Point(area.toInt(), x.toInt(), z.toInt(), biome)
         }
         val folder = Paths.get(tiles!!)
-        val ground = LowresSource(TILE, hasSea = true) { tx, tz ->
-            folder.resolve("${tx}_$tz.png").takeIf(Files::exists)?.let { BlueMapPicture.decode(tx, tz, TILE, Files.readAllBytes(it)) }
-        }
+        val ground = TileFolders.ground(listOf(folder))
 
         val random = Random(1)
         val learn = points.filter { it.area != HELD_OUT }
@@ -101,13 +100,11 @@ class BiomeGuideAdder {
     }
 
     /** Old against new over every region of [folder]'s tiles: how often they differ, and dappled guesses. */
-    private fun compare(old: BiomeGuide, new: BiomeGuide, folder: java.nio.file.Path) {
-        val ground = LowresSource(TILE, hasSea = true) { tx, tz ->
-            folder.resolve("${tx}_$tz.png").takeIf(Files::exists)?.let { BlueMapPicture.decode(tx, tz, TILE, Files.readAllBytes(it)) }
-        }
+    private fun compare(old: BiomeGuide, new: BiomeGuide, folder: Path) {
+        val ground = TileFolders.ground(listOf(folder))
         val regions = Files.list(folder).use { files ->
             files.filter { it.fileName.toString().endsWith(".png") }.map { it.fileName.toString().removeSuffix(".png").split('_').map(String::toInt) }
-                .toList().flatMap { (tx, tz) -> listOf(Math.floorDiv(tx * TILE, 512) to Math.floorDiv(tz * TILE, 512)) }.distinct()
+                .toList().map { (tx, tz) -> Math.floorDiv(tx * TileFolders.TILE, 512) to Math.floorDiv(tz * TileFolders.TILE, 512) }.distinct()
         }
         var total = 0L
         var differ = 0L
@@ -128,7 +125,6 @@ class BiomeGuideAdder {
     }
 
     private companion object {
-        const val TILE = 500
         const val DAPPLED = "minecraft:dappled_forest"
         const val HELD_OUT = 1
         const val NEW_BIOME = 1500
