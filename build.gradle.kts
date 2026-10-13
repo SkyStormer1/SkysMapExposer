@@ -48,7 +48,10 @@ dependencies {
     // Experimental terrain fill hands chunks to whichever of these is installed. Compiled against
     // only, and only touched when the mod is loaded; never bundled.
     modCompileOnly("maven.modrinth:bobby:${property("bobby_version")}")
-    modCompileOnly("maven.modrinth:voxy:${property("voxy_version")}")
+    // A Voxy jar for this Minecraft version dropped in `.gradle/voxy/` (gitignored) is used until
+    // that version is on Modrinth; Voxy is All Rights Reserved, so it is never committed.
+    val localVoxy = file(".gradle/voxy/voxy-${property("minecraft_version")}.jar")
+    if (localVoxy.exists()) modCompileOnly(files(localVoxy)) else modCompileOnly("maven.modrinth:voxy:${property("voxy_version")}")
     modCompileOnly("maven.modrinth:distanthorizons:${property("distanthorizons_version")}")
 
     compileOnly(files(xaeroLibJar()))

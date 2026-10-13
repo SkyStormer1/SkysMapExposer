@@ -3,7 +3,7 @@
 <h1 align="center">BlueMap Unlocked: Sky's Map Exposer</h1>
 
 <p align="center">
-A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b> into
+A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b> into
 <b>Xaero's World Map</b>, <b>Xaero's Minimap</b> and more.
 </p>
 
@@ -15,7 +15,7 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
 </p>
 
 <p align="center">
-  <img alt="Minecraft 26.2" src="https://img.shields.io/badge/Minecraft-26.2-blue?style=flat-square">
+  <img alt="Minecraft 26.3" src="https://img.shields.io/badge/Minecraft-26.3-blue?style=flat-square">
   <img alt="Fabric" src="https://img.shields.io/badge/Loader-Fabric-lightgrey?style=flat-square">
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/Licence-MIT-green?style=flat-square"></a>
   <a href="https://github.com/SkyStormer1/SkysMapExposer/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/SkyStormer1/SkysMapExposer/total?style=flat-square&label=downloads"></a>
@@ -75,7 +75,7 @@ was, and wherever you go, Xaero maps the area again and your own map takes over 
 
 You need:
 
-- Minecraft **26.2** with **Fabric Loader** 0.19.3 or newer
+- Minecraft **26.3** with **Fabric Loader** 0.19.5 or newer
 - **Fabric API** and **Fabric Language Kotlin**
 - **Xaero's World Map** 1.44 or newer
 - Recommended: **Xaero's Minimap** (for the minimap and for saving waypoints) and **Mod Menu**

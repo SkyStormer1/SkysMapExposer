@@ -60,15 +60,10 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
     private val placeholder = placeholderFor(dimensionId, water = false)
     private val waterPlaceholder = placeholderFor(dimensionId, water = true)
 
-    private val candidates: List<Candidate> = BlockPalette.CANDIDATES.mapNotNull { id ->
-        val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(id))
-        if (block == Blocks.AIR) null else block.defaultBlockState().let { Candidate(it, baseColour(it), tintOf(it)) }
-    }
+    private val candidates: List<Candidate> = BlockPalette.CANDIDATES.mapNotNull(::candidate)
 
-    private val locals: List<Pair<BlockPalette.Local, Candidate>> = BlockPalette.LOCALS.mapNotNull { local ->
-        val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(local.id))
-        if (block == Blocks.AIR) null else block.defaultBlockState().let { local to Candidate(it, baseColour(it), tintOf(it)) }
-    }
+    private val locals: List<Pair<BlockPalette.Local, Candidate>> =
+        BlockPalette.LOCALS.mapNotNull { local -> candidate(local.id)?.let { local to it } }
 
     private val lookalikes: List<Pair<BlockPalette.Lookalike, BlockState>> = BlockPalette.LOOKALIKES.mapNotNull { look ->
         val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(look.id))
@@ -79,6 +74,12 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
     private val stateColours = HashMap<BlockState, Pair<Int, Tint>>()
     private val keys = HashMap<String, ResourceKey<Biome>?>()
     private val biomes = HashMap<ResourceKey<Biome>, Biome?>()
+
+    /** Block [id] coloured as Xaero colours it, or null if this game has no such block. */
+    private fun candidate(id: String): Candidate? {
+        val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(id))
+        return if (block == Blocks.AIR) null else block.defaultBlockState().let { Candidate(it, baseColour(it), tintOf(it)) }
+    }
 
     /**
      * What a download writes for BlueMap's [colour] at [height], into [into]: water or land, the

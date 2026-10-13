@@ -17,8 +17,9 @@ import java.util.List;
 @Mixin(MouseHandler.class)
 public class MouseHandlerMixin {
 
+    // 26.3 hands the dropped files over as path strings.
     @Inject(method = "onDrop", at = @At("HEAD"), cancellable = true)
-    private void skysmapexposer$onDrop(long window, List<Path> paths, int failed, CallbackInfo ci) {
-        if (TerrainFiles.INSTANCE.dropped(paths)) ci.cancel();
+    private void skysmapexposer$onDrop(long window, List<String> paths, CallbackInfo ci) {
+        if (TerrainFiles.INSTANCE.dropped(paths.stream().map(Path::of).toList())) ci.cancel();
     }
 }

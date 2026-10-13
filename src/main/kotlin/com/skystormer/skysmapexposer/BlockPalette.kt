@@ -53,9 +53,9 @@ object BlockPalette {
 
     /**
      * Poplar leaves, 26.3's orange, red and yellow canopy of the dappled forest. Anywhere else those
-     * colours are terracotta or red sand, and a badlands of leaves would read as nonsense; but the
-     * biome guide was trained before dappled forests existed and never guesses one, so they are
-     * allowed in every forest, not only their own.
+     * colours are terracotta or red sand, and a badlands of leaves would read as nonsense. They are
+     * allowed in the other forests too, for a dappled forest your map has not recorded and the
+     * biome guide has taken for its neighbour.
      */
     val LOCALS: List<Local> = listOf("orange", "red", "yellow").map {
         Local("minecraft:${it}_poplar_leaves", setOf(
