@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.mojang.blaze3d.platform.InputConstants
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
 import net.fabricmc.loader.api.FabricLoader
@@ -356,7 +357,7 @@ abstract class DockPanel(protected val screen: Screen, private val id: String, t
     private fun tip(graphics: GuiGraphicsExtractor, text: String, mouseX: Int, mouseY: Int) = tooltip(graphics, text, mouseX, mouseY)
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
-        if (!visible || event.button() != 0 || !isMouseOver(event.x(), event.y())) return false
+        if (!visible || event.button() != InputConstants.MOUSE_BUTTON_LEFT || !isMouseOver(event.x(), event.y())) return false
         val lx = localX(event.x())
         val ly = localY(event.y())
         when (zone(lx, ly)) {

@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.mojang.blaze3d.platform.InputConstants
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
 import net.minecraft.client.gui.components.Button
@@ -134,7 +135,7 @@ abstract class FramedScreen(title: Component) : Screen(title) {
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
-        if (maxScroll() > 0 && event.button() == 0 && event.x() >= barLeft() && event.x() < barLeft() + BAR &&
+        if (maxScroll() > 0 && event.button() == InputConstants.MOUSE_BUTTON_LEFT && event.x() >= barLeft() && event.x() < barLeft() + BAR &&
             event.y() >= top() && event.y() < bottom()
         ) {
             draggingBar = true
