@@ -65,6 +65,11 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
         if (block == Blocks.AIR) null else block.defaultBlockState().let { Candidate(it, baseColour(it), tintOf(it)) }
     }
 
+    private val locals: List<Pair<BlockPalette.Local, Candidate>> = BlockPalette.LOCALS.mapNotNull { local ->
+        val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(local.id))
+        if (block == Blocks.AIR) null else block.defaultBlockState().let { local to Candidate(it, baseColour(it), tintOf(it)) }
+    }
+
     private val lookalikes: List<Pair<BlockPalette.Lookalike, BlockState>> = BlockPalette.LOOKALIKES.mapNotNull { look ->
         val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(look.id))
         if (block == Blocks.AIR) null else look to block.defaultBlockState()
@@ -110,9 +115,10 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
         val here = choices.getOrPut(biome) {
             val id = biome.identifier().toString()
             val looks = lookalikes.filter { id in it.first.biomes }
+            val here = candidates + locals.filter { id in it.first.biomes }.map { it.second }
             Choices(
-                candidates.map { it.state } + looks.map { it.second },
-                candidates.map { BlockPalette.toLab(tinted(it.base, it.tint, biome)) } + looks.map { BlockPalette.toLab(it.first.blueMapColour) },
+                here.map { it.state } + looks.map { it.second },
+                here.map { BlockPalette.toLab(tinted(it.base, it.tint, biome)) } + looks.map { BlockPalette.toLab(it.first.blueMapColour) },
             )
         }
         here.answers[rgb]?.let { return it }

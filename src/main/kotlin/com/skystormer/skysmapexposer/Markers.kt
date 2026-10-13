@@ -2,7 +2,7 @@ package com.skystormer.skysmapexposer
 
 import com.google.gson.JsonObject
 import com.mojang.blaze3d.platform.NativeImage
-import com.mojang.blaze3d.textures.GpuTextureView
+import com.mojang.renderpearl.api.textures.GpuTextureView
 import net.minecraft.client.renderer.texture.DynamicTexture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService

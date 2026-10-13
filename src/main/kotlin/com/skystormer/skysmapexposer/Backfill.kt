@@ -1,6 +1,6 @@
 package com.skystormer.skysmapexposer
 
-import com.mojang.blaze3d.textures.GpuTextureView
+import com.mojang.renderpearl.api.textures.GpuTextureView
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet
 import xaero.map.MapProcessor
 import xaero.map.world.MapDimension
