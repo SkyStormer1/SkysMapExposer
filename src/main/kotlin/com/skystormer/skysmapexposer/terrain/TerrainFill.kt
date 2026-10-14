@@ -132,6 +132,9 @@ object TerrainFill {
 
             var built = 0
             var empty = 0
+            // Tiles asked for, and how many BlueMap had: a map drawn flat only (no 3D tiles) has none.
+            var asked = 0
+            var found = 0
             for ((index, piece) in pieces.withIndex()) {
                 if (job.cancelled) break
                 val chunks = ArrayList<ChunkPos>()
@@ -161,6 +164,8 @@ object TerrainFill {
                 }
                 val tiles = fetches.mapNotNull { if (job.cancelled) null else it.get(2, TimeUnit.MINUTES) }
                 if (job.cancelled) break
+                asked += fetches.size
+                found += tiles.size
 
                 val done = rebuilder.build(chunks, tiles, textures)
                 empty += chunks.size - done.size
@@ -174,9 +179,15 @@ object TerrainFill {
                 job.targets.forEach { it.afterBatch() }
                 while (!job.cancelled && job.targets.any { it.busy() }) Thread.sleep(250)
             }
-            job.message = (if (job.cancelled) "Stopped. " else "Done. ") + summary(job) +
-                if (empty > 0) " ($empty chunks BlueMap never drew)" else ""
-            Log.info("Terrain fill: {} chunks built; {}", built, summary(job))
+            job.message = if (!job.cancelled && asked > 0 && found == 0) {
+                // Without 3D tiles there is nothing to build from: say so, rather than a quiet 0.
+                "Nothing to build: BlueMap map '${job.map}' has no 3D tiles here. This server draws it as a flat map only " +
+                    "(as many do for the Nether), so it can be shown on Xaero's map but not filled into ${job.targets.joinToString(", ") { it.name }}."
+            } else {
+                (if (job.cancelled) "Stopped. " else "Done. ") + summary(job) +
+                    if (empty > 0) " ($empty chunks BlueMap never drew)" else ""
+            }
+            Log.info("Terrain fill: {} chunks built; {}; {} of {} BlueMap 3D tiles found for map '{}'", built, summary(job), found, asked, job.map)
         } catch (e: Exception) {
             if (job.cancelled) {
                 // Leaving the world closes the mods' storage under us; that is a stop, not a fault.
