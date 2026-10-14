@@ -41,6 +41,9 @@ object TerrainFill {
     private const val MAX_TILE_BYTES = 32 * 1024 * 1024
     private const val KEEP_TILES_MS = 7L * 24 * 60 * 60 * 1000
 
+    /** How long "BlueMap has no tile here" is believed: a day, so a map the server starts drawing in 3D is picked up soon. */
+    private const val KEEP_MISSING_MS = 24L * 60 * 60 * 1000
+
     private class Job(
         val session: Session,
         val map: String,
@@ -219,13 +222,14 @@ object TerrainFill {
         }
     }
 
-    /** A tile from the disk cache if it is under a week old, else from BlueMap (and kept). Null: BlueMap has none. */
+    /** A tile from the disk cache if it is under a week old (a missing one, a day), else from BlueMap (and kept). Null: BlueMap has none. */
     private fun cached(folder: Path, tx: Int, tz: Int, fetch: () -> ByteArray?): ByteArray? {
         val file = folder.resolve("${tx}_$tz.prbm")
         val empty = folder.resolve("${tx}_$tz.none")
         val now = System.currentTimeMillis()
         for (known in listOf(file, empty)) {
-            if (Files.exists(known) && now - Files.getLastModifiedTime(known).toMillis() < KEEP_TILES_MS) {
+            val keep = if (known == file) KEEP_TILES_MS else KEEP_MISSING_MS
+            if (Files.exists(known) && now - Files.getLastModifiedTime(known).toMillis() < keep) {
                 return if (known == file) Files.readAllBytes(file) else null
             }
         }
