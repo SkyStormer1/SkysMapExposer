@@ -345,7 +345,9 @@ the map can be switched between dimensions, so coordinates without it can mean t
 Everything stays on your computer. The mod only downloads from the BlueMap address you enter, and
 sends nothing to the Minecraft server or anywhere else. The one exception is sharing: when you
 share waypoints with a player, they go to that player as private messages through the
-server. Its data is kept in `skysmapexposer/` in
+server. Waypoints shared with you are only taken from a private message sent by the player they
+name; on servers whose chat plugin delivers `/msg` as a server message, the game cannot check who
+sent it, so the share is marked "(unverified)". Its data is kept in `skysmapexposer/` in
 your game folder, and its settings in `config/skysmapexposer.json`.
 
 ## Limits

@@ -6,6 +6,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import xaero.common.minimap.waypoints.Waypoint
 import xaero.hud.minimap.BuiltInHudModules
+import xaero.hud.minimap.waypoint.WaypointColor
 import xaero.map.mods.SupportMods
 
 /**
@@ -58,7 +59,9 @@ object WaypointShare {
         var added = 0
         for (w in waypoints) {
             if (set.waypoints.any { it.x == w.x && it.z == w.z && it.getName() == w.name }) continue
-            val waypoint = Waypoint(w.x, w.y, w.z, w.name, w.initials.ifEmpty { w.name.take(1).uppercase() }, w.color)
+            // Xaero's colours by number: one past the end would break its waypoint screens.
+            val colour = w.color.coerceIn(0, WaypointColor.values().lastIndex)
+            val waypoint = Waypoint(w.x, w.y, w.z, w.name, w.initials.ifEmpty { w.name.take(1).uppercase() }, colour)
             waypoint.isYIncluded = w.yIncluded
             set.add(waypoint)
             added++

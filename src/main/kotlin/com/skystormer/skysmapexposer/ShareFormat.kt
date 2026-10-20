@@ -19,6 +19,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.FilterInputStream
+import java.io.IOException
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
@@ -48,6 +51,12 @@ object ShareFormat {
     /** Chunks per side, at most, of an area shared. */
     const val MAX_SIDE = 512
     const val MAX_WAYPOINTS = 1000
+    /** The most a batch shared in chat may unpack to: [MAX_WAYPOINTS] of the longest waypoints fit. */
+    const val MAX_BATCH = 256 * 1024
+    private const val MAX_NAME = 64
+    private const val MAX_INITIALS = 3
+    /** Xaero's waypoint colours (`WaypointColor`), 0 to 20. */
+    const val WAYPOINT_COLOURS = 21
     private const val MAX_OVERLAYS = 16
 
     /** A chunk rectangle, inclusive. */
@@ -309,8 +318,8 @@ object ShareFormat {
 
     fun packWaypoints(header: Header, waypoints: List<SharedWaypoint>): ByteArray = pack(WAYPOINTS, header, waypoints.size) { out ->
         for (w in waypoints) {
-            out.writeUTF(w.name)
-            out.writeUTF(w.initials)
+            out.writeUTF(clean(w.name).take(MAX_NAME))
+            out.writeUTF(clean(w.initials).take(MAX_INITIALS))
             varint(out, zigzag(w.x))
             varint(out, zigzag(w.y))
             varint(out, zigzag(w.z))
@@ -323,12 +332,25 @@ object ShareFormat {
         if (count !in 1..MAX_WAYPOINTS) error("$count waypoints")
         return List(count) {
             SharedWaypoint(
-                input.readUTF().take(64), input.readUTF().take(3),
+                clean(input.readUTF()).take(MAX_NAME), clean(input.readUTF()).take(MAX_INITIALS),
                 unzigzag(varint(input)), unzigzag(varint(input)), unzigzag(varint(input)),
-                input.readBoolean(), varint(input),
+                input.readBoolean(), varint(input).coerceIn(0, WAYPOINT_COLOURS - 1),
             )
         }
     }
+
+    private val CODE = Regex("§.?")
+
+    /** [text] without formatting codes. */
+    fun stripCodes(text: String): String = text.replace(CODE, "")
+
+    /** [text] without formatting codes, line breaks or other control and invisible format characters. */
+    fun clean(text: String): String = stripCodes(text).filter {
+        when (Character.getType(it).toByte()) {
+            Character.CONTROL, Character.FORMAT, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR -> false
+            else -> true
+        }
+    }.trim()
 
     // ---- packing ----
 
@@ -337,7 +359,7 @@ object ShareFormat {
      * length of the compressed bytes: a batch changed on the way is turned away rather than
      * misread, and anything after the length (chat's padding) is cut off.
      */
-    private fun pack(format: Int, header: Header, count: Int, rest: (DataOutputStream) -> Unit): ByteArray {
+    internal fun pack(format: Int, header: Header, count: Int, rest: (DataOutputStream) -> Unit): ByteArray {
         val compressed = ByteArrayOutputStream()
         DataOutputStream(DeflaterOutputStream(compressed, Deflater(Deflater.BEST_COMPRESSION))).use { out ->
             out.writeByte(format)
@@ -358,15 +380,18 @@ object ShareFormat {
     /** A batch opened: its format, header and count, and the rest still to read from [input]. */
     class Opened(val format: Int, val header: Header, val count: Int, val input: DataInputStream)
 
-    /** Checks and opens a batch made by [pack], hands it to [action] and closes it. */
-    fun <T> open(bytes: ByteArray, action: (Opened) -> T): T {
+    /**
+     * Checks and opens a batch made by [pack], hands it to [action] and closes it. Reading more
+     * than [limit] bytes out of it fails, so a small batch cannot unpack into a huge one.
+     */
+    fun <T> open(bytes: ByteArray, limit: Int = Int.MAX_VALUE, action: (Opened) -> T): T {
         if (bytes.size < 9) error("too short")
         val head = ByteBuffer.wrap(bytes, 0, 8)
         val crc = head.int
         val length = head.int
         if (length !in 1..bytes.size - 8) error("bad length")
         if (CRC32().apply { update(bytes, 8, length) }.value.toInt() != crc) error("it was changed on the way (checksum)")
-        DataInputStream(InflaterInputStream(ByteArrayInputStream(bytes, 8, length))).use { input ->
+        DataInputStream(Limited(InflaterInputStream(ByteArrayInputStream(bytes, 8, length)), limit)).use { input ->
             val format = input.readUnsignedByte()
             if (format != TERRAIN && format != WAYPOINTS) error("made by a different version of the mod (format $format)")
             val from = input.readUTF()
@@ -379,6 +404,22 @@ object ShareFormat {
             val count = input.readInt()
             return action(Opened(format, Header(from, dimensionId, shareId, batch, batches, area), count, input))
         }
+    }
+
+    /** [input], failing once more than [limit] bytes have been read from it. */
+    private class Limited(input: InputStream, private val limit: Int) : FilterInputStream(input) {
+        private var count = 0L
+
+        private fun counted(n: Int): Int {
+            if (n > 0) count += n
+            if (count > limit) throw IOException("it unpacks to more than $limit bytes")
+            return n
+        }
+
+        override fun read(): Int = super.read().also { if (it >= 0) counted(1) }
+        override fun read(b: ByteArray, off: Int, len: Int): Int = counted(super.read(b, off, len))
+        override fun skip(n: Long): Long = super.skip(n).also { counted(it.toInt()) }
+        override fun markSupported() = false
     }
 
     /** Reads an opened [TERRAIN] batch into [into], by region. */
