@@ -8,7 +8,6 @@ import com.skystormer.skysmapexposer.MapMenus;
 import com.skystormer.skysmapexposer.MapView;
 import com.skystormer.skysmapexposer.OtherDimensionCoords;
 import com.skystormer.skysmapexposer.Overlay;
-import com.skystormer.skysmapexposer.SharedBiomes;
 import com.skystormer.skysmapexposer.gui.MapBar;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -56,8 +55,7 @@ import java.util.ArrayList;
  * dimension that click landed in, so the copied coordinates can say where they are.
  *
  * <p>Other dimension: under Xaero's readout of the block under the mouse, the same block's
- * coordinates in the other dimension ({@link OtherDimensionCoords}), and under that the biome
- * someone shared with you there, where Xaero has none ({@link SharedBiomes}).
+ * coordinates in the other dimension ({@link OtherDimensionCoords}).
  *
  * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone. And the
  * mouse wheel goes to the {@link MapBar} first when it is over it, as Xaero would otherwise zoom.
@@ -264,12 +262,6 @@ public abstract class GuiMapMixin implements MapCamera {
         String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
         if (line != null) {
             MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
-                    screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
-            y += 10;
-        }
-        String biome = SharedBiomes.hoverLine(mapProcessor, mouseBlockPosX, mouseBlockPosZ);
-        if (biome != null) {
-            MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, biome,
                     screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
         }
     }

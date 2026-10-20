@@ -30,8 +30,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * The map screen and the settings show how far it has got ([status]); `/mapexposer download
  * cancel` or the settings' button stops it after the region it is on.
  *
- * A map someone shared in chat ([ChatShare]) is written the same way, region by region with a
- * backup of each first ([startShared]); only where the pixels come from differs.
+ * A terrain file someone sent you ([TerrainFiles]) is written the same way, region by region with
+ * a backup of each first ([startShared]); only where the pixels come from differs.
  */
 object BlueMapDownload {
 

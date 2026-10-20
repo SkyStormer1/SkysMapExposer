@@ -1,7 +1,6 @@
 package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
-import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
@@ -39,10 +38,7 @@ object MapMenus {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
             options.add(option("Copy coordinates", options.size, target) { copy(x, null, z, where) })
-            if (selection != null) {
-                options.add(shareOption(options.size, target, selection))
-                options.add(saveOption(options.size, target, selection))
-            }
+            if (selection != null) options.add(saveOption(options.size, target, selection))
             options.add(waypointsOption(options.size, target))
             if (where != null) addCounterpartOption(options, target, x, z, where)
             // The list reads BlueMap, so it is only worth offering on a server that has one.
@@ -122,24 +118,6 @@ object MapMenus {
         val wide = selection.right - selection.left + 1
         val high = selection.bottom - selection.top + 1
         return if (wide == 1 && high == 1) "This chunk" else "These $wide × $high chunks"
-    }
-
-    /** "Share biomes…" for the chunks Xaero has selected, the same selection "Download" takes. */
-    private fun shareOption(index: Int, target: IRightClickableElement, selection: MapTileSelection): RightClickOption {
-        val busy = ChatShare.sending
-        val tooltip = listOf(
-            Component.literal("Share biomes with a player"),
-            Component.literal(
-                if (busy) "§7Something is already being shared; /mapexposer share cancel stops it."
-                else "§7Which biome is where in ${sizeOf(selection).lowercase()}, sent by private message to a player who has this mod. " +
-                    "A few messages even for a big area. They see them highlighted and named on their map."
-            ),
-        )
-        return MenuTooltips.Option("Share biomes…", index, target, tooltip) { parent ->
-            open(ShareScreen(parent, "Share biomes with…") { name ->
-                ChatShare.shareBiomes(name, selection.left, selection.top, selection.right, selection.bottom)
-            })
-        }.also { it.setActive(!busy) }
     }
 
     /** "Save terrain file" for the chunks Xaero has selected: the whole map of them, to send however you like. */

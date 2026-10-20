@@ -58,9 +58,8 @@ A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b
 - **Downloads BlueMap into your own map, if you ask it to.** Write BlueMap's terrain into Xaero's
   map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See
   [Downloading into your own map](#downloading-into-your-own-map).
-- **Shares your map with friends.** Send another player who has the mod the biomes of part of your
-  map or some of your waypoints by private message, or save a piece of your map to a file they drop
-  onto their game. See [Sharing with other players](#sharing-with-other-players).
+- **Shares your map with friends.** Send another player who has the mod some of your waypoints by
+  private message, or save a piece of your map to a file they drop onto their game. See [Sharing with other players](#sharing-with-other-players).
 - **Fills far terrain for Bobby, Voxy and Distant Horizons.** One button rebuilds the land around
   you from BlueMap's 3D map and hands it to whichever of them you have, so the far view isn't
   patchy where you've never been. See [Far terrain from BlueMap](#far-terrain-from-bluemap).
@@ -122,7 +121,7 @@ Hover over any setting in the game for an explanation.
 | **Find maps** | Asks the BlueMap which maps it has. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
-| **Experimental** tab | **Share through spam warnings**: sharing in chat normally stops at the first spam warning from the server; with this on it waits, slows down and only stops at a second. Off as the mod comes, since it may get you warned on some servers. Also **Far terrain from BlueMap**; see below. |
+| **Experimental** tab | **Far terrain from BlueMap**; see below. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
 like Xaero's nether map. So nether terrain starts **OFF**. Its world border, markers and players
@@ -290,23 +289,18 @@ Right-click the world map for these. The ones that send by private message only 
 who also has the mod: they are asked first, with one readable line, and if they don't answer,
 nothing more is sent. Everything else travels hidden from both chats.
 
-- **Share biomes…**: drag over some chunks with the right mouse button, then pick a player. They get
-  which biome is where, at Minecraft's own 4×4-block detail, in a few messages even for a big area.
-  An **[Add biomes]** button keeps them. They are kept by the mod, not written into their map: picked
-  biomes in the biome finder are tinted there too, and the world map names the biome under the
-  mouse where their own map has none.
 - **Share waypoints…**: tick some waypoints of the dimension you are in, then pick a player. An
   **[Add waypoints]** button adds them to their selected waypoint set, leaving out any they already
   have. Needs Xaero's Minimap at both ends.
-- **Save terrain file**: drag over some chunks, then choose it. Every block of your map there,
+- **Save terrain file**: drag over some chunks with the right mouse button, then choose it. Every block of your map there,
   exactly as Xaero keeps it, is saved to a `.smemap` file in the `shared maps` folder of your game
   folder; a link in chat opens the folder. Send the file however you like. Whoever gets it drops it
   onto their game window, then chooses **[Add to unexplored only]** or **[Add all]**. Each of their
   regions is backed up first, the same as a download. In the Nether it saves and adds the cave layer
   the world map is showing, not the roof.
 
-Messages go out slowly, well under a vanilla server's spam limit, and at half speed on a server with
-a chat plugin. A spam warning from the server stops sharing; whatever arrived is kept.
+Messages go out slowly, well under a vanilla server's spam limit. Being muted, or a server without
+`/msg`, stops sharing.
 `/mapexposer share cancel` and `/mapexposer terrain cancel` stop a share or a save.
 
 ## Seasons and clearing your map
@@ -350,7 +344,7 @@ the map can be switched between dimensions, so coordinates without it can mean t
 
 Everything stays on your computer. The mod only downloads from the BlueMap address you enter, and
 sends nothing to the Minecraft server or anywhere else. The one exception is sharing: when you
-share biomes or waypoints with a player, they go to that player as private messages through the
+share waypoints with a player, they go to that player as private messages through the
 server. Its data is kept in `skysmapexposer/` in
 your game folder, and its settings in `config/skysmapexposer.json`.
 

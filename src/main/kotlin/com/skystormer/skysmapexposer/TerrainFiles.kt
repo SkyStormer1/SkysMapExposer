@@ -79,7 +79,7 @@ object TerrainFiles {
     fun save(left: Int, top: Int, right: Int, bottom: Int): String {
         if (saving != null) return "A map is already being saved to a file; /mapexposer terrain cancel stops it"
         val me = Minecraft.getInstance().player?.gameProfile?.name() ?: "?"
-        val (reader, why) = ShareFormat.RegionReader.plan(true, me, left, top, right, bottom)
+        val (reader, why) = ShareFormat.RegionReader.plan(me, left, top, right, bottom)
         reader ?: return why!!
         val area = reader.area
         val name = MapMenus.dimensionName(reader.dimensionId) ?: reader.dimensionId.substringAfter(':')
@@ -259,9 +259,9 @@ object TerrainFiles {
         Log.info("Opened {} as {}: {} chunks of the {} (cave layer {}) from {}", path, id, file.chunks, file.dimensionId, file.layer, file.from)
         player.sendSystemMessage(
             Component.literal("§b${file.from}§r's terrain: ${file.chunks} chunks of the $name near ${file.area.x}, ${file.area.z}  ")
-                .append(ChatShare.button("[Add to unexplored only]", "/mapexposer shared $id blank", "Only fills chunks you have never mapped."))
+                .append(ChatButton.of("[Add to unexplored only]", "/mapexposer shared $id blank", "Only fills chunks you have never mapped."))
                 .append(Component.literal(" "))
-                .append(ChatShare.button("[Add all]", "/mapexposer shared $id all", "Also replaces your own map there. Each region is backed up first."))
+                .append(ChatButton.of("[Add all]", "/mapexposer shared $id all", "Also replaces your own map there. Each region is backed up first."))
         )
     }
 

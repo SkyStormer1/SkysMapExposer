@@ -121,12 +121,6 @@ object Config {
     /** The biggest the map panels may be made, before the letters look too blocky. */
     var panelMaxScale: Float = 2f
 
-    /**
-     * Experimental: whether sharing a map in chat carries on, slower, after the server warns about
-     * spam once, instead of stopping at the first warning.
-     */
-    var shareThroughWarnings: Boolean = false
-
     /** Experimental: the mods ("Bobby", "Voxy", "Distant Horizons") the terrain fill is switched off for. */
     val fillOff: MutableSet<String> = HashSet()
 
@@ -209,7 +203,6 @@ object Config {
             json.get("barTop")?.let { barTop = it.asInt }
             json.get("barRows")?.let { barRows = it.asInt.coerceIn(1, 40) }
             json.get("minimapBiomes")?.let { minimapBiomes = it.asBoolean }
-            json.get("shareThroughWarnings")?.let { shareThroughWarnings = it.asBoolean }
             json.getAsJsonArray("fillOff")?.let { list -> fillOff.clear(); list.forEach { fillOff.add(it.asString) } }
             json.get("barScale")?.let { barScale = it.asFloat.coerceIn(0.5f, 4f) }
             json.get("barExtra")?.let { barExtra = it.asInt.coerceIn(0, 1000) }
@@ -265,7 +258,6 @@ object Config {
         json.addProperty("barTop", barTop)
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
-        json.addProperty("shareThroughWarnings", shareThroughWarnings)
         json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
         json.addProperty("barScale", barScale)
         json.addProperty("barExtra", barExtra)

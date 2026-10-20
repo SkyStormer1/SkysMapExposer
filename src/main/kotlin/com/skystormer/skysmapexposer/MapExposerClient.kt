@@ -84,7 +84,6 @@ object MapExposerClient : ClientModInitializer {
             com.skystormer.skysmapexposer.terrain.TerrainFill.forget()
             ChatShare.forget()
             TerrainFiles.forget()
-            SharedBiomes.forget()
             MapView.forget()
             MapBackup.forget()
         }
@@ -160,11 +159,6 @@ object MapExposerClient : ClientModInitializer {
                             .then(
                                 ClientCommands.argument("player", StringArgumentType.word())
                                     .suggests { _, builder -> ChatShare.others().forEach(builder::suggest); builder.buildFuture() }
-                                    .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
-                                        .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
-                                            .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
-                                                .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
-                                                    .executes(::share)))))
                                     .then(ClientCommands.literal("waypoints").executes(::shareWaypoints))
                             )
                     )
@@ -173,10 +167,6 @@ object MapExposerClient : ClientModInitializer {
                             ClientCommands.argument("id", IntegerArgumentType.integer(0))
                                 .then(ClientCommands.literal("blank").executes { addShared(it, unexploredOnly = true) })
                                 .then(ClientCommands.literal("all").executes { addShared(it, unexploredOnly = false) })
-                                .then(ClientCommands.literal("biomes").executes {
-                                    it.source.sendFeedback(Component.literal(ChatShare.addBiomes(IntegerArgumentType.getInteger(it, "id"))))
-                                    1
-                                })
                                 .then(ClientCommands.literal("waypoints").executes {
                                     it.source.sendFeedback(Component.literal(ChatShare.addWaypoints(IntegerArgumentType.getInteger(it, "id"))))
                                     1
@@ -400,14 +390,6 @@ object MapExposerClient : ClientModInitializer {
         val (x1, x2) = chunk("x1") to chunk("x2")
         val (z1, z2) = chunk("z1") to chunk("z2")
         return intArrayOf(minOf(x1, x2), minOf(z1, z2), maxOf(x1, x2), maxOf(z1, z2))
-    }
-
-    /** The biomes of the chunks between two block positions, inclusive, of the dimension the world map is showing, to one player. */
-    private fun share(context: CommandContext<FabricClientCommandSource>): Int {
-        val (left, top, right, bottom) = chunks(context)
-        val to = StringArgumentType.getString(context, "player")
-        context.source.sendFeedback(Component.literal(ChatShare.shareBiomes(to, left, top, right, bottom)))
-        return 1
     }
 
     /** Every waypoint of the dimension you are in, to one player; the map's menu picks some. */

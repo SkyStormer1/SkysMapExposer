@@ -82,7 +82,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapBiomes = Config.minimapBiomes
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
-    private var shareThroughWarnings = Config.shareThroughWarnings
     private var message: Component = Component.literal(Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -132,7 +131,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         minimapBiomes = true
         matchWaypoints = true
         guessBiomes = true
-        shareThroughWarnings = false
         staleDays = formatDays(7.0)
     }
 
@@ -167,10 +165,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "These may get you warned, muted or kicked on some servers. Use them where you know the rules."
         ), font).setMaxWidth(WIDTH))
         y += font.lineHeight * 2 + GAP * 2
-        addRenderableWidget(toggle(left, y, WIDTH, "Share through spam warnings", shareThroughWarnings,
-            "Off: sharing a map in chat stops as soon as the server warns about spam. On: it waits 30 s, " +
-                "sends the last messages again and carries on at half speed, stopping only at a second warning.") { shareThroughWarnings = it })
-        y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
 
@@ -581,7 +575,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.minimapBiomes = minimapBiomes
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
-        Config.shareThroughWarnings = shareThroughWarnings
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }

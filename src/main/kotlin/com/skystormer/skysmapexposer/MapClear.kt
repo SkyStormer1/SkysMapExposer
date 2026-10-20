@@ -57,7 +57,7 @@ object MapClear {
         Minecraft.getInstance().player?.sendSystemMessage(
             Component.literal("Clear ${plan.what}? Up to ${plan.regions.size} regions are looked at; each is copied aside first, " +
                 "so /mapexposer restore can put it back.  ")
-                .append(ChatShare.button("[Clear]", command, "Takes it off your map now."))
+                .append(ChatButton.of("[Clear]", command, "Takes it off your map now."))
         )
         return null
     }
@@ -80,7 +80,7 @@ object MapClear {
                 Minecraft.getInstance().player?.sendSystemMessage(
                     Component.literal("Cleared ${tally.cleared} chunks of ${plan.what}.  ").let { message ->
                         if (batch == null) message
-                        else message.append(ChatShare.button("[Restore]", "/mapexposer restore $batch", "Puts back what was cleared: /mapexposer restore $batch"))
+                        else message.append(ChatButton.of("[Restore]", "/mapexposer restore $batch", "Puts back what was cleared: /mapexposer restore $batch"))
                     }
                 )
                 "Cleared ${tally.cleared} chunks of ${plan.what}" + (batch?.let { "; /mapexposer restore $it puts them back" } ?: "")
