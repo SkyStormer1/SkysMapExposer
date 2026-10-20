@@ -3,6 +3,7 @@ package com.skystormer.skysmapexposer.mixin;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.skystormer.skysmapexposer.BiomeHighlight;
+import com.skystormer.skysmapexposer.HookErrors;
 import com.skystormer.skysmapexposer.MapCamera;
 import com.skystormer.skysmapexposer.MapMenus;
 import com.skystormer.skysmapexposer.MapView;
@@ -62,7 +63,8 @@ import java.util.ArrayList;
  *
  * <p>The locals are taken by name, which Xaero's jar keeps. If a future Xaero renames them or moves
  * the flush, the injection does not apply ({@code require = 0}) and {@code /mapexposer} says so,
- * rather than the game refusing to start.
+ * rather than the game refusing to start. An error while drawing switches that one feature off
+ * until you rejoin ({@link HookErrors}) instead of crashing the game.
  */
 @Mixin(targets = "xaero.map.gui.GuiMap", remap = false)
 public abstract class GuiMapMixin implements MapCamera {
@@ -256,13 +258,17 @@ public abstract class GuiMapMixin implements MapCamera {
      */
     @Inject(method = "extractRenderState", at = @At("TAIL"), require = 0)
     private void skysmapexposer$otherDimensionLine(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-        if (skysmapexposer$topLineY < 0) return;
-        Screen screen = (Screen) (Object) this;
-        int y = skysmapexposer$topLineY + 10;
-        String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
-        if (line != null) {
-            MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
-                    screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
+        if (skysmapexposer$topLineY < 0 || HookErrors.isOff(HookErrors.OTHER_DIMENSION)) return;
+        try {
+            Screen screen = (Screen) (Object) this;
+            int y = skysmapexposer$topLineY + 10;
+            String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
+            if (line != null) {
+                MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
+                        screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
+            }
+        } catch (Throwable e) {
+            HookErrors.failed(HookErrors.OTHER_DIMENSION, e);
         }
     }
 

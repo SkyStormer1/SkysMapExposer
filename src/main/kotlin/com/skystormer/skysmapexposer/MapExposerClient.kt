@@ -86,6 +86,7 @@ object MapExposerClient : ClientModInitializer {
             TerrainFiles.forget()
             MapView.forget()
             MapBackup.forget()
+            HookErrors.forget()
         }
 
         // A chunk arriving from the server is what makes Xaero redraw it, so this is the moment
@@ -122,6 +123,9 @@ object MapExposerClient : ClientModInitializer {
                         Log.warn("Could not hook Xaero's tracked players; they will show on another dimension's map")
                     }
                 }
+            }
+            client.player?.let { player ->
+                Config.takeLoadProblem()?.let { player.sendSystemMessage(Component.literal("§e$it")) }
             }
             addPins()
             MapView.tick(client)
@@ -337,6 +341,8 @@ object MapExposerClient : ClientModInitializer {
             else -> "§cmissing: this Xaero's World Map version is not supported"
         }
         source.sendFeedback(Component.literal("Xaero hook: $hook"))
+        val off = HookErrors.switchedOff()
+        if (off.isNotEmpty()) source.sendFeedback(Component.literal("§cOff after an error until you rejoin: ${off.joinToString()}§r (the log says why)"))
         fun ran(hook: Boolean) = if (hook) "§aworking§r" else "§enot seen yet§r"
         source.sendFeedback(
             Component.literal(

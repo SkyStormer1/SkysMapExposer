@@ -332,6 +332,14 @@ object BlueMapDownload {
             job.message = "${job.title} paused: switch the world map back to the ${job.name} to carry on"
             return
         }
+        // On a server with several worlds behind a proxy, Xaero can switch map folders (its
+        // multiworld) within the same dimension; the job's regions are in the folder it started in.
+        val multiworld = job.dimension.currentMultiworld
+        val base = multiworld?.let { job.dimension.mainFolderPath?.resolve(it) }
+        if (base == null || !job.folder.startsWith(base)) {
+            job.message = "${job.title} paused: Xaero is showing another map folder of the ${job.name}; switch back to the one it started in to carry on"
+            return
+        }
 
         val active = job.active ?: run {
             if (job.cancelled || job.saving.size >= MAX_SAVING) null

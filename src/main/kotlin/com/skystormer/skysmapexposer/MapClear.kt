@@ -12,6 +12,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToLong
 
 /**
  * Taking parts of your Xaero map off it, in the dimension and layer the world map is showing:
@@ -46,6 +47,8 @@ object MapClear {
         val clears: (Int, Int) -> Boolean,
         /** What to say when [regions] is empty. */
         val nothing: String = "Nothing to clear: you have no $what",
+        /** For a border, which shape is used and how big it is, so the preview shows what it goes by. */
+        val shape: String? = null,
     )
 
     /** Says in chat what [kind] would take off the map, with a button to go ahead. */
@@ -55,7 +58,7 @@ object MapClear {
         if (plan.regions.isEmpty()) return plan.nothing
         val command = "/mapexposer clear ${kind.word}${box?.let { " " + it.words } ?: ""} confirm"
         Minecraft.getInstance().player?.sendSystemMessage(
-            Component.literal("Clear ${plan.what}? Up to ${plan.regions.size} regions are looked at; each is copied aside first, " +
+            Component.literal("Clear ${plan.what}? ${plan.shape?.let { "Border used: $it. " } ?: ""}Up to ${plan.regions.size} regions are looked at; each is copied aside first, " +
                 "so /mapexposer restore can put it back.  ")
                 .append(ChatButton.of("[Clear]", command, "Takes it off your map now."))
         )
@@ -108,14 +111,15 @@ object MapClear {
                 val shape = border.first ?: return null to border.second
                 val regions = all.filter { (x, z) -> !shape.inside(x * 512.0, z * 512.0, x * 512.0 + 512, z * 512.0 + 512) }
                 Log.info("Clear past border in the $name, by ${shape.from}: ${regions.size} of ${all.size} regions reach past it")
-                Plan(dimensionId, layer, regions, shape.what, { cx, cz -> shape.beyond(cx * 16.0, cz * 16.0, cx * 16.0 + 16, cz * 16.0 + 16) }, shape.nothing) to null
+                Plan(dimensionId, layer, regions, shape.what, { cx, cz -> shape.beyond(cx * 16.0, cz * 16.0, cx * 16.0 + 16, cz * 16.0 + 16) }, shape.nothing, shape.from) to null
             }
         }
     }
 
     /**
      * A border, as what lies wholly [beyond] it and what wholly [inside] it, each asked about a box
-     * (minX, minZ, maxX, maxZ) in blocks. [from] says where it came from, for the log.
+     * (minX, minZ, maxX, maxZ) in blocks. [from] says where it came from and how big it is, for
+     * the preview and the log.
      */
     private class Shape(
         val from: String,
@@ -129,13 +133,17 @@ object MapClear {
      * The border to clear past in [dimensionId], or why there is none: the square given by hand
      * ([box]) if any, else the "World Border" outline on BlueMap's map (as a border plugin such as
      * Chunky draws it, often a circle), else the game's own world border.
+     *
+     * Of BlueMap's closed outlines with "border" in their label, the largest is used: a claim
+     * called "Border Town" must never be taken for the world border, which would clear everything
+     * outside the town.
      */
     private fun border(box: Box?, dimensionId: String, name: String): Pair<Shape?, String?> {
         val byHand = "If that is not the server's border, give its size: /mapexposer clear border <radius> [<centerX> <centerZ>]"
         if (box != null) {
             val r = box.radius.toDouble()
             return square(
-                "your radius", "$name map more than ${box.radius} blocks from ${box.centerX}, ${box.centerZ}",
+                "your radius, ${size(2.0 * box.radius, box.centerX.toDouble(), box.centerZ.toDouble())}", "$name map more than ${box.radius} blocks from ${box.centerX}, ${box.centerZ}",
                 "Nothing to clear: all your $name map is within ${box.radius} blocks of ${box.centerX}, ${box.centerZ}",
                 box.centerX - r, box.centerZ - r, box.centerX + r, box.centerZ + r,
             ) to null
@@ -145,9 +153,9 @@ object MapClear {
         if (session != null && map != null) {
             val snapshot = session.markers.of(map)
                 ?: return null to "BlueMap's markers for the $name are still being read; try again in a moment"
-            val drawn = snapshot.outlines.firstOrNull { it.closed && it.points.size >= 6 && it.label.contains("border", ignoreCase = true) }
+            val drawn = worldBorder(snapshot.outlines)
             if (drawn != null) return polygon(
-                drawn.points, "$name map beyond the world border on BlueMap",
+                drawn.label, drawn.points, "$name map beyond the world border on BlueMap",
                 "Nothing to clear: all your $name map is inside the world border on BlueMap. $byHand",
             ) to null
         }
@@ -162,7 +170,9 @@ object MapClear {
             "Nothing to clear: all your $name map is inside the world border, x ${border.minX.toInt()} to ${border.maxX.toInt()}, " +
                 "z ${border.minZ.toInt()} to ${border.maxZ.toInt()}. $byHand"
         }
-        return square("the game's world border", "$name map beyond the world border", nothing, border.minX, border.minZ, border.maxX, border.maxZ) to null
+        val across = maxOf(border.maxX - border.minX, border.maxZ - border.minZ)
+        val described = "the game's world border, ${size(across, (border.minX + border.maxX) / 2, (border.minZ + border.maxZ) / 2)}"
+        return square(described, "$name map beyond the world border", nothing, border.minX, border.minZ, border.maxX, border.maxZ) to null
     }
 
     private fun square(from: String, what: String, nothing: String, minX: Double, minZ: Double, maxX: Double, maxZ: Double) = Shape(
@@ -176,8 +186,15 @@ object MapClear {
      * a little inside the real one between corners, so a box counts as beyond it only when it is
      * [MARGIN] blocks clear of every side.
      */
-    private fun polygon(points: FloatArray, what: String, nothing: String): Shape {
+    private fun polygon(label: String, points: FloatArray, what: String, nothing: String): Shape {
         val n = points.size / 2
+        var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
+        var minZ = Double.MAX_VALUE; var maxZ = -Double.MAX_VALUE
+        for (i in 0 until n) {
+            minX = minOf(minX, points[i * 2].toDouble()); maxX = maxOf(maxX, points[i * 2].toDouble())
+            minZ = minOf(minZ, points[i * 2 + 1].toDouble()); maxZ = maxOf(maxZ, points[i * 2 + 1].toDouble())
+        }
+        val described = "BlueMap marker '$label', ${size(maxOf(maxX - minX, maxZ - minZ), (minX + maxX) / 2, (minZ + maxZ) / 2)}"
         fun contains(x: Double, z: Double): Boolean {
             var inside = false
             var j = n - 1
@@ -198,7 +215,7 @@ object MapClear {
             return false
         }
         return Shape(
-            "BlueMap's world border marker", what, nothing,
+            described, what, nothing,
             beyond = { x0, z0, x1, z1 ->
                 !contains((x0 + x1) / 2, (z0 + z1) / 2) && !touches(x0 - MARGIN, z0 - MARGIN, x1 + MARGIN, z1 + MARGIN)
             },
@@ -209,6 +226,27 @@ object MapClear {
     }
 
     private const val MARGIN = 16.0
+
+    /** Of BlueMap's closed outlines with "border" in their label, the largest; see [border]. */
+    internal fun worldBorder(outlines: List<Markers.Outline>): Markers.Outline? = outlines
+        .filter { it.closed && it.points.size >= 6 && it.label.contains("border", ignoreCase = true) }
+        .maxByOrNull { area(it.points) }
+
+    /** The area inside a closed outline ([points], x and z of each), by the shoelace formula. */
+    private fun area(points: FloatArray): Double {
+        val n = points.size / 2
+        var twice = 0.0
+        var j = n - 1
+        for (i in 0 until n) {
+            twice += points[j * 2].toDouble() * points[i * 2 + 1] - points[i * 2].toDouble() * points[j * 2 + 1]
+            j = i
+        }
+        return kotlin.math.abs(twice) / 2
+    }
+
+    /** "about 20,000 blocks across, around 0, 0" */
+    private fun size(across: Double, centerX: Double, centerZ: Double) =
+        "about ${"%,d".format(across.roundToLong())} blocks across, around ${centerX.roundToLong()}, ${centerZ.roundToLong()}"
 
     /** Whether the line from (ax, az) to (bx, bz) passes through the box, by clipping it to the box. */
     private fun segmentMeetsBox(ax: Double, az: Double, bx: Double, bz: Double, x0: Double, z0: Double, x1: Double, z1: Double): Boolean {

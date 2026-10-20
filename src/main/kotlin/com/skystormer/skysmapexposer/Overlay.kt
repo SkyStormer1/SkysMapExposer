@@ -38,6 +38,23 @@ object Overlay {
         cameraZ: Double,
         rendererProvider: MultiTextureRenderTypeRendererProvider,
     ) {
+        if (HookErrors.isOff(HookErrors.WORLD_MAP)) return
+        try {
+            drawFrame(mapProcessor, matrix, flooredCameraX, flooredCameraZ, cameraX, cameraZ, rendererProvider)
+        } catch (e: Throwable) {
+            HookErrors.failed(HookErrors.WORLD_MAP, e)
+        }
+    }
+
+    private fun drawFrame(
+        mapProcessor: MapProcessor,
+        matrix: Matrix4f,
+        flooredCameraX: Int,
+        flooredCameraZ: Int,
+        cameraX: Double,
+        cameraZ: Double,
+        rendererProvider: MultiTextureRenderTypeRendererProvider,
+    ) {
         Backfill.nextFrame()
         if (!hookRan) {
             hookRan = true
@@ -57,26 +74,30 @@ object Overlay {
             ?: return standDown("too-far", "Zoomed out too far to cover with BlueMap")
 
         var renderer: MultiTextureRenderTypeRenderer? = null
-        for (piece in plan.pieces) {
-            val batch = renderer ?: rendererProvider.getRenderer(CustomRenderTypes.MAP).also { renderer = it }
-            val size = piece.tileSize.toFloat()
-            val r = piece.mask.rectangles
-            for (i in 0 until piece.mask.count) {
-                val rMinX = r[i * 4]
-                val rMinZ = r[i * 4 + 1]
-                val rMaxX = r[i * 4 + 2]
-                val rMaxZ = r[i * 4 + 3]
-                GuiMap.renderTexturedModalSubRectWithLighting(
-                    matrix,
-                    rMinX - flooredCameraX, rMinZ - flooredCameraZ,
-                    (rMinX - piece.originX) / size, (rMinZ - piece.originZ) / size,
-                    (rMaxX - piece.originX) / size, (rMaxZ - piece.originZ) / size,
-                    rMaxX - rMinX, rMaxZ - rMinZ,
-                    piece.texture, false, batch,
-                )
+        // Handed back to Xaero even if a piece fails, so its renderer is never left half used.
+        try {
+            for (piece in plan.pieces) {
+                val batch = renderer ?: rendererProvider.getRenderer(CustomRenderTypes.MAP).also { renderer = it }
+                val size = piece.tileSize.toFloat()
+                val r = piece.mask.rectangles
+                for (i in 0 until piece.mask.count) {
+                    val rMinX = r[i * 4]
+                    val rMinZ = r[i * 4 + 1]
+                    val rMaxX = r[i * 4 + 2]
+                    val rMaxZ = r[i * 4 + 3]
+                    GuiMap.renderTexturedModalSubRectWithLighting(
+                        matrix,
+                        rMinX - flooredCameraX, rMinZ - flooredCameraZ,
+                        (rMinX - piece.originX) / size, (rMinZ - piece.originZ) / size,
+                        (rMaxX - piece.originX) / size, (rMaxZ - piece.originZ) / size,
+                        rMaxX - rMinX, rMaxZ - rMinZ,
+                        piece.texture, false, batch,
+                    )
+                }
             }
+        } finally {
+            renderer?.let(rendererProvider::draw)
         }
-        renderer?.let(rendererProvider::draw)
         if (plan.loading.isNotEmpty()) {
             val buffer = XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY)
             Spinner.draw(buffer, matrix, plan.loading, target.layout.tileSize, flooredCameraX, flooredCameraZ, cameraX, cameraZ, blocksPerUnit)
