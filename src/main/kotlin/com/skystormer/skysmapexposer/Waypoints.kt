@@ -152,14 +152,23 @@ object Waypoints {
         Minecraft.getInstance().player?.sendOverlayMessage(Component.literal(message))
     }
 
-    private fun initials(label: String): String {
-        val words = label.split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
-        return when {
+    /**
+     * Two letters for [label]. Xaero shows `§` colour codes in waypoint names and initials (checked
+     * in game), so the name keeps them and the initials take the colour the label starts with; the
+     * codes themselves are never taken for letters (`§cShop` is a red "SH", not "CS").
+     */
+    internal fun initials(label: String): String {
+        val leading = FORMAT_CODE_AT_START.find(label)?.value ?: ""
+        val words = label.replace(FORMAT_CODE, "").split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
+        return leading + when {
             words.size >= 2 -> "${words[0][0]}${words[1][0]}".uppercase()
             words.size == 1 -> words[0].take(2).uppercase()
             else -> "B"
         }
     }
+
+    private val FORMAT_CODE = Regex("§.")
+    private val FORMAT_CODE_AT_START = Regex("^(§.)+")
 
     /** Banners in the colour of the banner, shops gold, everything else aqua. */
     private fun colourOf(pin: Markers.Pin): WaypointColor {

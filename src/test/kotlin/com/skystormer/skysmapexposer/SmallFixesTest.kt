@@ -54,6 +54,13 @@ class SmallFixesTest {
     }
 
     @Test
+    fun `waypoint initials keep the label's colour but never take a code for a letter`() {
+        assertEquals("§cSH", Waypoints.initials("§cShop"))
+        assertEquals("§c§lMS", Waypoints.initials("§c§lMain §eSpawn"))
+        assertEquals("FB", Waypoints.initials("Farm Base"))
+    }
+
+    @Test
     fun `an out of range block index says the file is damaged`() {
         val bytes = ByteArrayOutputStream()
         DataOutputStream(bytes).use { out ->
