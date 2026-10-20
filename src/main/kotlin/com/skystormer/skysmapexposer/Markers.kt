@@ -4,10 +4,10 @@ import com.google.gson.JsonObject
 import com.mojang.blaze3d.platform.NativeImage
 import com.mojang.renderpearl.api.textures.GpuTextureView
 import net.minecraft.client.renderer.texture.DynamicTexture
-import java.awt.Image
 import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
+import kotlin.math.roundToInt
 
 /**
  * BlueMap's markers for one server, read from each map's `live/markers.json` every
@@ -278,19 +278,47 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
 /** The most an icon is kept at, each way: drawn at most a few dozen pixels, a bigger one only costs video memory. */
 internal const val ICON_SIDE = 64
 
-/** [image] scaled down, keeping its shape, to fit [ICON_SIDE] each way; as it is if it already fits. */
+/**
+ * [image] scaled down, keeping its shape, to fit [ICON_SIDE] each way; as it is if it already fits.
+ *
+ * Each new pixel is the average of the old ones it covers, weighted by how much of each it covers
+ * and by their opacity, so a see-through edge does not darken. Done by hand: Java's own scaling
+ * starts its desktop graphics toolkit, which has no business inside the game.
+ */
 internal fun shrinkIcon(image: BufferedImage): BufferedImage {
     val longest = maxOf(image.width, image.height)
     if (longest <= ICON_SIDE) return image
     val width = (image.width * ICON_SIDE / longest).coerceAtLeast(1)
     val height = (image.height * ICON_SIDE / longest).coerceAtLeast(1)
+    val source = image.getRGB(0, 0, image.width, image.height, null, 0, image.width)
+    val sx = image.width.toDouble() / width
+    val sy = image.height.toDouble() / height
     val small = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-    val graphics = small.createGraphics()
-    try {
-        // Area averaging: a big step down with bilinear alone would sample a few pixels and shimmer.
-        graphics.drawImage(image.getScaledInstance(width, height, Image.SCALE_AREA_AVERAGING), 0, 0, null)
-    } finally {
-        graphics.dispose()
+    for (y in 0 until height) {
+        val y0 = y * sy
+        val y1 = y0 + sy
+        for (x in 0 until width) {
+            val x0 = x * sx
+            val x1 = x0 + sx
+            var a = 0.0; var r = 0.0; var g = 0.0; var b = 0.0; var area = 0.0
+            for (py in y0.toInt() until minOf(image.height, kotlin.math.ceil(y1).toInt())) {
+                val wy = minOf(y1, py + 1.0) - maxOf(y0, py.toDouble())
+                for (px in x0.toInt() until minOf(image.width, kotlin.math.ceil(x1).toInt())) {
+                    val w = wy * (minOf(x1, px + 1.0) - maxOf(x0, px.toDouble()))
+                    val argb = source[py * image.width + px]
+                    val alpha = (argb ushr 24) / 255.0 * w
+                    a += alpha
+                    r += (argb shr 16 and 0xFF) * alpha
+                    g += (argb shr 8 and 0xFF) * alpha
+                    b += (argb and 0xFF) * alpha
+                    area += w
+                }
+            }
+            if (a <= 0.0) continue
+            val alpha = (a / area * 255).roundToInt().coerceIn(0, 255)
+            small.setRGB(x, y, (alpha shl 24) or ((r / a).roundToInt().coerceIn(0, 255) shl 16) or
+                ((g / a).roundToInt().coerceIn(0, 255) shl 8) or (b / a).roundToInt().coerceIn(0, 255))
+        }
     }
     return small
 }
