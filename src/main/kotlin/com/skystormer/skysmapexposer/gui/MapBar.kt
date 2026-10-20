@@ -12,8 +12,6 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.core.registries.Registries
 import net.minecraft.network.chat.Component
-import net.minecraft.client.renderer.RenderPipelines
-import net.minecraft.resources.Identifier
 import net.minecraft.locale.Language
 import net.minecraft.resources.ResourceKey
 import net.minecraft.tags.BiomeTags
@@ -45,12 +43,7 @@ object MapBar {
     private const val OFF = 0xFF9A9A9A.toInt()
 
     private const val TITLE = "Map Exposer"
-    /** The settings button, which shows [COG] rather than a word: no text, so its box is the smallest, square. */
-    private const val SET = ""
-
-    /** A 7×7 white cog, tinted like the buttons' text. */
-    private val COG: Identifier = Identifier.fromNamespaceAndPath("skysmapexposer", "textures/gui/cog.png")
-    private const val COG_SIZE = 7
+    private const val SET = "Set"
     private const val CLEAR = "Clear"
 
     /** How wide a tooltip may be before it wraps onto another line. */
@@ -220,8 +213,7 @@ object MapBar {
             offset = 0
         }
 
-        // At least square, for the cog.
-        private fun switchWidth(label: String) = maxOf(font.width(label) + 4, ROW - 2)
+        private fun switchWidth(label: String) = font.width(label) + 4
 
         private fun switchesWidth() = SWITCHES.sumOf { switchWidth(it.label) + PAD } + PAD
 
@@ -337,13 +329,7 @@ object MapBar {
             }
             graphics.fill(left, top + 1, left + switchWidth(label), top + ROW - 1, fill)
             val lit = on || label == SET || label == CLEAR || label == "List"
-            val colour = if (lit) WHITE else OFF
-            if (label == SET) {
-                val x = left + (switchWidth(label) - COG_SIZE) / 2
-                graphics.blit(RenderPipelines.GUI_TEXTURED, COG, x, top + 2, 0f, 0f, COG_SIZE, COG_SIZE, COG_SIZE, COG_SIZE, COG_SIZE, COG_SIZE, colour)
-            } else {
-                graphics.text(font, label, left + 2, top + 2, colour, false)
-            }
+            graphics.text(font, label, left + 2, top + 2, if (lit) WHITE else OFF, false)
         }
 
         /**
