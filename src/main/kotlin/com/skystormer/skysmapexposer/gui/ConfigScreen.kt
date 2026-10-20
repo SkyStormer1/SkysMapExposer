@@ -17,7 +17,6 @@ import net.minecraft.client.gui.components.CycleButton
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import java.time.Instant
@@ -204,9 +203,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val size = CycleButton.builder<Int>({ Component.literal("$it blocks") }, TerrainFill.radius)
             .withValues(TerrainFill.RADII)
             .create(left, y, half, ROW, Component.literal("Around you")) { _, value -> TerrainFill.radius = value }
-        size.setTooltip(Tooltip.create(Component.literal(
+        size.setTooltip(SafeTooltip.of(
             "How far from where you stand to fill, in every direction. Bigger takes longer: BlueMap's 3D tiles are " +
-                "downloaded a couple at a time so the server is not slowed down.")))
+                "downloaded a couple at a time so the server is not slowed down."))
         size.active = chosen.isNotEmpty() && !TerrainFill.running
         addRenderableWidget(size)
         val button = if (TerrainFill.running) {
@@ -216,10 +215,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 fillStatus = TerrainFill.start()
                 com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
                 rebuildWidgets()
-            }.tooltip(Tooltip.create(Component.literal(
+            }.tooltip(SafeTooltip.of(
                 "Rebuilds the chunks around you from BlueMap's 3D map and hands them to " +
                     (chosen.joinToString(" and ").ifEmpty { "the mods switched on above" }) +
-                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one.")))
+                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one."))
         }
         addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = TerrainFill.running || chosen.isNotEmpty() })
         y += ROW + GAP
@@ -267,11 +266,11 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             .withValues(Config.MinimapPlayers.entries.toList())
             .displayOnlyValue()
             .create(left + half + GAP, y, WIDTH - half - GAP, ROW, Component.literal("Minimap players")) { _, value -> minimapPlayers = value }
-        minimapChoice.setTooltip(Tooltip.create(Component.literal(
+        minimapChoice.setTooltip(SafeTooltip.of(
             "Which players the minimap shows. BlueMap knows where everyone is, so a zoomed out minimap can keep them " +
                 "on screen after they leave your render distance. Out of range leaves the ones near you to Xaero's own " +
                 "radar, so nobody is drawn twice; choose All players if you have that radar switched off."
-        )))
+        ))
         addRenderableWidget(minimapChoice)
         y += ROW + GAP * 3
 
@@ -280,16 +279,16 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val staleBoxWidth = 28
         label(left, y, staleLabel, "Replace after")
         staleBox = field(left + staleLabel, y, staleBoxWidth, staleDays, "7").also {
-            it.setTooltip(Tooltip.create(Component.literal(
+            it.setTooltip(SafeTooltip.of(
                 "Days before your own map counts as out of date. After that, BlueMap's picture replaces it wherever BlueMap has changed since you were last there."
-            )))
+            ))
         }
         label(left + staleLabel + staleBoxWidth + 4, y, 26, "days")
         val sliderLeft = left + staleLabel + staleBoxWidth + 32
         val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, shrinkChunks) { shrinkChunks = it }
-        slider.setTooltip(Tooltip.create(Component.literal(
+        slider.setTooltip(SafeTooltip.of(
             "BlueMap markers show on the minimap only within this distance, smaller the further away they are. The world map still shows them all."
-        )))
+        ))
         addRenderableWidget(slider)
         y += ROW + GAP
 
@@ -309,7 +308,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(
             Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
                 .bounds(left, y, WIDTH, ROW)
-                .tooltip(Tooltip.create(Component.literal("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates.")))
+                .tooltip(SafeTooltip.of("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates."))
                 .build()
         )
     }
@@ -334,41 +333,41 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val draft = drafts[selected]
         label(left, y, labelWidth, "Server address")
         addressBox = field(fieldLeft, y, fieldWidth, draft.addresses, "play.example.com, 1.2.3.4").also {
-            it.setTooltip(Tooltip.create(Component.literal(
+            it.setTooltip(SafeTooltip.of(
                 "Every name you join this server by, as typed in your server list, separated by commas."
-            )))
+            ))
         }
         y += ROW + GAP
         label(left, y, labelWidth, "BlueMap address")
         urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/").also {
-            it.setTooltip(Tooltip.create(Component.literal(
+            it.setTooltip(SafeTooltip.of(
                 "The web address of the server's BlueMap: the page you open in a browser to see the map."
-            )))
+            ))
         }
         y += ROW + GAP
 
         for ((dimension, name) in DIMENSIONS) {
             label(left, y, labelWidth, "$name map")
             val box = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.maps[dimension] ?: "", "blank = none")
-            box.setTooltip(Tooltip.create(Component.literal(
+            box.setTooltip(SafeTooltip.of(
                 "Which BlueMap map shows the $name. Find maps lists them. Its border, markers and players show even with its terrain off."
-            )))
+            ))
             mapBoxes[dimension] = box
             val terrain = CycleButton.onOffBuilder(dimension !in draft.off)
                 .displayOnlyValue()
                 .create(left + WIDTH - switchWidth, y, switchWidth, ROW, Component.literal("$name terrain")) { _, on ->
                     if (on) draft.off.remove(dimension) else draft.off.add(dimension)
                 }
-            terrain.setTooltip(Tooltip.create(Component.literal("Fill in the $name with this map's terrain.")))
+            terrain.setTooltip(SafeTooltip.of("Fill in the $name with this map's terrain."))
             addRenderableWidget(terrain)
             y += ROW + GAP
         }
 
         label(left, y, labelWidth, "Cover map before")
         val cover = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.coverOverworld, "blank = never")
-        cover.setTooltip(Tooltip.create(Component.literal(
+        cover.setTooltip(SafeTooltip.of(
             "Your overworld map from before this date and time (yyyy-MM-dd HH:mm) is covered by BlueMap however recent it is. For a map left over from a previous season."
-        )))
+        ))
         coverBox = cover
         addRenderableWidget(
             Button.builder(Component.literal("Now")) { cover.value = formatTime(System.currentTimeMillis()) }
@@ -404,16 +403,16 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 rebuildWidgets()
             }
                 .bounds(x, y, width, ROW)
-                .tooltip(Tooltip.create(Component.literal(BlueMapDownload.status() ?: "A download from BlueMap is running.")))
+                .tooltip(SafeTooltip.of(BlueMapDownload.status() ?: "A download from BlueMap is running."))
                 .build()
         }
         val button = Button.builder(Component.literal("Download…")) { confirmDownload() }
             .bounds(x, y, width, ROW)
-            .tooltip(Tooltip.create(Component.literal(
+            .tooltip(SafeTooltip.of(
                 "Download from BlueMap into your own Xaero map, for the dimension the world map is showing: " +
                     "only the chunks you have never explored, or everything. Each region of your map is backed up " +
                     "just before it is changed."
-            )))
+            ))
             .build()
         button.active = Session.current != null
         return button
@@ -462,7 +461,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
         init {
             updateMessage()
-            setTooltip(Tooltip.create(Component.literal(explanation)))
+            setTooltip(SafeTooltip.of(explanation))
         }
 
         private val scale: Float
@@ -485,7 +484,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private fun toggle(x: Int, y: Int, width: Int, name: String, value: Boolean, explanation: String, onChange: (Boolean) -> Unit): CycleButton<Boolean> =
         CycleButton.onOffBuilder(value).create(x, y, width, ROW, Component.literal(name)) { _, on -> onChange(on) }
-            .also { it.setTooltip(Tooltip.create(Component.literal(explanation))) }
+            .also { it.setTooltip(SafeTooltip.of(explanation)) }
 
     private fun label(x: Int, y: Int, width: Int, text: String) {
         addRenderableWidget(StringWidget(x, y + 6, width, font.lineHeight, Component.literal(text), font))

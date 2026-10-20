@@ -257,8 +257,9 @@ object TerrainFiles {
         while (opened.size > KEEP_OPENED) opened.remove(opened.keys.first())
         val name = MapMenus.dimensionName(file.dimensionId) ?: file.dimensionId
         Log.info("Opened {} as {}: {} chunks of the {} (cave layer {}) from {}", path, id, file.chunks, file.dimensionId, file.layer, file.from)
+        val layer = if (file.layer == XaeroWriter.SURFACE) "" else " (${layerName(file.layer)})"
         player.sendSystemMessage(
-            Component.literal("§b${file.from}§r's terrain: ${file.chunks} chunks of the $name near ${file.area.x}, ${file.area.z}  ")
+            Component.literal("§b${file.from}§r's terrain: ${file.chunks} chunks of the $name$layer near ${file.area.x}, ${file.area.z}  ")
                 .append(ChatButton.of("[Add to unexplored only]", "/mapexposer shared $id blank", "Only fills chunks you have never mapped."))
                 .append(Component.literal(" "))
                 .append(ChatButton.of("[Add all]", "/mapexposer shared $id all", "Also replaces your own map there. Each region is backed up first."))
@@ -316,25 +317,49 @@ object TerrainFiles {
         return out.size()
     }
 
-    /** Adds opened file [id] to your map; with [unexploredOnly], only into chunks you have never mapped. Returns what to tell the player. */
-    fun add(id: Int, unexploredOnly: Boolean): String {
+    /**
+     * Adds opened file [id] to your map; with [unexploredOnly], only into chunks you have never
+     * mapped. Returns what to tell the player, or null when it has asked in chat instead.
+     *
+     * A file writes into the cave layer it was saved from. If the world map shows another layer of
+     * that dimension, the import would work but show nothing there, so unless [confirmed] this asks
+     * first.
+     */
+    fun add(id: Int, unexploredOnly: Boolean, confirmed: Boolean = false): String? {
         val file = opened[id] ?: return "That map file is no longer open; drop it onto the game again"
-        val ahead = ReadAhead(file)
+        val shown = XaeroWriter.shown().first
+        if (!confirmed && shown != null && shown.dimensionId == file.dimensionId && shown.layer != file.layer) {
+            val name = MapMenus.dimensionName(file.dimensionId) ?: file.dimensionId
+            val command = "/mapexposer shared $id ${if (unexploredOnly) "blank" else "all"} confirm"
+            Minecraft.getInstance().player?.sendSystemMessage(
+                Component.literal("§eThis map is of ${layerName(file.layer)} of the $name, but the world map is showing ${layerName(shown.layer)}. " +
+                    "It goes into ${layerName(file.layer)}, so you won't see it until the map shows that.§r  ")
+                    .append(ChatButton.of("[Add anyway]", command, "Adds it to ${layerName(file.layer)}."))
+            )
+            return null
+        }
+        val unreadable = AtomicInteger()
+        val ahead = ReadAhead(file, unreadable)
         val regions = file.entries.mapIndexed { index, entry -> Triple(entry.regionX, entry.regionZ) { ahead.get(index) } }
-        return BlueMapDownload.startShared(regions, file.dimensionId, file.layer, file.from, unexploredOnly)
+        return BlueMapDownload.startShared(regions, file.dimensionId, file.layer, file.from, unexploredOnly) {
+            val count = unreadable.get()
+            if (count == 0) "" else ", $count region${if (count == 1) "" else "s"} could not be read (the file may be damaged)"
+        }
     }
+
+    private fun layerName(layer: Int) = if (layer == XaeroWriter.SURFACE) "the surface" else "cave layer $layer"
 
     /**
      * Reads [file]'s regions on [worker], a few ahead of the one being written, so that the
      * client thread only ever picks up a region that is ready. Used on the client thread only.
      */
-    private class ReadAhead(val file: Opened) {
+    private class ReadAhead(val file: Opened, val unreadable: AtomicInteger) {
         private val reads = HashMap<Int, Future<XaeroWriter.Pixels>>()
 
         /** Region [index], or null while it is still being read. */
         fun get(index: Int): XaeroWriter.Pixels? {
             for (i in index..minOf(index + AHEAD, file.entries.lastIndex)) {
-                reads.getOrPut(i) { worker.submit(Callable { region(file, file.entries[i]) }) }
+                reads.getOrPut(i) { worker.submit(Callable { region(file, file.entries[i], unreadable) }) }
             }
             val read = reads.getValue(index)
             if (!read.isDone) return null
@@ -343,8 +368,8 @@ object TerrainFiles {
         }
     }
 
-    /** One region of [file], read when it is about to be written; nothing if it cannot be read. */
-    private fun region(file: Opened, entry: Entry): XaeroWriter.Pixels {
+    /** One region of [file], read when it is about to be written; nothing if it cannot be read, counted in [unreadable]. */
+    private fun region(file: Opened, entry: Entry, unreadable: AtomicInteger): XaeroWriter.Pixels {
         val empty = ShareFormat.SharedRegion(entry.regionX, entry.regionZ)
         return try {
             val bytes = ByteArray(entry.length)
@@ -360,6 +385,7 @@ object TerrainFiles {
             regions[entry.regionX to entry.regionZ] ?: empty
         } catch (e: Exception) {
             Log.error("Could not read region ${entry.regionX}_${entry.regionZ} of ${file.path}; left it out", e)
+            unreadable.incrementAndGet()
             empty
         }
     }

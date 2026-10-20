@@ -56,19 +56,36 @@ object MarkerElements {
      */
     fun pinsForWorldMap(): List<Markers.Pin> = pinsFor(worldMapDimension())
 
-    /** The markers and players BlueMap has for [dimension], in that dimension's own coordinates. */
+    /**
+     * The markers and players BlueMap has for [dimension], in that dimension's own coordinates.
+     *
+     * Asked for every frame, so the list is kept and only rebuilt when what it is made from
+     * changes. Markers and players are each replaced by a new list when read again, so comparing
+     * them by identity is enough; another dimension or a switch turned off gives another list or none.
+     */
     fun pinsFor(dimension: String?): List<Markers.Pin> {
         val session = Session.current ?: return emptyList()
         if (dimension == null) return emptyList()
         val map = session.server.markersFor(dimension) ?: return emptyList()
-        val pins = ArrayList<Markers.Pin>()
-        if (Config.showMarkers) session.markers.of(map)?.let { pins.addAll(it.points) }
-        if (Config.showPlayers) {
-            val me = Minecraft.getInstance().player?.uuid
-            session.markers.players(map).filterTo(pins) { it.uuid != me }
-        }
-        return pins
+        val snapshot = if (Config.showMarkers) session.markers.of(map) else null
+        val players = if (Config.showPlayers) session.markers.players(map) else null
+        val me = Minecraft.getInstance().player?.uuid
+        if (snapshot === pinsSnapshot && players === pinsPlayers && me == pinsMe) return pins
+        val built = ArrayList<Markers.Pin>()
+        snapshot?.let { built.addAll(it.points) }
+        players?.filterTo(built) { it.uuid != me }
+        pins = built
+        pinsSnapshot = snapshot
+        pinsPlayers = players
+        pinsMe = me
+        return built
     }
+
+    // What [pinsFor] last built [pins] from.
+    private var pins: List<Markers.Pin> = emptyList()
+    private var pinsSnapshot: Markers.Snapshot? = null
+    private var pinsPlayers: List<Markers.Player>? = null
+    private var pinsMe: java.util.UUID? = null
 
     class Provider : ElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: ElementRenderLocation, context: Context) {

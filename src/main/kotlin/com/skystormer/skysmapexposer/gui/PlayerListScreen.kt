@@ -14,7 +14,6 @@ import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.CycleButton
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
@@ -101,7 +100,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 MapMenus.say("Unlocked everyone")
                 refreshRows(force = true)
             }.bounds(left + (quarter + GAP) * 3, y, listWidth - (quarter + GAP) * 3, ROW)
-                .tooltip(Tooltip.create(Component.literal("Stop following every player you have locked on to.")))
+                .tooltip(SafeTooltip.of("Stop following every player you have locked on to."))
                 .build()
         )
         y += ROW + GAP
@@ -203,21 +202,21 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 if (locked) LOCKED else NAME,
                 columns,
             )
-            text.setTooltip(Tooltip.create(Component.literal(
+            text.setTooltip(SafeTooltip.of(
                 "${player.label}\n$coordinates in ${dimensionName(entry.dimension)}\n" +
                     if (locked) "Locked on: their head follows them in the world." else "Not locked on."
-            )))
+            ))
             row(text)
 
             var x = left + textWidth
             val go = Button.builder(Component.literal("Go to")) { goTo(entry) }
                 .bounds(x, y, buttonWidth, ROW)
-                .tooltip(Tooltip.create(Component.literal(
+                .tooltip(SafeTooltip.of(
                     (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
                     else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
                         "${player.label}. It switches back when you leave the map.") +
                         " Their head gets a rainbow outline until you leave the map."
-                )))
+                ))
                 .build()
             row(go)
             x += buttonWidth + GAP
@@ -227,10 +226,10 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 refreshRows(force = true)
             }
                 .bounds(x, y, listWidth - (x - left), ROW)
-                .tooltip(Tooltip.create(Component.literal(
+                .tooltip(SafeTooltip.of(
                     if (locked) "Stop following ${player.label}."
                     else "Follow ${player.label}: their pin keeps up with them and their head shows over them in the world."
-                )))
+                ))
                 .build()
             lock.active = Session.current != null
             row(lock)

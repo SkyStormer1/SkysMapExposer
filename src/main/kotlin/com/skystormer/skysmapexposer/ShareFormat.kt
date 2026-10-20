@@ -395,11 +395,11 @@ object ShareFormat {
             val cz = input.readInt()
             val chunk = SharedChunk()
             for (i in 0 until 256) {
-                chunk.state[i] = states[varint(input)]
+                chunk.state[i] = states.entry(varint(input), "block")
                 val height = input.readShort()
                 chunk.height[i] = height
                 chunk.top[i] = (height + unzigzag(varint(input))).toShort()
-                chunk.biome[i] = varint(input).let { if (it == 0) null else biomes[it - 1] }
+                chunk.biome[i] = varint(input).let { if (it == 0) null else biomes.entry(it - 1, "biome") }
                 val lightAndGlow = input.readUnsignedByte()
                 chunk.light[i] = (lightAndGlow and 15).toByte()
                 chunk.glowing[i] = lightAndGlow and 16 != 0
@@ -407,7 +407,7 @@ object ShareFormat {
                 if (overlays > MAX_OVERLAYS) error("$overlays layers on one block")
                 if (overlays > 0) {
                     chunk.overlays[i] = List(overlays) {
-                        val state = states[varint(input)]
+                        val state = states.entry(varint(input), "block")
                         val bits = input.readUnsignedByte()
                         SharedOverlay(state, (bits and 15).toByte(), bits and 16 != 0, input.readUnsignedByte())
                     }
@@ -417,6 +417,10 @@ object ShareFormat {
             region.chunks[(cz and 31) * 32 + (cx and 31)] = chunk
         }
     }
+
+    /** Entry [index] of a list read from the file, or "the file is damaged" if there is no such entry. */
+    private fun <T> List<T>.entry(index: Int, what: String): T =
+        getOrNull(index) ?: error("the file is damaged ($what $index of $size)")
 
     // ---- terrain, as it is written into your map ----
 

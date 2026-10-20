@@ -4,7 +4,6 @@ import com.mojang.blaze3d.platform.InputConstants
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
 import net.minecraft.client.gui.components.Button
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.CommonComponents
@@ -53,7 +52,7 @@ abstract class FramedScreen(title: Component) : Screen(title) {
         val y = height - FOOTER / 2 - ROW / 2
         val reset = Button.builder(Component.literal(RESET)) { reset() }
             .bounds(left, y, half, ROW)
-            .tooltip(Tooltip.create(Component.literal(resetTip)))
+            .tooltip(SafeTooltip.of(resetTip))
             .build()
         val done = Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + half + GAP, y, footerWidth - half - GAP, ROW).build()
         addRenderableWidget(reset)

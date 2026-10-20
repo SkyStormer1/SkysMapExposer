@@ -4,7 +4,6 @@ import com.skystormer.skysmapexposer.BlueMapDownload
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
@@ -40,19 +39,19 @@ class DownloadScreen(
         addRenderableWidget(
             Button.builder(Component.literal("Unexplored only")) { choose(unexploredOnly = true) }
                 .bounds(left, y, width, ROW)
-                .tooltip(Tooltip.create(Component.literal(
+                .tooltip(SafeTooltip.of(
                     "Fill in only the chunks you have never mapped. Everything you have explored stays exactly as it is."
-                )))
+                ))
                 .build()
         )
         y += ROW + GAP
         addRenderableWidget(
             Button.builder(Component.literal("Everything")) { choose(unexploredOnly = false) }
                 .bounds(left, y, width, ROW)
-                .tooltip(Tooltip.create(Component.literal(
+                .tooltip(SafeTooltip.of(
                     "Fill in the chunks you have never mapped, and replace what your map has wherever BlueMap " +
                         "shows something different. Where BlueMap has nothing, your map is left alone."
-                )))
+                ))
                 .build()
         )
         y += ROW + GAP

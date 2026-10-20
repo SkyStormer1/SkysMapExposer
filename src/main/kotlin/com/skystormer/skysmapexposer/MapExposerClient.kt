@@ -169,8 +169,10 @@ object MapExposerClient : ClientModInitializer {
                     .then(
                         ClientCommands.literal("shared").then(
                             ClientCommands.argument("id", IntegerArgumentType.integer(0))
-                                .then(ClientCommands.literal("blank").executes { addShared(it, unexploredOnly = true) })
-                                .then(ClientCommands.literal("all").executes { addShared(it, unexploredOnly = false) })
+                                .then(ClientCommands.literal("blank").executes { addShared(it, unexploredOnly = true) }
+                                    .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = true, confirmed = true) }))
+                                .then(ClientCommands.literal("all").executes { addShared(it, unexploredOnly = false) }
+                                    .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = false, confirmed = true) }))
                                 .then(ClientCommands.literal("waypoints").executes {
                                     it.source.sendFeedback(Component.literal(ChatShare.addWaypoints(IntegerArgumentType.getInteger(it, "id"))))
                                     1
@@ -433,8 +435,8 @@ object MapExposerClient : ClientModInitializer {
     }
 
     /** The buttons under a map file opened. */
-    private fun addShared(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean): Int {
-        context.source.sendFeedback(Component.literal(TerrainFiles.add(IntegerArgumentType.getInteger(context, "id"), unexploredOnly)))
+    private fun addShared(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean, confirmed: Boolean = false): Int {
+        TerrainFiles.add(IntegerArgumentType.getInteger(context, "id"), unexploredOnly, confirmed)?.let { context.source.sendFeedback(Component.literal(it)) }
         return 1
     }
 

@@ -43,7 +43,8 @@ object MapBar {
     private const val OFF = 0xFF9A9A9A.toInt()
 
     private const val TITLE = "Map Exposer"
-    private const val SET = "Set"
+    /** The settings button: a cog from the game's own font, centred in its box. */
+    private const val SET = "⚙"
     private const val CLEAR = "Clear"
 
     /** How wide a tooltip may be before it wraps onto another line. */
@@ -213,7 +214,8 @@ object MapBar {
             offset = 0
         }
 
-        private fun switchWidth(label: String) = font.width(label) + 4
+        // At least square, so a one-character button such as the cog is not a sliver.
+        private fun switchWidth(label: String) = maxOf(font.width(label) + 4, ROW - 2)
 
         private fun switchesWidth() = SWITCHES.sumOf { switchWidth(it.label) + PAD } + PAD
 
@@ -329,7 +331,7 @@ object MapBar {
             }
             graphics.fill(left, top + 1, left + switchWidth(label), top + ROW - 1, fill)
             val lit = on || label == SET || label == CLEAR || label == "List"
-            graphics.text(font, label, left + 2, top + 2, if (lit) WHITE else OFF, false)
+            graphics.text(font, label, left + (switchWidth(label) - font.width(label) + 1) / 2, top + 2, if (lit) WHITE else OFF, false)
         }
 
         /**

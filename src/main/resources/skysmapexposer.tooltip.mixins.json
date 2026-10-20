@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "com.skystormer.skysmapexposer.mixin.tooltip",
+  "compatibilityLevel": "JAVA_${java_version}",
+  "client": [
+    "WidgetTooltipHolderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

@@ -76,6 +76,8 @@ object BlueMapDownload {
         val layer: Int = XaeroWriter.SURFACE,
         /** Says what is said at the end, for a job that is not a download ([MapClear]); null for the usual. */
         val summary: ((XaeroWriter.Tally) -> String)? = null,
+        /** Added to the end of what is said at the end, e.g. how many regions of a file could not be read. */
+        val afterword: () -> String = { "" },
     ) {
         // Its own client: the session's is closed and replaced whenever the settings are saved.
         val blueMap = session?.let { BlueMap(it.server.url) }
@@ -148,8 +150,11 @@ object BlueMapDownload {
      * turn comes — into [dimensionId], which the world map has to be showing; with
      * [unexploredOnly], only into chunks you have never mapped. Returns what to tell the player.
      */
-    fun startShared(regions: List<Triple<Int, Int, () -> XaeroWriter.Pixels?>>, dimensionId: String, layer: Int, from: String, unexploredOnly: Boolean): String =
-        startLocal(regions, dimensionId, layer, unexploredOnly, "Adding $from's map", "Adding $from's map", "$from's map", null)
+    fun startShared(
+        regions: List<Triple<Int, Int, () -> XaeroWriter.Pixels?>>, dimensionId: String, layer: Int, from: String, unexploredOnly: Boolean,
+        afterword: () -> String = { "" },
+    ): String =
+        startLocal(regions, dimensionId, layer, unexploredOnly, "Adding $from's map", "Adding $from's map", "$from's map", afterword, null)
             ?.let { "Adding $from's map…" }
             ?: lastRefusal
 
@@ -170,6 +175,7 @@ object BlueMapDownload {
         title: String,
         doing: String,
         source: String,
+        afterword: () -> String = { "" },
         summary: ((XaeroWriter.Tally) -> String)?,
     ): String? {
         fun no(why: String): String? = null.also { lastRefusal = why }
@@ -183,7 +189,7 @@ object BlueMapDownload {
             null, shown.dimension, dimensionId, null, XaeroWriter.layerFolder(shown.base, layer), null, unexploredOnly,
             player?.blockX ?: 0, player?.blockZ ?: 0,
             title = title, doing = doing, source = source, capacity = Int.MAX_VALUE,
-            layer = layer, summary = summary,
+            layer = layer, summary = summary, afterword = afterword,
         )
         for ((rx, rz, pixels) in regions) started.ready.add(Pending(rx, rz) { pixels() })
         started.total = regions.size
@@ -445,7 +451,7 @@ object BlueMapDownload {
             chunks == 0 && !job.cancelled -> "${job.source} had nothing new there: your map already matches it"
             else -> "$head: $chunks chunks (${t.newChunks} new, ${t.replacedChunks} updated)" +
                 (if (job.skipped > 0) ", ${job.skipped} regions skipped — see the log" else "")
-        }
+        } + job.afterword()
         Log.info(
             "{} finished{} in {}: {} new chunks, {} updated, {} pixels written, {} of yours kept as they matched, " +
                 "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped",

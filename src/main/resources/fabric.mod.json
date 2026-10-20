@@ -32,7 +32,8 @@
   "mixins": [
     "skysmapexposer.mixins.json",
     "skysmapexposer.minimap.mixins.json",
-    "skysmapexposer.menu.mixins.json"
+    "skysmapexposer.menu.mixins.json",
+    "skysmapexposer.tooltip.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",

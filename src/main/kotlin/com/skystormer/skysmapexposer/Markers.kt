@@ -4,6 +4,8 @@ import com.google.gson.JsonObject
 import com.mojang.blaze3d.platform.NativeImage
 import com.mojang.renderpearl.api.textures.GpuTextureView
 import net.minecraft.client.renderer.texture.DynamicTexture
+import java.awt.Image
+import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 
@@ -157,7 +159,7 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
     private fun loadIcon(path: String, slot: IconSlot) {
         try {
             val bytes = blueMap.file(path) ?: throw IllegalStateException("not found")
-            val decoded = BlueMap.readImage(bytes, BlueMap.MAX_ICON)
+            val decoded = shrinkIcon(BlueMap.readImage(bytes, BlueMap.MAX_ICON))
             val image = NativeImage(decoded.width, decoded.height, false)
             for (y in 0 until decoded.height) {
                 for (x in 0 until decoded.width) image.setPixel(x, y, decoded.getRGB(x, y))
@@ -231,10 +233,7 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
             points[index * 2] = x
             points[index * 2 + 1] = z
         }
-        val colour = marker.getAsJsonObject("lineColor")?.let { c ->
-            val alpha = ((c.get("a")?.asFloat ?: 1f) * 255).toInt().coerceIn(0, 255)
-            (alpha shl 24) or (c.get("r").asInt shl 16) or (c.get("g").asInt shl 8) or c.get("b").asInt
-        } ?: 0xFFFF0000.toInt()
+        val colour = lineColour(marker.getAsJsonObject("lineColor"))
         if (colour ushr 24 == 0) return null
         return Outline(
             label = text(marker.get("label")?.asString ?: ""),
@@ -274,4 +273,33 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         }
         return text
     }
+}
+
+/** The most an icon is kept at, each way: drawn at most a few dozen pixels, a bigger one only costs video memory. */
+internal const val ICON_SIDE = 64
+
+/** [image] scaled down, keeping its shape, to fit [ICON_SIDE] each way; as it is if it already fits. */
+internal fun shrinkIcon(image: BufferedImage): BufferedImage {
+    val longest = maxOf(image.width, image.height)
+    if (longest <= ICON_SIDE) return image
+    val width = (image.width * ICON_SIDE / longest).coerceAtLeast(1)
+    val height = (image.height * ICON_SIDE / longest).coerceAtLeast(1)
+    val small = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+    val graphics = small.createGraphics()
+    try {
+        // Area averaging: a big step down with bilinear alone would sample a few pixels and shimmer.
+        graphics.drawImage(image.getScaledInstance(width, height, Image.SCALE_AREA_AVERAGING), 0, 0, null)
+    } finally {
+        graphics.dispose()
+    }
+    return small
+}
+
+/** BlueMap's `lineColor` (r, g, b 0–255, a 0–1) as ARGB; red if there is none. */
+internal fun lineColour(c: JsonObject?): Int {
+    c ?: return 0xFFFF0000.toInt()
+    val alpha = ((c.get("a")?.asFloat ?: 1f) * 255).toInt().coerceIn(0, 255)
+    // Each clamped, as a value like 300 would otherwise spill into the next colour.
+    fun channel(name: String) = c.get(name).asInt.coerceIn(0, 255)
+    return (alpha shl 24) or (channel("r") shl 16) or (channel("g") shl 8) or channel("b")
 }
