@@ -7,6 +7,7 @@ classes/
 # Loom
 .fabric/
 run/
+run2/
 remappedSrc/
 
 # IDE

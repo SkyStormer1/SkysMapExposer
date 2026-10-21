@@ -405,6 +405,13 @@ object MapBackup {
     var nearYou = 0
         private set
 
+    /** Whether region ([regionX], [regionZ]) comes within [reach] blocks of block ([x], [z]), at its nearest edge. */
+    internal fun reaches(x: Int, z: Int, regionX: Int, regionZ: Int, reach: Int): Boolean {
+        val dx = maxOf(regionX * 512 - x, 0, x - (regionX * 512 + 511))
+        val dz = maxOf(regionZ * 512 - z, 0, z - (regionZ * 512 + 511))
+        return dx <= reach && dz <= reach
+    }
+
     /** Restores [preview] and has Xaero read its regions again. Returns what was done, or why not. */
     fun restore(preview: Preview): Pair<Restored?, String?> {
         if (BlueMapDownload.running) return null to "Something is being written into your map; wait for it to finish, or cancel it, first"
@@ -412,12 +419,15 @@ object MapBackup {
         return try {
             val restored = putBack(root, preview, server())
             nearYou = 0
-            val player = Minecraft.getInstance().player
-            val here = Minecraft.getInstance().level?.dimension()?.identifier()?.toString() == preview.target.dimensionId
+            val minecraft = Minecraft.getInstance()
+            val player = minecraft.player
+            val here = minecraft.level?.dimension()?.identifier()?.toString() == preview.target.dimensionId
             val dimension = dimensionOf(preview.target.dimensionId)
+            // Xaero maps what is within your render distance, so only regions that reaches count.
+            val reach = (minecraft.options.renderDistance().get() + 1) * 16
             for ((x, z) in restored.regions) {
                 dimension?.let { reread(it, x, z, preview.target.layer) }
-                if (here && player != null && kotlin.math.abs(x - (player.blockX shr 9)) <= 1 && kotlin.math.abs(z - (player.blockZ shr 9)) <= 1) nearYou++
+                if (here && player != null && reaches(player.blockX, player.blockZ, x, z, reach)) nearYou++
             }
             Log.info("Put back {} regions of {} into {}; what was there is in {}", restored.regions.size, preview.name, preview.target.folder, restored.before)
             restored to null

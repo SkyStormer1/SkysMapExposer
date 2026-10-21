@@ -188,4 +188,15 @@ class RestoreTest {
         assertTrue(summary.endsWith(" and 7 more"), summary)
         assertEquals(12, skipped.all().size)
     }
+
+    @Test
+    fun `only regions your render distance reaches count as right around you`() {
+        val reach = 13 * 16 // 12 chunks and one more
+        assertTrue(MapBackup.reaches(5, 5, 0, 0, reach), "the region you stand in")
+        // Found in game: standing at 5, 5, region 1, 1 starts 507 blocks away and was counted.
+        assertFalse(MapBackup.reaches(5, 5, 1, 1, reach))
+        assertTrue(MapBackup.reaches(500, 5, 1, 0, reach), "12 blocks from its edge")
+        assertTrue(MapBackup.reaches(-100, -100, -1, -1, reach))
+        assertFalse(MapBackup.reaches(1000, 1000, -1, -1, reach))
+    }
 }
