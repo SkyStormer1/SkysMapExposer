@@ -82,8 +82,9 @@ object MapExposerClient : ClientModInitializer {
     override fun onInitializeClient() {
         Config.load()
 
-        // Under the chat, so a locked player's head never covers what someone is saying.
-        HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, BEACON, PlayerBeacon)
+        // Under the whole HUD, like anything else out in the world: the minimap (Xaero's draws
+        // just after this point), crosshair, hotbar, health and XP bars and chat all go over it.
+        HudElementRegistry.attachElementBefore(PlayerBeacon.DRAWN_BEFORE, BEACON, PlayerBeacon)
 
         addToMapScreen()
         ChatShare.register()

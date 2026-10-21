@@ -18,7 +18,8 @@ import kotlin.math.roundToInt
  * the head stays, from BlueMap's position when your game has none.
  *
  * Drawn as a HUD element rather than in the world, so it is always the same size on screen and
- * never hidden by terrain, and so no world render pipeline has to be touched.
+ * never hidden by terrain, and so no world render pipeline has to be touched. It is the first
+ * thing on the HUD ([DRAWN_BEFORE]), so the minimap, hotbar, health and XP bars stay on top of it.
  */
 object PlayerBeacon : HudElement {
 
@@ -33,6 +34,12 @@ object PlayerBeacon : HudElement {
 
     /** Kept off the very edge of the screen, so a half-drawn head never hangs off it. */
     private const val MARGIN = 4
+
+    /**
+     * The vanilla HUD element the heads are drawn just before: the first of them, so every part of
+     * the HUD, and Xaero's minimap (attached after it), is drawn over a head rather than under it.
+     */
+    val DRAWN_BEFORE: net.minecraft.resources.Identifier = net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements.MISC_OVERLAYS
 
     private var complained = false
 
