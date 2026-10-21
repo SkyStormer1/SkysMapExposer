@@ -257,7 +257,9 @@ object Backfill {
             if (isXaeroGap(mapProcessor, remembered, chunkX, chunkZ) || unshowable(target, chunkX, chunkZ, regionsKnown)) return true
             return regionsKnown && session.regionAges.minuteOf(target.regionFolder, chunkX shr 5, chunkZ shr 5) == 0
         }
-        return rectanglesOf(originX, originZ, tileSize, coarse.contentMinute, 0, ::wanted)
+        return rectanglesOf(originX, originZ, tileSize, coarse.contentMinute, 0, ::wanted) { x, z ->
+            coarse.hasDataAt(Math.floorDiv(x - coarseX, blocksPerPixel), Math.floorDiv(z - coarseZ, blocksPerPixel))
+        }
     }
 
     /**
@@ -362,12 +364,21 @@ object Backfill {
             return tile.contentMinute > seen
         }
 
-        val mask = rectanglesOf(originX, originZ, tileSize, tile.contentMinute, 0, ::chunkWanted)
+        val mask = rectanglesOf(originX, originZ, tileSize, tile.contentMinute, 0, ::chunkWanted) { x, z -> tile.hasDataAt(x - originX, z - originZ) }
         return Mask(mask.builtAt, mask.contentMinute, mask.rectangles, mask.count, gapCount)
     }
 
-    /** The chunks of the square at ([originX], [originZ]) that are [wanted], merged along each row into rectangles. */
-    private fun rectanglesOf(originX: Int, originZ: Int, tileSize: Int, contentMinute: Int, gapCount: Int, wanted: (Int, Int) -> Boolean): Mask {
+    /**
+     * The chunks of the square at ([originX], [originZ]) that are [wanted], merged along each row
+     * into rectangles; of a wanted chunk the picture has only part of, only the blocks it has
+     * ([present], by block). The picture has nothing where it has nothing, and drawn there it is
+     * black: BlueMap's own edge leaves a strip two blocks wide unset along the north and west of
+     * whatever it has drawn, as its 3D tiles sit two blocks off the chunks.
+     */
+    internal fun rectanglesOf(
+        originX: Int, originZ: Int, tileSize: Int, contentMinute: Int, gapCount: Int,
+        wanted: (Int, Int) -> Boolean, present: (Int, Int) -> Boolean,
+    ): Mask {
         val firstChunkX = Math.floorDiv(originX, 16)
         val lastChunkX = Math.floorDiv(originX + tileSize - 1, 16)
         val firstChunkZ = Math.floorDiv(originZ, 16)
@@ -377,25 +388,57 @@ object Backfill {
 
         var rectangles = FloatArray(64)
         var count = 0
+        fun add(minX: Int, minZ: Int, maxX: Int, maxZ: Int) {
+            if ((count + 1) * 4 > rectangles.size) rectangles = rectangles.copyOf(rectangles.size * 2)
+            rectangles[count * 4] = minX.toFloat()
+            rectangles[count * 4 + 1] = minZ.toFloat()
+            rectangles[count * 4 + 2] = maxX.toFloat()
+            rectangles[count * 4 + 3] = maxZ.toFloat()
+            count++
+        }
+        val partial = ArrayList<Int>()
         for (chunkZ in firstChunkZ..lastChunkZ) {
-            val top = maxOf(chunkZ shl 4, originZ).toFloat()
-            val bottom = minOf((chunkZ + 1) shl 4, maxZ).toFloat()
+            val top = maxOf(chunkZ shl 4, originZ)
+            val bottom = minOf((chunkZ + 1) shl 4, maxZ)
             var runStart = Int.MIN_VALUE
+            partial.clear()
             for (chunkX in firstChunkX..lastChunkX + 1) {
-                val wanted = chunkX <= lastChunkX && wanted(chunkX, chunkZ)
-                if (wanted && runStart == Int.MIN_VALUE) runStart = chunkX
-                if (!wanted && runStart != Int.MIN_VALUE) {
-                    if ((count + 1) * 4 > rectangles.size) rectangles = rectangles.copyOf(rectangles.size * 2)
-                    rectangles[count * 4] = maxOf(runStart shl 4, originX).toFloat()
-                    rectangles[count * 4 + 1] = top
-                    rectangles[count * 4 + 2] = minOf(chunkX shl 4, maxX).toFloat()
-                    rectangles[count * 4 + 3] = bottom
-                    count++
+                var whole = chunkX <= lastChunkX && wanted(chunkX, chunkZ)
+                if (whole) {
+                    val left = maxOf(chunkX shl 4, originX)
+                    val right = minOf((chunkX + 1) shl 4, maxX)
+                    whole = allPresent(left, top, right, bottom, present)
+                    if (!whole) partial.add(chunkX)
+                }
+                if (whole && runStart == Int.MIN_VALUE) runStart = chunkX
+                if (!whole && runStart != Int.MIN_VALUE) {
+                    add(maxOf(runStart shl 4, originX), top, minOf(chunkX shl 4, maxX), bottom)
                     runStart = Int.MIN_VALUE
+                }
+            }
+            // The few chunks along BlueMap's edge: a rectangle for each run of blocks it has, row by row.
+            for (chunkX in partial) {
+                val left = maxOf(chunkX shl 4, originX)
+                val right = minOf((chunkX + 1) shl 4, maxX)
+                for (z in top until bottom) {
+                    var start = Int.MIN_VALUE
+                    for (x in left..right) {
+                        val has = x < right && present(x, z)
+                        if (has && start == Int.MIN_VALUE) start = x
+                        if (!has && start != Int.MIN_VALUE) {
+                            add(start, z, x, z + 1)
+                            start = Int.MIN_VALUE
+                        }
+                    }
                 }
             }
         }
         return Mask(System.currentTimeMillis(), contentMinute, rectangles, count, gapCount)
+    }
+
+    private inline fun allPresent(minX: Int, minZ: Int, maxX: Int, maxZ: Int, present: (Int, Int) -> Boolean): Boolean {
+        for (z in minZ until maxZ) for (x in minX until maxX) if (!present(x, z)) return false
+        return true
     }
 
     /**

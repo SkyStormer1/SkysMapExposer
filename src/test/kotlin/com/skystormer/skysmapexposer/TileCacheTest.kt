@@ -344,6 +344,23 @@ class TileCacheTest {
     }
 
     @Test
+    fun `the blocks BlueMap leaves unset at its edge are not drawn, so they are not black`() {
+        // A 32-block tile, all wanted; BlueMap has nothing in the two westmost columns of chunk 1.
+        val missing = { x: Int, z: Int -> x in 16..17 && z in 0..15 }
+        val mask = Backfill.rectanglesOf(0, 0, 32, 0, 0, { _, _ -> true }) { x, z -> !missing(x, z) }
+        val drawn = HashSet<Pair<Int, Int>>()
+        for (i in 0 until mask.count) {
+            val r = mask.rectangles
+            for (x in r[i * 4].toInt() until r[i * 4 + 2].toInt()) for (z in r[i * 4 + 1].toInt() until r[i * 4 + 3].toInt()) {
+                assertTrue(drawn.add(x to z), "drawn twice at $x, $z")
+            }
+        }
+        for (x in 0 until 32) for (z in 0 until 32) assertEquals(!missing(x, z), (x to z) in drawn, "block $x, $z")
+        // Whole chunks are still one rectangle per run: three whole chunks, then 16 rows of the partial one.
+        assertEquals(1 + 1 + 16, mask.count)
+    }
+
+    @Test
     fun `slow frames halve uploads and pause background work, fast ones bring them back`() {
         var clock = 1L
         val pacer = FramePacer(clock = { clock }, freeHeap = { 0.5 })
