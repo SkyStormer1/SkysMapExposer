@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.mojang.blaze3d.platform.InputConstants
 import com.skystormer.skysmapexposer.GuiMapFields
 import net.minecraft.client.gui.components.events.GuiEventListener
 import net.minecraft.client.gui.screens.Screen
@@ -38,7 +39,7 @@ object PanelClicks {
         val panel = panelAt(screen, event.x(), event.y()) ?: return false
         if (panel.mouseClicked(event, doubleClick)) {
             if (panel.shouldTakeFocusAfterInteraction()) screen.focused = panel
-            if (event.button() == 0) {
+            if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
                 screen.isDragging = true
                 held = WeakReference(panel)
             }
@@ -50,7 +51,7 @@ object PanelClicks {
     @JvmStatic
     fun released(screen: Screen, event: MouseButtonEvent): Boolean {
         val panel = held.get() ?: return false
-        if (event.button() != 0) return false
+        if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) return false
         held = WeakReference(null)
         screen.isDragging = false
         panel.mouseReleased(event)
