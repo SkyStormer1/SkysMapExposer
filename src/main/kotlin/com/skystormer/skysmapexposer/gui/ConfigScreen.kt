@@ -19,6 +19,7 @@ import net.minecraft.client.gui.components.CycleButton
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
+import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import java.time.Instant
@@ -88,6 +89,23 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
+    /** Everything as it was on opening, to tell whether Cancel throws anything away. */
+    private val initial = state()
+
+    /** Switched live by the Experimental tab, so put back by Cancel. */
+    private val fillOffBefore = Config.fillOff.toSet()
+
+    /** The connected server's settings on opening: the session starts again only if they change. */
+    private val serverBefore = connectedAddress?.let(Config::serverFor)?.let(::describeServer)
+
+    /** What Done or Escape found wrong, shown until fixed: where it is, and which box. */
+    private class Problem(val page: Page, val server: Int, val field: String)
+
+    private var problem: Problem? = null
+    private var problemText: String? = null
+
+    override val cancellable = true
+
     // Only the boxes of the tab showing exist; the other tab's are null.
     private var staleBox: EditBox? = null
     private var coverBox: EditBox? = null
@@ -154,11 +172,30 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
         y += ROW + GAP * 3
 
+        // Why Done did not save, above whichever tab it is on.
+        problemText?.let { text ->
+            val line = Component.literal(text).withColor(PROBLEM_COLOUR)
+            addRenderableWidget(MultiLineTextWidget(left, y, line, font).setMaxWidth(WIDTH))
+            y += font.lineHeight * font.split(line, WIDTH).size + GAP * 3
+        }
+
         when (page) {
             Page.MAP -> mapPage(left, y)
             Page.SERVER -> serverPage(left, y)
             Page.TILES -> tilesPage(left, y)
             Page.EXPERIMENTAL -> experimentalPage(left, y)
+        }
+        // The box with the problem stands out, with the cursor in it.
+        problem?.takeIf { it.page == page && (it.page != Page.SERVER || it.server == selected) }?.let { p ->
+            val box = when (p.field) {
+                "stale" -> staleBox
+                "address" -> addressBox
+                "url" -> urlBox
+                "cover" -> coverBox
+                else -> null
+            } ?: return@let
+            box.setTextColor(PROBLEM_COLOUR)
+            focused = box
         }
     }
 
@@ -614,7 +651,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         drafts.removeAt(selected)
         if (drafts.isEmpty()) drafts.add(newDraft(connectedAddress ?: ""))
         selected = selected.coerceAtMost(drafts.size - 1)
-        message = Component.literal("Removed. Press Done to save.")
+        message = Component.literal("Removed. Done saves that; Cancel keeps the server.")
         rebuildWidgets()
     }
 
@@ -646,8 +683,72 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         messageWidget?.setMessage(message)
     }
 
+    /**
+     * Everything this screen edits, as one string, to compare. Only what Done would save: the
+     * server list as it would be saved, so an untouched new entry is no change.
+     */
+    private fun state(): String = listOf(
+        enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
+        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, matchWaypoints, guessBiomes,
+        prepareMap, Config.fillOff.sorted(),
+        drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
+            listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
+        },
+    ).toString()
+
+    /** **Cancel**: asks first if anything was changed, then leaves without saving. */
+    override fun cancel() {
+        keepEdits()
+        if (state() == initial) return leave()
+        minecraft.gui.setScreen(ConfirmScreen(
+            { discard -> if (discard) leave() else minecraft.gui.setScreen(this) },
+            Component.literal("Discard changes?"),
+            Component.literal("Nothing changed here is saved."),
+            Component.literal("Discard"),
+            Component.literal("Keep editing"),
+        ))
+    }
+
+    private fun leave() {
+        Config.fillOff.clear()
+        Config.fillOff.addAll(fillOffBefore)
+        minecraft.setScreenAndShow(parent)
+    }
+
+    /**
+     * What stops saving, with where it is, or null when everything can be saved. A new server entry
+     * left completely empty is not a problem: it is simply not saved.
+     */
+    private fun check(): Pair<String, Problem>? {
+        if (staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 } == null) {
+            return "\"Replace after\" must be a number of days, 0 or more" to Problem(Page.MAP, selected, "stale")
+        }
+        drafts.forEachIndexed { i, draft ->
+            val addresses = splitAddresses(draft.addresses)
+            val url = draft.url.trim()
+            if (addresses.isEmpty() && url.isEmpty()) return@forEachIndexed
+            if (addresses.isEmpty()) return "The server with BlueMap $url has no server address" to Problem(Page.SERVER, i, "address")
+            if (url.isEmpty()) return "${addresses.first()} has no BlueMap address" to Problem(Page.SERVER, i, "url")
+            if (draft.coverOverworld.isNotBlank() && parseTime(draft.coverOverworld) == null) {
+                return "${addresses.first()}: the season date must look like 2026-10-20 14:00" to Problem(Page.SERVER, i, "cover")
+            }
+        }
+        return null
+    }
+
+    /** Done and Escape: saves, unless something is wrong, which is shown instead. */
     override fun onClose() {
         keepEdits()
+        check()?.let { (said, where) ->
+            problem = where
+            problemText = "$said. Fix it, or Cancel to leave without saving."
+            page = where.page
+            selected = where.server
+            rebuildWidgets()
+            return
+        }
+        problem = null
+        problemText = null
         Config.enabled = enabled
         Config.showMarkers = showMarkers
         Config.showOutlines = showOutlines
@@ -672,10 +773,25 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 Config.Server(splitAddresses(draft.addresses), draft.url.trim(), draft.maps.toMap(), draft.off.toSet(), cover)
             }
         Config.save()
-        // Start again with the new settings, as if just joined.
-        if (connectedAddress != null) Session.start(connectedAddress)
+        // Start again, as if just joined, only if this server's own settings changed: that drops
+        // every tile, marker and icon in memory. Everything else is read as it is drawn.
+        val serverAfter = connectedAddress?.let(Config::serverFor)?.let(::describeServer)
+        if (connectedAddress != null && serverAfter != serverBefore) {
+            Session.start(connectedAddress)
+        } else {
+            // Switching background preparation on or off takes effect at once.
+            val session = Session.current
+            if (session != null && Config.prepareMap && !prepareWasOn && !MapPrep.running) MapPrep.start(session, MarkerElements.worldMapDimension())
+            if (!Config.prepareMap && prepareWasOn) MapPrep.cancel()
+        }
         minecraft.setScreenAndShow(parent)
     }
+
+    private val prepareWasOn = Config.prepareMap
+
+    /** The settings of one server that a session is built from, to compare. */
+    private fun describeServer(server: Config.Server): String =
+        listOf(server.addresses.map(Config::normalise).sorted(), server.url.trim(), server.maps.toSortedMap(), server.off.sorted(), server.coverBefore.toSortedMap()).toString()
 
     private fun describe(draft: Draft): String =
         splitAddresses(draft.addresses).firstOrNull() ?: "(new server)"
@@ -701,6 +817,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         const val ROW = 20
         const val GAP = 2
         const val NEW = -1
+        const val PROBLEM_COLOUR = 0xFFFF5555.toInt()
         /** How tall each tab is, to centre it; both fit in 278 scaled pixels, so they show at large GUI scales. */
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         val DIMENSIONS = listOf(Config.OVERWORLD to "Overworld", Config.NETHER to "Nether", Config.END to "End")

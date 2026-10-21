@@ -3,6 +3,7 @@
   "package": "com.skystormer.skysmapexposer.mixin.tooltip",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
+    "ScreenHoverMixin",
     "WidgetTooltipHolderMixin"
   ],
   "injectors": {

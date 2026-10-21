@@ -69,6 +69,9 @@ object GuiMapFields {
     @JvmField val mouseBlockPosX = XaeroField(GUI_MAP, "mouseBlockPosX", HookErrors.OTHER_DIMENSION)
     @JvmField val mouseBlockPosZ = XaeroField(GUI_MAP, "mouseBlockPosZ", HookErrors.OTHER_DIMENSION)
 
+    /** Xaero's dropdown or right-click menu open on the screen, which keeps the mouse while it is. */
+    @JvmField val openDropdown = XaeroField("xaero.lib.client.gui.ScreenBase", "openDropdown", "panels taking clicks before Xaero's menus")
+
     /** What moving the camera needs. */
     @JvmStatic
     fun camera(): Boolean = XaeroField.all(cameraX, cameraZ, cameraDestination, cameraDestinationAnimX, cameraDestinationAnimZ, shouldResetCameraPos, attachedCamera)
