@@ -295,6 +295,15 @@ says how far it has got and how many chunks each mod was given. **Stop filling**
   stays the same however far you fill, and waits whenever a mod falls behind. BlueMap's 3D tiles
   are downloaded two at a time, since BlueMap usually runs on the game server, and kept for a week,
   so filling the same place again needs no downloading.
+- **Asks first.** Before anything is downloaded it checks that BlueMap has 3D tiles where you are
+  (a map the server draws flat only, as many do for the Nether, has none; the button then says so
+  and stays greyed out for that map until you rejoin), then shows roughly how many tiles and
+  megabytes the fill would download, and that it can't be undone: the mods keep the filled terrain
+  until you visit those places yourself or clear their data for the server. **Start** or **Cancel**.
+- **Carries on.** A tile that can't be downloaded or read is skipped and counted in the last line;
+  only if every tile fails at the start does the fill stop. Going through a portal, it carries on
+  in the dimension it started in for the mods that still can (Voxy usually), and says which
+  dropped out (Bobby and Distant Horizons close a dimension's storage when you leave it).
 
 ## Sharing with other players
 

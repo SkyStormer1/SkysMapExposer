@@ -21,6 +21,7 @@ import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
 import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 import java.time.Instant
 import java.time.LocalDateTime
@@ -253,16 +254,17 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val button = if (TerrainFill.running) {
             Button.builder(Component.literal("Stop filling")) { TerrainFill.cancel(); rebuildWidgets() }
         } else {
-            Button.builder(Component.literal("Fill from BlueMap")) {
-                fillStatus = TerrainFill.start()
-                com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
-                rebuildWidgets()
-            }.tooltip(SafeTooltip.of(
+            // Known not to work here (no 3D tiles): greyed out, saying why.
+            val problem = TerrainFill.knownProblem()
+            Button.builder(Component.literal("Fill from BlueMap")) { askToFill() }.tooltip(SafeTooltip.of(problem ?: (
                 "Rebuilds the chunks around you from BlueMap's 3D map and hands them to " +
                     (chosen.joinToString(" and ").ifEmpty { "the mods switched on above" }) +
-                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one."))
+                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one. " +
+                    "You are shown how much it downloads before it starts.")))
         }
-        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = TerrainFill.running || chosen.isNotEmpty() })
+        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also {
+            it.active = TerrainFill.running || (chosen.isNotEmpty() && TerrainFill.knownProblem() == null && !checkingFill)
+        })
         y += ROW + GAP
         fillWidget = MultiLineTextWidget(left, y + 1, Component.literal(TerrainFill.status() ?: fillStatus), font)
             .setMaxWidth(WIDTH).setMaxRows(3).also { addRenderableWidget(it) }
@@ -270,6 +272,41 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private var fillStatus = ""
     private var fillWidget: MultiLineTextWidget? = null
+    private var checkingFill = false
+
+    /**
+     * "Fill from BlueMap": checks first that BlueMap has 3D tiles here, then shows how much it would
+     * download and that it cannot be undone, and starts only on **Start**.
+     */
+    private fun askToFill() {
+        checkingFill = true
+        fillStatus = "Checking BlueMap's 3D tiles around you…"
+        rebuildWidgets()
+        TerrainFill.check { problem, estimate ->
+            checkingFill = false
+            if (problem != null || estimate == null) {
+                fillStatus = problem ?: ""
+                if (minecraft.gui.screen() === this) rebuildWidgets()
+                return@check
+            }
+            if (minecraft.gui.screen() !== this) return@check
+            minecraft.gui.setScreen(ConfirmScreen(
+                { start ->
+                    if (start) {
+                        fillStatus = TerrainFill.start()
+                        com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
+                    } else {
+                        fillStatus = "Not started; nothing was downloaded."
+                    }
+                    minecraft.gui.setScreen(this)
+                },
+                Component.literal("Fill from BlueMap?"),
+                Component.literal(estimate.text),
+                Component.literal("Start"),
+                CommonComponents.GUI_CANCEL,
+            ))
+        }
+    }
     private var fillWasRunning = TerrainFill.running
 
     private var prepareWidget: MultiLineTextWidget? = null
