@@ -134,8 +134,9 @@ object BlueMapDownload {
             ?: return "No BlueMap map is set for the ${MapMenus.dimensionName(dimensionId)}; add one in the settings"
         val multiworld = dimension.currentMultiworld ?: return "Xaero has not chosen a map folder for this dimension yet"
         val base = dimension.mainFolderPath?.resolve(multiworld) ?: return "Xaero has not chosen a map folder for this dimension yet"
-        // Into the layer you see: in the Nether, with its terrain on, Xaero's cave layer, not the roof.
-        val layer = XaeroWriter.blueMapLayer(dimensionId, processor.currentCaveLayer, session.server.mapFor(dimensionId) != null) ?: XaeroWriter.SURFACE
+        // In the Nether, a map of the roof into Xaero's roof layer and one of the inside into its cave layer, never the other way.
+        val (into, note) = MapLayers.downloadLayer(processor.currentCaveLayer, XaeroWriter.hasCeiling(dimensionId), XaeroWriter.viewOf(mapId))
+        val layer = into ?: return note!!
         val player = Minecraft.getInstance().player
         val started = Job(
             session, dimension, dimensionId, mapId, XaeroWriter.layerFolder(base, layer), area, unexploredOnly,
@@ -150,7 +151,7 @@ object BlueMapDownload {
             area?.let { "blocks ${it.minX}, ${it.minZ} to ${it.maxX}, ${it.maxZ}" } ?: "everything BlueMap has",
             if (unexploredOnly) " (unexplored chunks only)" else "",
         )
-        return "Downloading from BlueMap…"
+        return "Downloading from BlueMap…" + (note?.let { " ($it)" } ?: "")
     }
 
     /**

@@ -50,17 +50,18 @@ object XaeroWriter {
     fun layerFolder(base: Path, layer: Int): Path = if (layer == SURFACE) base else base.resolve("caves").resolve(layer.toString())
 
     /**
-     * The layer of [dimensionId] that BlueMap's picture belongs in while Xaero shows [shownLayer],
-     * or null if none. The surface, except in a dimension with a ceiling (the Nether) whose BlueMap
-     * terrain is switched on ([terrainUsed]): its map is then of the inside, which Xaero shows as a
-     * cave layer, the surface there being the roof. Xaero showing caves elsewhere is null: BlueMap
-     * has only the surface there.
+     * The layer of [dimensionId] that BlueMap map [mapId]'s picture belongs in while Xaero shows
+     * [shownLayer], or null if none ([MapLayers.blueMapLayer]). In a dimension with a ceiling (the
+     * Nether) that depends on whether the map shows the roof or the inside ([Session.view]).
      */
-    fun blueMapLayer(dimensionId: String, shownLayer: Int, terrainUsed: Boolean): Int? =
-        MapLayers.blueMapLayer(shownLayer, terrainUsed) { hasCeiling(dimensionId) }
+    fun blueMapLayer(dimensionId: String, mapId: String?, shownLayer: Int): Int? =
+        MapLayers.blueMapLayer(shownLayer, { hasCeiling(dimensionId) }) { viewOf(mapId) }
+
+    /** Whether BlueMap map [mapId] shows the roof or the inside, if known yet; asked of BlueMap if not. */
+    fun viewOf(mapId: String?): MapLayers.View? = mapId?.let { Session.current?.view(it) }
 
     /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
-    private fun hasCeiling(dimensionId: String): Boolean {
+    fun hasCeiling(dimensionId: String): Boolean {
         val level = Minecraft.getInstance().level
         if (level != null && level.dimension().identifier().toString() == dimensionId) return level.dimensionType().hasCeiling()
         return dimensionId == Config.NETHER

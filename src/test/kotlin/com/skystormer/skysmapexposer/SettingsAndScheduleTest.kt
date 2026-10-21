@@ -111,18 +111,56 @@ class SettingsAndScheduleTest {
     }
 
     @Test
-    fun `BlueMap goes into the surface, or the Nether's cave layer when its map is of the inside`() {
+    fun `BlueMap's roof of the Nether goes over the surface, its inside over the cave layer, never the other way`() {
         val ceiling = { true }
         val open = { false }
-        assertEquals(MapLayers.SURFACE, MapLayers.blueMapLayer(MapLayers.SURFACE, terrainUsed = false, hasCeiling = open))
-        assertEquals(MapLayers.SURFACE, MapLayers.blueMapLayer(MapLayers.SURFACE, terrainUsed = true, hasCeiling = ceiling))
-        // The Nether in cave mode, its terrain on: drawn over and downloaded into the layer shown.
-        assertEquals(3, MapLayers.blueMapLayer(3, terrainUsed = true, hasCeiling = ceiling))
-        // Nether terrain off (BlueMap draws the roof): not the cave layer.
-        assertNull(MapLayers.blueMapLayer(3, terrainUsed = false, hasCeiling = ceiling))
-        // Overworld caves: BlueMap only has the surface.
-        assertNull(MapLayers.blueMapLayer(3, terrainUsed = true, hasCeiling = open))
+        val surface = MapLayers.SURFACE
+        // The Overworld: the surface only, whatever the map; its caves BlueMap has nothing for.
+        assertEquals(surface, MapLayers.blueMapLayer(surface, open) { null })
+        assertNull(MapLayers.blueMapLayer(3, open) { MapLayers.View.INSIDE })
+        // The Nether: the roof over Xaero's surface, the inside over the cave layer on screen.
+        assertEquals(surface, MapLayers.blueMapLayer(surface, ceiling) { MapLayers.View.ROOF })
+        assertNull(MapLayers.blueMapLayer(3, ceiling) { MapLayers.View.ROOF }, "found in game: the roof was drawn over the explored inside")
+        assertEquals(3, MapLayers.blueMapLayer(3, ceiling) { MapLayers.View.INSIDE })
+        assertNull(MapLayers.blueMapLayer(surface, ceiling) { MapLayers.View.INSIDE })
+        // Not known yet: neither.
+        assertNull(MapLayers.blueMapLayer(surface, ceiling) { null })
+        assertNull(MapLayers.blueMapLayer(3, ceiling) { null })
         assertEquals(MapLayers.SURFACE, XaeroWriter.SURFACE)
+    }
+
+    @Test
+    fun `a download into the Nether goes where the map belongs, or not at all`() {
+        val surface = MapLayers.SURFACE
+        assertEquals(surface to null, MapLayers.downloadLayer(3, false, null), "Overworld caves: the surface, as before")
+        assertEquals(surface, MapLayers.downloadLayer(3, true, MapLayers.View.ROOF).first)
+        assertTrue("roof layer" in MapLayers.downloadLayer(3, true, MapLayers.View.ROOF).second!!)
+        assertEquals(surface to null, MapLayers.downloadLayer(surface, true, MapLayers.View.ROOF))
+        assertEquals(3 to null, MapLayers.downloadLayer(3, true, MapLayers.View.INSIDE))
+        assertNull(MapLayers.downloadLayer(surface, true, MapLayers.View.INSIDE).first)
+        assertNull(MapLayers.downloadLayer(3, true, null).first)
+    }
+
+    @Test
+    fun `a map is of the roof when most of its ground is up at the roof`() {
+        assertNull(MapLayers.viewOf(IntArray(0)))
+        // Measured on a real server's Nether map: 97% at y 127, a few pillars and builds above.
+        assertEquals(MapLayers.View.ROOF, MapLayers.viewOf(IntArray(97) { 127 } + IntArray(3) { 34 }))
+        // Cut off at y 100 to show the inside, lava sea and all.
+        assertEquals(MapLayers.View.INSIDE, MapLayers.viewOf(IntArray(60) { 31 } + IntArray(40) { 64 + it }))
+        assertEquals(MapLayers.View.INSIDE, MapLayers.viewOf(IntArray(10) { 127 } + IntArray(90) { 70 }), "a few pillars up to the roof")
+    }
+
+    @Test
+    fun `heights are read from the lower half of a lowres tile, where there is ground`() {
+        val image = java.awt.image.BufferedImage(3, 6, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        image.setRGB(0, 0, 0xFF336699.toInt()) // ground at 0, 0 ...
+        image.setRGB(0, 3, 0xFF00007F.toInt()) // ... 127 high
+        image.setRGB(2, 2, 0xFF336699.toInt())
+        image.setRGB(2, 5, 0xFF00FFC0.toInt()) // -64, as BlueMap writes heights below 0
+        image.setRGB(1, 4, 0xFF000050.toInt()) // a height under no ground: not counted
+        val bytes = java.io.ByteArrayOutputStream().also { javax.imageio.ImageIO.write(image, "png", it) }.toByteArray()
+        assertEquals(listOf(127, -64), TilePixels.heights(bytes, 2).toList())
     }
 
     @Test
