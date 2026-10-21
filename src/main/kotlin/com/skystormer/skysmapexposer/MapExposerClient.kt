@@ -27,6 +27,9 @@ import java.nio.file.Files
 object MapExposerClient : ClientModInitializer {
 
     private var ticks = 0L
+
+    /** Where the download and preparation line goes on the world map: below Xaero's three lines, which are 10 apart from 2. */
+    private const val STATUS_TOP = 34
     private var hookChecked = false
     private var worldMapPinsAdded = false
     private var minimapPinsAdded = false
@@ -151,6 +154,7 @@ object MapExposerClient : ClientModInitializer {
             ChatShare.tick()
             TerrainFiles.tick()
             MapPrep.tick(Session.current)
+            AutoTest.tick(client)
             val session = Session.current ?: return@register
             ticks++
             // Chunks you stay near are kept up to date by Xaero, so they stay current here too.
@@ -290,8 +294,11 @@ object MapExposerClient : ClientModInitializer {
                     val font = Screens.getMinecraft(screen).font
                     val half = font.width(status) / 2 + 4
                     val middle = screen.width / 2
-                    graphics.fill(middle - half, 2, middle + half, 14, 0xA0000000.toInt())
-                    graphics.centeredText(font, status, middle, 4, 0xFFFFFFFF.toInt())
+                    // Under Xaero's own lines at the top (the block under the mouse, its biome, and
+                    // the other dimension's coordinates), never over them.
+                    val top = STATUS_TOP
+                    graphics.fill(middle - half, top, middle + half, top + 12, 0xA0000000.toInt())
+                    graphics.centeredText(font, status, middle, top + 2, 0xFFFFFFFF.toInt())
                 }
             } catch (e: Throwable) {
                 Log.error("Could not add the bar to Xaero's world map", e)

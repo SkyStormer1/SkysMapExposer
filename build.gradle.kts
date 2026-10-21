@@ -126,3 +126,8 @@ tasks.processResources {
 tasks.jar {
     from("LICENSE") { rename { "${it}_${base.archivesName.get()}" } }
 }
+
+// A development client drives itself through the steps in the file SME_AUTOTEST names (AutoTest).
+tasks.withType<JavaExec>().configureEach {
+    System.getenv("SME_AUTOTEST")?.let { systemProperty("skysmapexposer.autotest", it) }
+}
