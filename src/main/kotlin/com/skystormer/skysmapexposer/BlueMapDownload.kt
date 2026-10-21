@@ -133,11 +133,13 @@ object BlueMapDownload {
         val mapId = session.server.markersFor(dimensionId)
             ?: return "No BlueMap map is set for the ${MapMenus.dimensionName(dimensionId)}; add one in the settings"
         val multiworld = dimension.currentMultiworld ?: return "Xaero has not chosen a map folder for this dimension yet"
-        val folder = dimension.mainFolderPath?.resolve(multiworld) ?: return "Xaero has not chosen a map folder for this dimension yet"
+        val base = dimension.mainFolderPath?.resolve(multiworld) ?: return "Xaero has not chosen a map folder for this dimension yet"
+        // Into the layer you see: in the Nether, with its terrain on, Xaero's cave layer, not the roof.
+        val layer = XaeroWriter.blueMapLayer(dimensionId, processor.currentCaveLayer, session.server.mapFor(dimensionId) != null) ?: XaeroWriter.SURFACE
         val player = Minecraft.getInstance().player
         val started = Job(
-            session, dimension, dimensionId, mapId, folder, area, unexploredOnly,
-            player?.blockX ?: 0, player?.blockZ ?: 0,
+            session, dimension, dimensionId, mapId, XaeroWriter.layerFolder(base, layer), area, unexploredOnly,
+            player?.blockX ?: 0, player?.blockZ ?: 0, layer = layer,
         )
         // Each download backs up into a folder of its own, so it can be put back in one go.
         MapBackup.forget()
