@@ -152,6 +152,22 @@ class SettingsAndScheduleTest {
     }
 
     @Test
+    fun `BlueMap's picture is lit the way Xaero lights its own map`() {
+        // Flat ground at sea level, as Xaero draws it (worked through by hand from its sums).
+        assertEquals(1.1714f, TilePixels.xaeroLight(63, 63, 63), 0.0005f)
+        // Rising towards the light a block each way: Xaero's brightest.
+        assertEquals(0.7f + 2f / 3, TilePixels.xaeroLight(63, 62, 62), 0.0005f)
+        // Falling away from it: ambient light only.
+        assertEquals(0.7f, TilePixels.xaeroLight(63, 64, 64), 0.0005f)
+        // Deep ground is darker, but never below 0.9 of it; high ground no brighter than at sea level.
+        assertEquals(1.1714f * 0.9f, TilePixels.xaeroLight(20, 20, 20), 0.0005f)
+        assertEquals(TilePixels.xaeroLight(63, 63, 63), TilePixels.xaeroLight(120, 120, 120))
+        // Found in game: BlueMap's deep ocean (31, 43, 102) came out darker than Xaero's (42, 56, 119).
+        val ocean = TilePixels.xaeroLight(62, 62, 62)
+        assertTrue((102 * ocean).toInt() in 115..121, "near Xaero's 119")
+    }
+
+    @Test
     fun `heights are read from the lower half of a lowres tile, where there is ground`() {
         val image = java.awt.image.BufferedImage(3, 6, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         image.setRGB(0, 0, 0xFF336699.toInt()) // ground at 0, 0 ...
