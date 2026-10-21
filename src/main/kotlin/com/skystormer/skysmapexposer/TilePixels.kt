@@ -50,6 +50,21 @@ object TilePixels {
         return pixels
     }
 
+    /** The height of the ground at each pixel BlueMap has anything at, from the height half. */
+    fun heights(bytes: ByteArray, tileSize: Int): IntArray {
+        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
+        val width = image.width
+        val half = image.height / 2
+        require(width == half && width == tileSize + 1) { "unexpected tile shape ${width}x${image.height}" }
+        val source = image.getRGB(0, 0, width, image.height, null, 0, width)
+        val heights = IntArray(width * half)
+        var count = 0
+        for (i in 0 until width * half) {
+            if (source[i] ushr 24 != 0) heights[count++] = source[half * width + i].toShort().toInt()
+        }
+        return heights.copyOf(count)
+    }
+
     /** Which pixels of [colours] have anything. */
     fun presence(colours: IntArray): BitSet {
         val present = BitSet(colours.size)

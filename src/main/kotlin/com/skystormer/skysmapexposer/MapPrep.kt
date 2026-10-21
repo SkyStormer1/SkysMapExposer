@@ -57,7 +57,7 @@ object MapPrep {
         val dimension = processor?.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
         // Only caves the overlay does not draw over: the Nether's usual cave layer is drawn over.
         caveDimension = dimension?.takeIf {
-            XaeroWriter.blueMapLayer(it, processor.currentCaveLayer, session.server.mapFor(it) != null) == null
+            XaeroWriter.blueMapLayer(it, session.server.mapFor(it), processor.currentCaveLayer) == null
         }
         gameBusy = FramePacer.game.paused
         if (startedFor !== session && dimension != null) {

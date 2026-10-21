@@ -67,9 +67,9 @@ object Backfill {
             ?: return standDown("no-dimension-id", "Xaero's dimension has no id").let { null }
         val mapId = session.server.mapFor(dimensionId)
             ?: return standDown("no-map:$dimensionId", "BlueMap is not used for $dimensionId").let { null }
-        // In the Nether, Xaero's cave layer is the usual view, and BlueMap's map (switched on) is of the inside.
-        val layer = XaeroWriter.blueMapLayer(dimensionId, mapProcessor.currentCaveLayer, terrainUsed = true)
-            ?: return standDown("cave", "Xaero is in cave mode; BlueMap only has the surface").let { null }
+        // In the Nether, BlueMap's map of the roof goes over Xaero's surface, and a map of the inside over its cave layer.
+        val layer = XaeroWriter.blueMapLayer(dimensionId, mapId, mapProcessor.currentCaveLayer)
+            ?: return caveReason(dimensionId, mapId).let { (key, why) -> standDown(key, why) }.let { null }
         val layout = session.layout(mapId)
             ?: return standDown("layout:$mapId", "Waiting for BlueMap's settings for map '$mapId'").let { null }
         val multiworld = dimension.currentMultiworld
@@ -78,6 +78,15 @@ object Backfill {
             ?: return standDown("no-folder", "Xaero has not chosen a map folder for this dimension yet").let { null }
         return Target(session, dimensionId, mapId, layout, XaeroWriter.layerFolder(base, layer), layer)
     }
+
+    /** Why nothing is drawn over the layer Xaero shows, for [target]'s stand-down: its key and the reason. */
+    private fun caveReason(dimensionId: String, mapId: String): Pair<String, String> =
+        if (!XaeroWriter.hasCeiling(dimensionId)) "cave" to "Xaero is in cave mode; BlueMap only has the surface"
+        else when (XaeroWriter.viewOf(mapId)) {
+            null -> "view:$mapId" to "Checking whether BlueMap map '$mapId' shows the roof or the inside"
+            MapLayers.View.ROOF -> "roof:$mapId" to "BlueMap map '$mapId' shows the roof, and Xaero is showing the inside"
+            MapLayers.View.INSIDE -> "inside:$mapId" to "BlueMap map '$mapId' shows the inside, and Xaero is showing the roof"
+        }
 
     /**
      * Everything to draw inside the block area [minX]..[maxX], [minZ]..[maxZ] at [factor] blocks

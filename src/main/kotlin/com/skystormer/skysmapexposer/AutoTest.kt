@@ -26,6 +26,8 @@ import java.nio.file.Path
  * - `screenshot` takes a screenshot (F2's), into `screenshots/`
  * - `waypoint <x> <y> <z> <name>` adds a waypoint where you are, as an added shared one is
  * - `click <text>` runs the newest chat button reading that, e.g. `click [Add waypoints]`
+ * - `fill <blocks>` starts a terrain fill that far around you, as the settings button does
+ * - `fillwait` waits for a terrain fill to finish, then logs how it went
  * - `close` closes whatever screen is open
  * - `quit` closes the game
  *
@@ -87,6 +89,18 @@ object AutoTest {
                     val command = buttonCommand(client, rest)
                     if (command == null) Log.warn("AutoTest: no chat button '{}'", rest)
                     else player.connection.sendCommand(command.removePrefix("/"))
+                }
+                "fill" -> {
+                    com.skystormer.skysmapexposer.terrain.TerrainFill.radius = rest.toInt()
+                    Log.info("AutoTest: {}", com.skystormer.skysmapexposer.terrain.TerrainFill.start())
+                }
+                "fillwait" -> {
+                    if (com.skystormer.skysmapexposer.terrain.TerrainFill.running) {
+                        queue.addFirst(step)
+                        waitUntil = now + 2_000L
+                    } else {
+                        Log.info("AutoTest: fill: {}", com.skystormer.skysmapexposer.terrain.TerrainFill.status())
+                    }
                 }
                 "close" -> client.gui.setScreen(null)
                 "quit" -> client.stop()
