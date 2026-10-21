@@ -203,7 +203,10 @@ class TileCacheTest {
         serve(tilePath, Reply(200, png(0xFF993366.toInt()), etag = "\"two\""))
         store.get(key, 1, 4)
         assertFalse(built.contentEquals(Files.readAllBytes(picture(folder))), "the change was not taken")
-        assertEquals(0xFF993366.toInt() and 0xFFFFFF, TileFile.pixels(picture(folder), 1)!![0] and 0xFFFFFF)
+        // Flat ground at height 64 (0x40), lit as Xaero lights it.
+        val lit = TilePixels.xaeroLight(64, 64, 64)
+        val expected = listOf(0x99, 0x33, 0x66).map { (it * lit).toInt().coerceAtMost(255) }.let { (r, g, b) -> (r shl 16) or (g shl 8) or b }
+        assertEquals(expected, TileFile.pixels(picture(folder), 1)!![0] and 0xFFFFFF)
     }
 
     @Test

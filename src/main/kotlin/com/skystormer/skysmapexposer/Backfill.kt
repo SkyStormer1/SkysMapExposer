@@ -343,13 +343,17 @@ object Backfill {
                 gapCount++
                 return true
             }
+            val regionMinute = session.regionAges.minuteOf(target.regionFolder, chunkX shr 5, chunkZ shr 5)
+            // No file for the region, and Xaero not holding it open: Xaero has nothing to show there,
+            // whatever the visit record says. Found in game: a map folder emptied while the record
+            // remembered being there drew black.
+            if (regionsKnown && regionMinute == 0 && xaeroHasNothing(mapProcessor, chunkX, chunkZ) == null) return true
             var seen = session.visits.lastSeen(dimensionId, chunkX, chunkZ)
             // A map from before the cover date is covered however recent Xaero's files look:
             // Xaero rewrites a whole region file when any chunk in it changes.
             if (coverBefore != 0 && seen < coverBefore) return true
             if (seen == 0) {
                 // Not seen since the mod was installed: date it by Xaero's region file instead.
-                val regionMinute = session.regionAges.minuteOf(target.regionFolder, chunkX shr 5, chunkZ shr 5)
                 if (!regionsKnown) return false // the folder listing is on its way; draw nothing yet
                 if (regionMinute == 0) return true // Xaero has never mapped this region
                 seen = regionMinute

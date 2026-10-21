@@ -31,7 +31,8 @@ import java.util.zip.Inflater
 object TileFile {
 
     const val MAGIC = 0x534D4554 // "SMET"
-    const val VERSION = 1
+    /** 2: shaded the way Xaero shades its map ([TilePixels.xaeroLight]); older files are fetched again. */
+    const val VERSION = 2
 
     /** The presence mask's section. */
     private const val PRESENCE = 0
