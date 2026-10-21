@@ -53,7 +53,8 @@ A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b
   distance and coordinates, a **Go to** that jumps the map to anyone, and **Lock**.
 - **Copies coordinates.** Right-click anywhere on the world map, or any marker or player, and
   choose **Copy coordinates**. The dimension comes with them.
-- **Keeps up live.** Terrain on screen is re-checked every minute, markers every 30 seconds,
+- **Keeps up live.** Terrain on screen is checked for changes every 15 minutes (and downloaded
+  whole every 4 hours), markers every 30 seconds,
   players every 2 seconds.
 - **Downloads BlueMap into your own map, if you ask it to.** Write BlueMap's terrain into Xaero's
   map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See

@@ -133,7 +133,7 @@ object Backfill {
         var failed = 0
         var gaps = 0
         for (candidate in candidates) {
-            val tile = session.tiles.get(TileStore.Key(target.mapId, 1, candidate.x, candidate.z), 1, tileSize)
+            val tile = session.tiles.get(TileStore.Key(target.mapId, 1, candidate.x, candidate.z), 1, tileSize, mayCheck = factor <= CHECK_UP_TO_FACTOR)
             val originX = candidate.x * tileSize
             val originZ = candidate.z * tileSize
             fun standInFor() {
@@ -253,16 +253,14 @@ object Backfill {
      */
     class Budget(var uploads: Int = FramePacer.game.uploads, var masks: Int = 8)
 
-    private val FACTORS = listOf(1, 2, 4, 5, 8, 10, 16, 20, 25, 32, 50, 100)
-
     /** Divisors of the tile size, so a shrunk tile is still a whole number of pixels across. */
     fun factorFor(tileSize: Int, blocksPerPixel: Float): Int =
-        FACTORS.filter { tileSize % it == 0 }.lastOrNull { it <= blocksPerPixel.coerceAtLeast(1f) } ?: 1
+        TilePixels.factorsFor(tileSize).lastOrNull { it <= blocksPerPixel.coerceAtLeast(1f) } ?: 1
 
     /** [factor], [steps] of the tile size's factors coarser, as far as there are any. */
     fun coarser(tileSize: Int, factor: Int, steps: Int): Int {
         if (steps <= 0) return factor
-        val usable = FACTORS.filter { tileSize % it == 0 }
+        val usable = TilePixels.factorsFor(tileSize)
         val at = usable.indexOf(factor).coerceAtLeast(0)
         return usable[minOf(at + steps, usable.lastIndex)]
     }
@@ -502,4 +500,7 @@ object Backfill {
     private const val INDEX_ABOVE = 16L
     private const val MAX_TILES_DRAWN = 1024
     private const val MASK_LIFETIME_MS = 5_000L
+
+    /** Zoomed out further than this many blocks a pixel, tiles on screen are not asked about: there are too many. */
+    private const val CHECK_UP_TO_FACTOR = 4
 }
