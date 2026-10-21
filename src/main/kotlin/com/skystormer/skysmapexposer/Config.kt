@@ -144,6 +144,10 @@ object Config {
     /** Video memory the BlueMap tiles may hold, in MB; tiles on screen are drawn coarser rather than dropped when over it. */
     var textureBudgetMb: Int = 256
 
+    /** Whether every tile BlueMap has is downloaded and made ready in the background after joining ([MapPrep]), and how many a second at most. */
+    var prepareMap: Boolean = true
+    var prepareTilesPerSecond: Int = 4
+
     var servers: List<Server> = defaultServers()
 
     /**
@@ -272,6 +276,8 @@ object Config {
             read("tileHardRefreshHours") { tileHardRefreshHours = it.asInt.coerceIn(1, 24 * 7) }
             read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
             read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
+            read("prepareMap") { prepareMap = it.asBoolean }
+            read("prepareTilesPerSecond") { prepareTilesPerSecond = it.asInt.coerceIn(1, 50) }
             read("servers") { element ->
                 val list = ArrayList<Server>()
                 element.asJsonArray.forEachIndexed { index, entry ->
@@ -350,6 +356,8 @@ object Config {
         json.addProperty("tileHardRefreshHours", tileHardRefreshHours)
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
         json.addProperty("textureBudgetMb", textureBudgetMb)
+        json.addProperty("prepareMap", prepareMap)
+        json.addProperty("prepareTilesPerSecond", prepareTilesPerSecond)
         val array = JsonArray()
         for (server in servers) {
             val entry = JsonObject()

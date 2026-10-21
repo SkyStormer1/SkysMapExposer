@@ -121,6 +121,12 @@ class TileStore(
 
     private val tiles = HashMap<Key, Tile>(256)
 
+    /** The keys of [tiles], for [prepare] on another thread: tiles the maps hold check themselves. */
+    private val inMemory: MutableSet<Key> = ConcurrentHashMap.newKeySet()
+
+    /** Loads and checks under way for the maps, which background preparation waits for. */
+    val busy = java.util.concurrent.atomic.AtomicInteger()
+
     /**
      * Anything downloaded before this is downloaded again as it is drawn, whatever its age. Set by
      * `/mapexposer refresh` and the map bar's refresh button.
@@ -159,14 +165,17 @@ class TileStore(
             tile?.let(::release)
             tile = Tile(key, blocksPerPixel, tileSize)
             tiles[key] = tile
+            inMemory.add(key)
             val loading = tile
-            workers.execute { load(loading) }
+            busy.incrementAndGet()
+            workers.execute { try { load(loading) } finally { busy.decrementAndGet() } }
         } else if ((tile.state == State.READY || tile.state == State.EMPTY) && !tile.refreshing &&
             (mayCheck || key.lod > 1) && Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now) != Schedule.Due.NO
         ) {
             tile.refreshing = true
             val refreshing = tile
-            workers.execute { refresh(refreshing) }
+            busy.incrementAndGet()
+            workers.execute { try { refresh(refreshing) } finally { busy.decrementAndGet() } }
         } else if (tile.state != State.READY && tile.textures.isNotEmpty()) {
             // Gone from BlueMap, or no longer readable: its old picture goes too.
             release(tile)
@@ -242,13 +251,17 @@ class TileStore(
         val result = Eviction.choose(
             tiles.values.map { Eviction.Entry(it.key, it.bytes, it.lastUsed, it.state == State.LOADING || it.refreshing) }, now, budget,
         )
-        for (key in result.drop) tiles.remove(key)?.let(::release)
+        for (key in result.drop) {
+            tiles.remove(key)?.let(::release)
+            inMemory.remove(key)
+        }
         coarser = Eviction.coarser(coarser, result.inViewOverBudget, result.kept, budget)
     }
 
     fun clear() {
         tiles.values.forEach(::release)
         tiles.clear()
+        inMemory.clear()
     }
 
     private fun release(tile: Tile) {
@@ -464,6 +477,43 @@ class TileStore(
             // Asked for a whole download and got one, or BlueMap's word that there is nothing.
             if (hard) tile.hardAt = now
             tile.refreshing = false
+        }
+    }
+
+    /**
+     * For background preparation ([MapPrep]): makes sure [key] is on disk, ready to draw and within
+     * its schedule, without keeping it in memory. A tile on disk is only asked about when a whole
+     * download is due, or a check is and the server can answer it without one. True if the server
+     * was asked. Blocking.
+     */
+    fun prepare(key: Key, blocksPerPixel: Int, tileSize: Int): Boolean {
+        if (key in inMemory) return false
+        val tile = Tile(key, blocksPerPixel, tileSize)
+        return try {
+            val meta = readMeta(metaOf(key))
+            val fetchedAt = meta.getProperty("fetched")?.toLongOrNull() ?: 0L
+            val hardAt = meta.getProperty("hard")?.toLongOrNull() ?: fetchedAt
+            val empty = meta.getProperty("empty") == "true"
+            val onDisk = empty || fromDisk(tile, meta, meta.getProperty("since")?.toIntOrNull() ?: 0)
+            val now = System.currentTimeMillis()
+            if (!onDisk) {
+                download(tile, meta, now)
+                return true
+            }
+            val cheap = meta.getProperty("etag") != null || meta.getProperty("modified") != null
+            when (Schedule.due(fetchedAt, hardAt, refetchBefore, now)) {
+                Schedule.Due.NO -> return false
+                Schedule.Due.CHECK -> if (!cheap) return false
+                Schedule.Due.DOWNLOAD -> {}
+            }
+            if (empty) tile.state = State.EMPTY
+            tile.checkedAt = fetchedAt
+            tile.hardAt = hardAt
+            refresh(tile)
+            true
+        } catch (e: Exception) {
+            warnOnce(key, "Could not prepare BlueMap tile", e)
+            true
         }
     }
 

@@ -29,6 +29,42 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
 
     val gaps = GapStore(folder, io)
 
+    init {
+        io.execute {
+            try {
+                val size = TileCache.tidy(folder.resolve("tiles"))
+                Log.info("Tile cache for {}: {}", server.addresses.first(), size)
+            } catch (e: Exception) {
+                Log.warn("Could not look over the tile cache for {}: {}", server.addresses.first(), e.toString())
+            }
+        }
+    }
+
+    /**
+     * Empties this server's tile cache, in memory and on disk, and runs [done] on the client thread
+     * when it has. Background preparation is stopped first and starts over afterwards.
+     */
+    fun clearTiles(done: (String) -> Unit) {
+        MapPrep.cancel()
+        tiles.clear()
+        io.execute {
+            val said = try {
+                TileCache.clear(folder.resolve("tiles"))
+                "Tile cache cleared"
+            } catch (e: Exception) {
+                Log.warn("Could not clear the tile cache: {}", e.toString())
+                "Could not clear all of the tile cache: ${e.message ?: e.javaClass.simpleName}"
+            }
+            Minecraft.getInstance().execute {
+                if (current === this) {
+                    tiles.clear()
+                    if (Config.prepareMap) MapPrep.start(this, MarkerElements.worldMapDimension())
+                }
+                done(said)
+            }
+        }
+    }
+
     /** Regions Xaero has a file for but cannot show, which BlueMap covers. */
     val unshowable = UnshowableRegions(folder.resolve("unshowable-regions.json"), io)
 
@@ -61,6 +97,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     }
 
     private fun close() {
+        MapPrep.forget()
         visits.save()
         gaps.save()
         unshowable.save()

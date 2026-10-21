@@ -4,6 +4,8 @@ import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.BlueMapDownload
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.MapPrep
+import com.skystormer.skysmapexposer.TileCache
 import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Overlay
@@ -26,8 +28,9 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /**
- * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on three
- * tabs: Map (what is shown, and how big), Server (where BlueMap is, and downloading from it) and
+ * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on four
+ * tabs: Map (what is shown, and how big), Server (where BlueMap is, and downloading from it), Tiles
+ * (preparing the map in the background, and the tile cache) and
  * Experimental (settings that may get you in trouble, off unless you turn them on).
  *
  * The Server tab opens on the server you are connected to: its BlueMap address, which BlueMap map to use for each
@@ -63,7 +66,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         )
     }.toMutableList()
 
-    private enum class Page(val title: String) { MAP("Map"), SERVER("Server"), EXPERIMENTAL("Experimental") }
+    private enum class Page(val title: String) { MAP("Map"), SERVER("Server"), TILES("Tiles"), EXPERIMENTAL("Experimental") }
 
     private var page = Page.MAP
     private var enabled = Config.enabled
@@ -81,6 +84,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapBiomes = Config.minimapBiomes
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
+    private var prepareMap = Config.prepareMap
     private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -134,7 +138,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     }
 
     override fun content(top: Int) {
-        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null; fillWidget = null
+        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null; fillWidget = null; prepareWidget = null; cacheWidget = null
         mapBoxes.clear()
         val left = width / 2 - WIDTH / 2
         var y = top
@@ -153,6 +157,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         when (page) {
             Page.MAP -> mapPage(left, y)
             Page.SERVER -> serverPage(left, y)
+            Page.TILES -> tilesPage(left, y)
             Page.EXPERIMENTAL -> experimentalPage(left, y)
         }
     }
@@ -230,14 +235,97 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var fillWidget: MultiLineTextWidget? = null
     private var fillWasRunning = TerrainFill.running
 
+    private var prepareWidget: MultiLineTextWidget? = null
+    private var prepareWasRunning = MapPrep.running
+    private var prepareSaid = ""
+    private var cacheWidget: MultiLineTextWidget? = null
+    private var cacheLine = "Tile cache: counting…"
+    private var cacheCounted = false
+
     override fun tick() {
         super.tick()
         fillWidget?.setMessage(Component.literal(TerrainFill.status() ?: fillStatus))
-        // The button turns back from Stop when the fill ends.
+        prepareWidget?.setMessage(Component.literal(prepareLine()))
+        cacheWidget?.setMessage(Component.literal(cacheLine))
+        // The buttons turn back from Stop when the fill or the preparation ends.
         if (fillWasRunning != TerrainFill.running) {
             fillWasRunning = TerrainFill.running
             if (page == Page.EXPERIMENTAL) rebuildWidgets()
         }
+        if (prepareWasRunning != MapPrep.running) {
+            prepareWasRunning = MapPrep.running
+            if (page == Page.TILES) rebuildWidgets()
+        }
+    }
+
+    private fun prepareLine(): String = MapPrep.status() ?: prepareSaid.ifEmpty {
+        if (Session.current == null) "Not on a server with BlueMap." else "Not preparing the map now."
+    }
+
+    /** Preparing the whole map in the background, the video memory tiles hold, and the tile cache on disk. */
+    private fun tilesPage(left: Int, top: Int) {
+        var y = top
+        val half = (WIDTH - GAP) / 2
+        val session = Session.current
+        addRenderableWidget(toggle(left, y, half, "Prepare map", prepareMap,
+            "After you join, download every tile BlueMap has, a few a second, and make it ready to draw, so the map is ready " +
+                "before you open it. Tiles you are looking at always come first.") { prepareMap = it })
+        val button = if (MapPrep.running) {
+            Button.builder(Component.literal("Stop preparing")) { MapPrep.cancel(); prepareSaid = "Stopped; what is done stays."; rebuildWidgets() }
+        } else {
+            Button.builder(Component.literal("Prepare now")) {
+                prepareSaid = session?.let { MapPrep.start(it, MarkerElements.worldMapDimension()) } ?: ""
+                rebuildWidgets()
+            }.tooltip(SafeTooltip.of("Go over the whole map now: tiles already on disk and up to date are skipped."))
+        }
+        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = session != null })
+        y += ROW + GAP
+        prepareWidget = MultiLineTextWidget(left, y + 1, Component.literal(prepareLine()), font)
+            .setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
+        y += font.lineHeight * 2 + GAP * 3
+
+        val memory = session?.let { MapExposerClient.textureMemory(it) } ?: "Texture memory: not on a server with BlueMap"
+        addRenderableWidget(MultiLineTextWidget(left, y + 1, Component.literal(memory), font).setMaxWidth(WIDTH).setMaxRows(2))
+        y += font.lineHeight * 2 + GAP * 3
+
+        if (!cacheCounted) {
+            cacheCounted = true
+            countCache()
+        }
+        cacheWidget = MultiLineTextWidget(left, y + 1, Component.literal(cacheLine), font)
+            .setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
+        y += font.lineHeight * 2 + GAP
+        addRenderableWidget(
+            Button.builder(Component.literal("Clear tile cache")) {
+                val here = session ?: return@builder
+                cacheLine = "Clearing the tile cache…"
+                here.clearTiles { said ->
+                    cacheLine = said
+                    countCache()
+                }
+            }
+                .bounds(left, y, WIDTH, ROW)
+                .tooltip(SafeTooltip.of(
+                    "Deletes BlueMap's tiles kept on disk for this server, and the ones in memory; they are downloaded again as " +
+                        "they are needed. Preparing the map stops first, and starts over afterwards. Your own map is not touched."))
+                .build()
+                .also { it.active = session != null })
+    }
+
+    /** Counts the tile cache on another thread, so a big cache does not freeze the screen. */
+    private fun countCache() {
+        val session = Session.current
+        val root = minecraft.gameDirectory.toPath().resolve("skysmapexposer")
+        Thread({
+            val line = try {
+                val all = TileCache.measureAll(root)
+                if (session == null) "Tile cache, all servers: $all"
+                else "Tile cache: ${TileCache.measure(session.folder.resolve("tiles"))} here; $all for all servers"
+            } catch (e: Exception) {
+                "Tile cache: could not count it (${e.message ?: e.javaClass.simpleName})"
+            }
+            minecraft.execute { cacheLine = line }
+        }, "SkysMapExposer cache size").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
     }
 
     /** What is shown on the maps, how big, and the players. */
@@ -574,6 +662,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.minimapBiomes = minimapBiomes
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
+        Config.prepareMap = prepareMap
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }

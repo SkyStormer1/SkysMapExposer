@@ -2,7 +2,9 @@ package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.BiomeHighlight
 import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.MapRefresh
 import com.skystormer.skysmapexposer.MarkerElements
+import com.skystormer.skysmapexposer.Session
 import net.fabricmc.fabric.api.client.screen.v1.Screens
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
@@ -21,7 +23,8 @@ import java.lang.ref.WeakReference
 /**
  * The bar on Xaero's world map: this mod's switches, and a biome finder.
  *
- * - The header folds the bar down to itself when clicked and moves it when dragged; **Set** opens
+ * - The header folds the bar down to itself when clicked and moves it when dragged; **Refresh**
+ *   downloads the BlueMap tiles in view again (once every 30 seconds) and **Set** opens
  *   the settings.
  * - The switches turn BlueMap's terrain, markers, borders and players on and off, for every
  *   server, as the settings do; **List** opens the player list.
@@ -44,6 +47,7 @@ object MapBar {
 
     private const val TITLE = "Map Exposer"
     private const val SET = "Set"
+    private const val REFRESH = "Refresh"
     private const val CLEAR = "Clear"
 
     /** How wide a tooltip may be before it wraps onto another line. */
@@ -218,7 +222,7 @@ object MapBar {
         private fun switchesWidth() = SWITCHES.sumOf { switchWidth(it.label) + PAD } + PAD
 
         override fun naturalWidth(): Int {
-            val header = 3 + font.width("- $TITLE") + 8 + switchWidth(SET) + PAD
+            val header = 3 + font.width("- $TITLE") + 8 + switchWidth(REFRESH) + PAD + switchWidth(SET) + PAD
             return maxOf(header, switchesWidth(), 120)
         }
 
@@ -250,6 +254,7 @@ object MapBar {
         }
 
         private val setLeft get() = baseWidth - PAD - switchWidth(SET)
+        private val refreshLeft get() = setLeft - PAD - switchWidth(REFRESH)
         private val clearLeft get() = baseWidth - PAD - switchWidth(CLEAR)
 
         /** Which switch of the second row [lx] is on, or null. */
@@ -271,10 +276,14 @@ object MapBar {
             // Header: fold and move, and the settings.
             val overHeader = inside && ly in 0 until ROW
             val overSet = overHeader && mx >= setLeft
-            if (overHeader && !overSet) graphics.fill(0, 0, setLeft - 1, ROW, HOVER)
+            val overRefresh = overHeader && !overSet && mx >= refreshLeft
+            if (overHeader && !overSet && !overRefresh) graphics.fill(0, 0, refreshLeft - 1, ROW, HOVER)
             graphics.text(font, if (open) "- $TITLE" else "+ $TITLE", 3, 2, WHITE, false)
+            // Greyed out while it cools down.
+            button(graphics, REFRESH, refreshLeft, 0, Session.current != null && MapRefresh.secondsLeft() == 0, overRefresh)
             button(graphics, SET, setLeft, 0, true, overSet)
             if (idle && overSet) tooltip(graphics, "Settings: servers, BlueMap addresses, sizes, downloads", mouseX, mouseY)
+            else if (idle && overRefresh) tooltip(graphics, MapRefresh.tip(), mouseX, mouseY)
             else if (idle && overHeader) tooltip(graphics, "Click to fold the bar away or open it. Drag to move it, or under another panel to dock it there.", mouseX, mouseY)
             if (!open) return
 
@@ -344,6 +353,9 @@ object MapBar {
             when {
                 ly < ROW -> if (lx >= setLeft) {
                     Minecraft.getInstance().gui.setScreen(ConfigScreen(screen))
+                    return Click.DONE
+                } else if (lx >= refreshLeft) {
+                    MapRefresh.press()
                     return Click.DONE
                 } else {
                     search.isFocused = false
