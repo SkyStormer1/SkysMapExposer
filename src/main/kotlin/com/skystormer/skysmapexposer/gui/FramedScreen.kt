@@ -29,6 +29,12 @@ abstract class FramedScreen(title: Component) : Screen(title) {
     /** What **Reset to defaults** puts back, and anything it leaves alone. */
     protected open val resetTip: String = "Puts every setting here back to how the mod comes."
 
+    /** Whether there is a **Cancel** between Reset and Done, which calls [cancel]. */
+    protected open val cancellable: Boolean = false
+
+    /** **Cancel**: leaves without saving. */
+    protected open fun cancel() {}
+
     private var scroll = 0
     private var contentHeight = 0
     private var draggingBar = false
@@ -47,18 +53,25 @@ abstract class FramedScreen(title: Component) : Screen(title) {
         // The buttons go in first, so where they overlap something scrolled under them they win.
         resetArmed = false
         val footerWidth = minOf(FOOTER_WIDTH, width - 16)
-        val half = (footerWidth - GAP) / 2
+        val parts = if (cancellable) 3 else 2
+        val each = (footerWidth - GAP * (parts - 1)) / parts
         val left = width / 2 - footerWidth / 2
         val y = height - FOOTER / 2 - ROW / 2
         val reset = Button.builder(Component.literal(RESET)) { reset() }
-            .bounds(left, y, half, ROW)
+            .bounds(left, y, each, ROW)
             .tooltip(SafeTooltip.of(resetTip))
             .build()
-        val done = Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(left + half + GAP, y, footerWidth - half - GAP, ROW).build()
+        val cancel = if (cancellable) {
+            Button.builder(CommonComponents.GUI_CANCEL) { cancel() }.bounds(left + each + GAP, y, each, ROW)
+                .tooltip(SafeTooltip.of("Leave without saving any of the changes made here.")).build()
+        } else null
+        val doneLeft = left + (each + GAP) * (parts - 1)
+        val done = Button.builder(CommonComponents.GUI_DONE) { onClose() }.bounds(doneLeft, y, left + footerWidth - doneLeft, ROW).build()
         addRenderableWidget(reset)
+        cancel?.let(::addRenderableWidget)
         addRenderableWidget(done)
         resetButton = reset
-        fixed = listOf(reset, done)
+        fixed = listOfNotNull(reset, cancel, done)
 
         val first = top() + PAD - scroll
         content(first)

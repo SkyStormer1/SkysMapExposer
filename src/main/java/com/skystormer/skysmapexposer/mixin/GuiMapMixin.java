@@ -12,9 +12,11 @@ import com.skystormer.skysmapexposer.MapView;
 import com.skystormer.skysmapexposer.OtherDimensionCoords;
 import com.skystormer.skysmapexposer.Overlay;
 import com.skystormer.skysmapexposer.gui.MapBar;
+import com.skystormer.skysmapexposer.gui.PanelClicks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
@@ -36,7 +38,7 @@ import xaero.map.gui.dropdown.rightclick.RightClickOption;
 import java.util.ArrayList;
 
 /**
- * Five things on Xaero's world map screen.
+ * Six things on Xaero's world map screen.
  *
  * <p>Drawing: the backfill goes into Xaero's map framebuffer straight after Xaero has drawn its own
  * terrain and before anything that sits on top of terrain (highlights, waypoints, the player
@@ -58,7 +60,8 @@ import java.util.ArrayList;
  * <p>Other dimension: under Xaero's readout of the block under the mouse, the same block's
  * coordinates in the other dimension ({@link OtherDimensionCoords}).
  *
- * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone. And the
+ * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone. Clicks over
+ * a panel go to it before Xaero's buttons ({@link PanelClicks}). And the
  * mouse wheel goes to the {@link MapBar} first when it is over it, as Xaero would otherwise zoom.
  *
  * <p>The locals are taken by name, which Xaero's jar keeps. If a future Xaero renames them or moves
@@ -186,6 +189,17 @@ public abstract class GuiMapMixin implements MapCamera {
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true, require = 0)
     private void skysmapexposer$scrollBar(double mouseX, double mouseY, double scrollX, double scrollY, CallbackInfoReturnable<Boolean> cir) {
         if (MapBar.scrolled(mouseX, mouseY, scrollY)) cir.setReturnValue(true);
+    }
+
+    /** Panels before Xaero's buttons ({@link PanelClicks}): a click over one is its alone. */
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true, require = 0)
+    private void skysmapexposer$panelsFirst(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
+        if (PanelClicks.clicked((Screen) (Object) this, event, doubleClick)) cir.setReturnValue(true);
+    }
+
+    @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true, require = 0)
+    private void skysmapexposer$panelsLetGo(MouseButtonEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (PanelClicks.released((Screen) (Object) this, event)) cir.setReturnValue(true);
     }
 
     /**
