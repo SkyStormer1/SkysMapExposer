@@ -76,7 +76,7 @@ You need:
 
 - Minecraft **26.3** with **Fabric Loader** 0.19.5 or newer
 - **Fabric API** and **Fabric Language Kotlin**
-- **Xaero's World Map** 1.44 or newer
+- **Xaero's World Map** 1.47 or newer
 - Recommended: **Xaero's Minimap** (for the minimap and for saving waypoints) and **Mod Menu**
   (for the settings screen)
 
@@ -246,16 +246,22 @@ may name a block that is not really there. Where BlueMap has nothing, nothing is
 anything of yours that already looks like BlueMap is left exactly as it was.
 
 **Backups.** Each region of your map is copied just before a download first changes it, into
-`skysmapexposer/<server>/backups/` in your game folder, one folder per download. To undo:
+`skysmapexposer/<server>/backups/` in your game folder, one folder per download. Each folder
+remembers which dimension, layer and map folder it came from, and goes back there whatever the
+world map is showing. Downloads, clears and map files end with a **[Restore]** button. To undo:
 
 - `/mapexposer backups` lists them, newest first;
-- `/mapexposer restore <name>` puts one back, with the world map showing the same dimension.
-  `/mapexposer restore` on its own puts back the newest, and pressing Tab after `restore ` lists
-  their names;
-- `/mapexposer backup` copies the whole dimension's map at any time, to go back to later.
+- `/mapexposer restore <name>` says what it would put back and where, with a **[Restore]** button
+  to go ahead. `/mapexposer restore` on its own does that for the newest, and pressing Tab after
+  `restore ` lists their names. Your map of those regions is copied aside first, so the end
+  message offers **[Undo restore]**;
+- `/mapexposer backup` copies the layer of the dimension the map is showing at any time, to go
+  back to later. Xaero is asked to save what it has explored first.
 
-Restored regions are read again as soon as you zoom in on them. The ones right around you, which
-Xaero is busy mapping, show as restored once you move a few regions away or after a restart.
+Copies made before 1.9.2 don't say where they came from: they are only put back by name, into the
+map on screen. Restored regions keep their file dates and are read again as soon as you zoom in on
+them. The ones right around you, which Xaero is busy mapping, show as restored once you move a few
+regions away or after a restart.
 
 ## Far terrain from BlueMap
 

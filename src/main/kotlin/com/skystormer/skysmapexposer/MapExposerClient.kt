@@ -64,6 +64,9 @@ object MapExposerClient : ClientModInitializer {
         false
     }
 
+    /** Whether dropping map files onto the game window reaches [TerrainFiles] (`MouseHandlerMixin`). */
+    private fun dropHookInstalled() = injected("net.minecraft.client.MouseHandler", "skysmapexposer\$onDrop")
+
     override fun onInitializeClient() {
         Config.load()
 
@@ -85,7 +88,7 @@ object MapExposerClient : ClientModInitializer {
             ChatShare.forget()
             TerrainFiles.forget()
             MapView.forget()
-            MapBackup.forget()
+            MapBackup.leave()
             HookErrors.forget()
         }
 
@@ -110,6 +113,7 @@ object MapExposerClient : ClientModInitializer {
                 if (!injected("xaero.map.gui.GuiMap", "hideArrowInOtherDimension")) {
                     Log.warn("Could not hook Xaero's player arrow; it will show on another dimension's map")
                 }
+                if (!dropHookInstalled()) Log.warn("Could not hook dropping files onto the game; open map files with /mapexposer terrain open")
                 if (FabricLoader.getInstance().isModLoaded("xaerominimap")) {
                     val radar = "xaero.hud.minimap.radar.render.element.RadarRenderer"
                     // The drawing gate is the one that has to hold; the other is only a shortcut.
@@ -130,6 +134,7 @@ object MapExposerClient : ClientModInitializer {
             addPins()
             MapView.tick(client)
             BlueMapDownload.tick()
+            MapBackup.tick()
             ChatShare.tick()
             TerrainFiles.tick()
             val session = Session.current ?: return@register
@@ -218,16 +223,20 @@ object MapExposerClient : ClientModInitializer {
                     .then(ClientCommands.literal("backups").executes(::backups))
                     .then(
                         ClientCommands.literal("restore")
-                            .executes { restore(it, MapBackup.names().firstOrNull()) }
+                            .executes { restore(it, MapBackup.names().firstOrNull(), plain = true, confirmed = false) }
                             .then(
                                 ClientCommands.argument("name", StringArgumentType.string())
                                     .suggests { _, builder ->
                                         MapBackup.names().filter { it.startsWith(builder.remaining) }.forEach(builder::suggest)
                                         builder.buildFuture()
                                     }
-                                    .executes { restore(it, StringArgumentType.getString(it, "name")) }
+                                    .executes { restore(it, StringArgumentType.getString(it, "name"), plain = false, confirmed = false) }
+                                    .then(ClientCommands.literal("confirm").executes {
+                                        restore(it, StringArgumentType.getString(it, "name"), plain = false, confirmed = true)
+                                    })
                             )
                     )
+                    .then(ClientCommands.literal("skipped").executes(::skipped))
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
                         ClientCommands.literal("stale").then(
@@ -345,6 +354,11 @@ object MapExposerClient : ClientModInitializer {
         source.sendFeedback(Component.literal("Xaero hook: $hook"))
         val off = HookErrors.switchedOff()
         if (off.isNotEmpty()) source.sendFeedback(Component.literal("§cOff after an error until you rejoin: ${off.joinToString()}§r (the log says why)"))
+        val missing = XaeroField.missing()
+        if (missing.isNotEmpty()) {
+            source.sendFeedback(Component.literal("§eNot in this Xaero version, so off: ${missing.joinToString()}"))
+        }
+        if (!dropHookInstalled()) source.sendFeedback(Component.literal("§eDropping map files onto the game: §cmissing§r; /mapexposer terrain open opens them"))
         fun ran(hook: Boolean) = if (hook) "§aworking§r" else "§enot seen yet§r"
         source.sendFeedback(
             Component.literal(
@@ -449,21 +463,29 @@ object MapExposerClient : ClientModInitializer {
         return 1
     }
 
-    /** Copies every surface region of the dimension on screen, to retreat to. */
+    /** Copies every region of the layer on screen, to retreat to. */
     private fun backup(context: CommandContext<FabricClientCommandSource>): Int {
-        val taken = MapBackup.snapshot()
-        if (taken == null) {
-            context.source.sendError(Component.literal("Could not copy the map; open the world map first"))
-            return 0
+        val now = MapBackup.snapshot { done ->
+            Minecraft.getInstance().player?.sendSystemMessage(Component.literal(done))
         }
-        val (name, files) = taken
-        context.source.sendFeedback(Component.literal("Copied §b$files§r regions as §b$name"))
-        context.source.sendFeedback(Component.literal("§7/mapexposer restore $name puts them back"))
+        if (now.isNotEmpty()) context.source.sendFeedback(Component.literal(now))
+        return 1
+    }
+
+    /** Every region the last download, clear or import skipped, and why. */
+    private fun skipped(context: CommandContext<FabricClientCommandSource>): Int {
+        val all = BlueMapDownload.skippedList()
+        if (all.isEmpty()) context.source.sendFeedback(Component.literal("Nothing was skipped"))
+        else {
+            context.source.sendFeedback(Component.literal("${all.size} regions skipped (region x,z, then blocks):"))
+            all.forEach { context.source.sendFeedback(Component.literal("  $it")) }
+            context.source.sendFeedback(Component.literal("§7${SkippedRegions.ADVICE}"))
+        }
         return 1
     }
 
     private fun backups(context: CommandContext<FabricClientCommandSource>): Int {
-        val all = MapBackup.snapshots()
+        val all = MapBackup.names()
         if (all.isEmpty()) {
             context.source.sendFeedback(Component.literal("No copies of the map yet; /mapexposer backup takes one"))
             return 1
@@ -475,20 +497,51 @@ object MapExposerClient : ClientModInitializer {
     }
 
     /**
-     * Puts a copy back. Xaero holds regions open, so each one restored is marked for Xaero to read
-     * the file now there when it is next on screen.
+     * Says what putting copy [name] back would do, with a button; [confirmed], does it. [plain] is
+     * `/mapexposer restore` with no name, which never takes a copy that does not say where it came
+     * from. Xaero holds regions open, so each one restored is marked for Xaero to read the file now
+     * there when it is next on screen.
      */
-    private fun restore(context: CommandContext<FabricClientCommandSource>, name: String?): Int {
+    private fun restore(context: CommandContext<FabricClientCommandSource>, name: String?, plain: Boolean, confirmed: Boolean): Int {
         if (name == null) {
             context.source.sendError(Component.literal("There are no copies to put back"))
             return 0
         }
-        val restored = MapBackup.restore(name)
-        if (restored < 0) {
-            context.source.sendError(Component.literal("No copy called '$name'; /mapexposer backups lists them"))
+        val root = MapBackup.backupRoot()
+        if (root == null) {
+            context.source.sendError(Component.literal("This server has no folder for copies"))
             return 0
         }
-        context.source.sendFeedback(Component.literal("Put §b$restored§r regions back from §b$name"))
+        val (preview, why) = MapBackup.preview(root, name, plain, MapBackup.server(), MapBackup.shownTarget()) { MapMenus.dimensionName(it) ?: it }
+        if (preview == null) {
+            context.source.sendError(Component.literal(why!!))
+            return 0
+        }
+        val target = preview.target
+        val where = (if (target.layer == XaeroWriter.SURFACE) "" else "cave layer ${target.layer} of ") + "the ${MapMenus.dimensionName(target.dimensionId) ?: target.dimensionId}"
+        val count = preview.regions.size
+        if (!confirmed) {
+            val notes = buildString {
+                if (preview.origin == null) append(" §eThis copy is from before 1.9.2 and does not say which map it came from; it goes into the map on screen.§r")
+                val unsaved = preview.origin?.unsaved?.size ?: 0
+                if (unsaved > 0) append(" §7$unsaved of its regions were copied without Xaero's newest exploring, which it did not save in time.§r")
+            }
+            context.source.sendFeedback(
+                Component.literal("Restore $count region${if (count == 1) "" else "s"} of $where from ${preview.created}? " +
+                    "Your current map of those regions is copied aside first.$notes  ")
+                    .append(ChatButton.of("[Restore]", "/mapexposer restore \"$name\" confirm", "Puts $name back now."))
+            )
+            return 1
+        }
+        val (restored, failed) = MapBackup.restore(preview)
+        if (restored == null) {
+            context.source.sendError(Component.literal(failed!!))
+            return 0
+        }
+        context.source.sendFeedback(
+            Component.literal("Put §b${restored.regions.size}§r regions of $where back from §b$name§r.  ")
+                .append(ChatButton.of("[Undo restore]", "/mapexposer restore \"${restored.before}\" confirm", "Puts back your map as it was just before: ${restored.before}"))
+        )
         if (MapBackup.nearYou > 0) {
             context.source.sendFeedback(Component.literal(
                 "§7${MapBackup.nearYou} of them are right around you, where Xaero is mapping what you see; " +
@@ -520,28 +573,39 @@ object MapExposerClient : ClientModInitializer {
                 MapClear.preview(kind)?.let { context.source.sendFeedback(Component.literal(it)) }
                 1
             }
-            .then(ClientCommands.literal("confirm").executes { context ->
-                context.source.sendFeedback(Component.literal(MapClear.confirm(kind)))
+            .then(confirmClear { context, previewed ->
+                context.source.sendFeedback(Component.literal(MapClear.confirm(kind, previewed = previewed)))
                 1
             })
             .also { if (kind == MapClear.Kind.BORDER) it.then(borderBox()) }
 
+    /**
+     * `confirm`, typed; or `confirm "<dimension>" <layer>`, as the preview's button sends it, which
+     * refuses if the world map has moved on to another map since.
+     */
+    private fun confirmClear(run: (CommandContext<FabricClientCommandSource>, Pair<String, Int>?) -> Int) =
+        ClientCommands.literal("confirm").executes { run(it, null) }
+            .then(ClientCommands.argument("dimension", StringArgumentType.string())
+                .then(ClientCommands.argument("layer", IntegerArgumentType.integer()).executes {
+                    run(it, StringArgumentType.getString(it, "dimension") to IntegerArgumentType.getInteger(it, "layer"))
+                }))
+
     /** `clear border <radius> [<centerX> <centerZ>] [confirm]`: a border given by hand. */
     private fun borderBox() = ClientCommands.argument("radius", IntegerArgumentType.integer(1))
-        .executes { clearBox(it, false, false) }
-        .then(ClientCommands.literal("confirm").executes { clearBox(it, false, true) })
+        .executes { clearBox(it, false, false, null) }
+        .then(confirmClear { context, previewed -> clearBox(context, false, true, previewed) })
         .then(ClientCommands.argument("centerX", IntegerArgumentType.integer())
             .then(ClientCommands.argument("centerZ", IntegerArgumentType.integer())
-                .executes { clearBox(it, true, false) }
-                .then(ClientCommands.literal("confirm").executes { clearBox(it, true, true) })))
+                .executes { clearBox(it, true, false, null) }
+                .then(confirmClear { context, previewed -> clearBox(context, true, true, previewed) })))
 
-    private fun clearBox(context: CommandContext<FabricClientCommandSource>, centred: Boolean, confirm: Boolean): Int {
+    private fun clearBox(context: CommandContext<FabricClientCommandSource>, centred: Boolean, confirm: Boolean, previewed: Pair<String, Int>?): Int {
         val box = MapClear.Box(
             IntegerArgumentType.getInteger(context, "radius"),
             if (centred) IntegerArgumentType.getInteger(context, "centerX") else 0,
             if (centred) IntegerArgumentType.getInteger(context, "centerZ") else 0,
         )
-        val said = if (confirm) MapClear.confirm(MapClear.Kind.BORDER, box) else MapClear.preview(MapClear.Kind.BORDER, box)
+        val said = if (confirm) MapClear.confirm(MapClear.Kind.BORDER, box, previewed) else MapClear.preview(MapClear.Kind.BORDER, box)
         said?.let { context.source.sendFeedback(Component.literal(it)) }
         return 1
     }

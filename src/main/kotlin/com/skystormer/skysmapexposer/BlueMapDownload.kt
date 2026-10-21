@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
 import xaero.map.WorldMapSession
 import xaero.map.region.MapRegion
@@ -52,6 +53,8 @@ object BlueMapDownload {
         var next = 0
         val since = System.currentTimeMillis()
         var retried = false
+        /** Whether its file has been copied aside, which comes before anything is written to it. */
+        var backedUp = false
     }
 
     private class Job(
@@ -93,7 +96,7 @@ object BlueMapDownload {
         val later = ArrayDeque<Active>()
         var ticks = 0
         val tally = XaeroWriter.Tally()
-        var skipped = 0
+        val skipped = SkippedRegions()
         var active: Active? = null
         val saving = ArrayList<Pair<MapRegion, Long>>()
         var palette: XaeroPalette? = null
@@ -103,6 +106,9 @@ object BlueMapDownload {
         val guide: BiomeGuide? by lazy { if (Config.guessBiomes) BiomeGuide.forDimension(dimensionId) else null }
         /** Season dates: a chunk mapped before the season began is written over like one never mapped. */
         val age: MapAge? = MapAge.of(dimensionId, folder)
+        /** Where its copies come from and go back to, and the name of their folder. */
+        val origin = MapBackup.Origin(dimensionId, layer, folder, MapBackup.server())
+        val label = MapBackup.label(name, layer)
     }
 
     @Volatile
@@ -198,8 +204,11 @@ object BlueMapDownload {
         MapBackup.forget()
         job = started
         Log.info("{} in the {} (cave layer {}): {} regions{}", title, name, layer, regions.size, if (unexploredOnly) " (unexplored chunks only)" else "")
-        return MapBackup.label(started.name, layer)
+        return started.label
     }
+
+    /** The regions the last job skipped, a line each, for `/mapexposer skipped`. */
+    fun skippedList(): List<String> = job?.skipped?.all().orEmpty()
 
     /** Stops after the region being written, which is finished rather than left half done. */
     fun cancel(): Boolean {
@@ -319,10 +328,25 @@ object BlueMapDownload {
 
     // ---- the client thread ----
 
-    /** Each client tick: writes a little, and keeps an eye on what Xaero is saving. */
+    /**
+     * Each client tick: writes a little, and keeps an eye on what Xaero is saving. This reaches
+     * deep into Xaero, so an error stops the job rather than the game: what was written and saved
+     * before stays, and the end message offers the copies to put it all back.
+     */
     fun tick() {
         val job = job ?: return
         if (job.phase != Phase.WRITING && job.phase != Phase.FINISHING) return
+        TickGuard.run(job.title, { why -> crashed(job, why) }) { tick(job) }
+    }
+
+    private fun crashed(job: Job, why: String) {
+        job.error = why
+        job.cancelled = true
+        job.active = null
+        end(job)
+    }
+
+    private fun tick(job: Job) {
         val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return
         val now = System.currentTimeMillis()
 
@@ -352,13 +376,15 @@ object BlueMapDownload {
             else job.ready.poll()?.let { pending -> begin(job, pending) }
                 ?: if (job.scanFinished) job.later.removeFirstOrNull()?.also { job.active = it } else null
         }
-        if (active != null) write(job, processor, active, now)
+        if (active != null && backUp(job, active)) write(job, processor, active, now)
 
         val finished = job.scanFinished && job.ready.isEmpty() && job.later.isEmpty() && job.active == null
         if (finished || (job.cancelled && job.active == null)) {
             job.phase = Phase.FINISHING
             if (job.saving.isEmpty()) end(job)
             else job.message = "${job.title}: waiting for Xaero to save the last ${job.saving.size} region(s)…"
+        } else if (job.active?.backedUp == false) {
+            job.message = "${job.doing}: having Xaero save region ${job.done.get() + 1} of ${job.total} before copying it aside…"
         } else {
             job.message = "${job.doing}: region ${job.done.get() + 1} of ${job.total} " +
                 "(${job.tally.newChunks + job.tally.replacedChunks} chunks so far)"
@@ -367,15 +393,26 @@ object BlueMapDownload {
         if (++job.ticks % 40 == 0 && Minecraft.getInstance().gui.screen() == null) MapMenus.say(job.message)
     }
 
-    /** Copies the region aside before anything is written to it; without that copy, it is skipped. */
-    private fun begin(job: Job, pending: Pending): Active? {
-        if (!MapBackup.keep(job.folder, MapBackup.label(job.name, job.layer), pending.regionX, pending.regionZ)) {
-            job.skipped++
-            job.done.incrementAndGet()
-            Log.warn("Download: skipped region {}_{} because it could not be backed up first", pending.regionX, pending.regionZ)
-            return null
+    private fun begin(job: Job, pending: Pending): Active = Active(pending).also { job.active = it }
+
+    /**
+     * Copies the region aside before anything is written to it, once Xaero has saved what it holds
+     * of it; without that copy, it is skipped. True once it may be written.
+     */
+    private fun backUp(job: Job, active: Active): Boolean {
+        if (active.backedUp) return true
+        val pending = active.pending
+        return when (val kept = MapBackup.keep(job.origin, job.label, pending.regionX, pending.regionZ)) {
+            MapBackup.Kept.Yes -> true.also { active.backedUp = true }
+            MapBackup.Kept.Wait -> false
+            is MapBackup.Kept.No -> {
+                job.skipped.add(pending.regionX, pending.regionZ, SkippedRegions.notBackedUp(kept.why))
+                job.done.incrementAndGet()
+                job.active = null
+                Log.warn("Download: skipped region {}_{} because it could not be backed up first", pending.regionX, pending.regionZ)
+                false
+            }
         }
-        return Active(pending).also { job.active = it }
     }
 
     private fun write(job: Job, processor: MapProcessor, active: Active, now: Long) {
@@ -385,12 +422,12 @@ object BlueMapDownload {
             if (now - active.since > LOAD_WAIT) {
                 if (!active.retried) {
                     // Once more at the end, when Xaero is less busy.
-                    job.later.addLast(Active(pending).also { it.retried = true })
+                    job.later.addLast(Active(pending).also { it.retried = true; it.backedUp = active.backedUp })
                     job.active = null
                     Log.info("Download: Xaero has not loaded region {}_{} yet; trying it again at the end", pending.regionX, pending.regionZ)
                     return
                 }
-                job.skipped++
+                job.skipped.add(pending.regionX, pending.regionZ, "${SkippedRegions.NOT_LOADED} in ${LOAD_WAIT / 1000} s")
                 job.done.incrementAndGet()
                 job.active = null
                 Log.warn("Download: Xaero did not load region {}_{} within {} s; skipped it", pending.regionX, pending.regionZ, LOAD_WAIT / 1000)
@@ -444,21 +481,39 @@ object BlueMapDownload {
         val chunks = t.newChunks + t.replacedChunks
         val took = duration(job.endedAt - job.startedAt)
         val head = if (job.cancelled) "${job.title} stopped after $took" else if (job.session == null) "${job.title}: done in $took" else "Downloaded from BlueMap in $took"
+        val skipped = job.skipped.size
+        val skippedNote = if (skipped > 0) ", $skipped region${if (skipped == 1) "" else "s"} skipped (see chat)" else ""
         job.message = when {
             job.error != null -> "${job.error} Written before it stopped: $chunks chunks."
-            job.summary != null -> (if (job.cancelled) "$head: " else "") + job.summary.invoke(t) +
-                (if (job.skipped > 0) ", ${job.skipped} regions skipped — see the log" else "")
-            chunks == 0 && !job.cancelled -> "${job.source} had nothing new there: your map already matches it"
-            else -> "$head: $chunks chunks (${t.newChunks} new, ${t.replacedChunks} updated)" +
-                (if (job.skipped > 0) ", ${job.skipped} regions skipped — see the log" else "")
+            job.summary != null -> (if (job.cancelled) "$head: " else "") + job.summary.invoke(t) + skippedNote
+            chunks == 0 && !job.cancelled -> "${job.source} had nothing new there: your map already matches it" + skippedNote
+            else -> "$head: $chunks chunks (${t.newChunks} new, ${t.replacedChunks} updated)$skippedNote"
         } + job.afterword()
         Log.info(
             "{} finished{} in {}: {} new chunks, {} updated, {} pixels written, {} of yours kept as they matched, " +
-                "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped",
+                "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped{}",
             job.title, if (job.cancelled) " (cancelled)" else "", took, t.newChunks, t.replacedChunks, t.written, t.kept, t.partialSkipped,
-            t.cleared, job.skipped,
+            t.cleared, skipped, if (skipped > 0) ": " + job.skipped.all().joinToString("; ") else "",
         )
         MapMenus.say(job.message)
+        // The action bar is gone in seconds: what was skipped, and the copies to undo it with, go to chat.
+        val batch = MapBackup.batchName(job.label)?.takeIf { chunks > 0 || t.cleared > 0 || job.error != null }
+        // A clear offers its own [Restore] in its summary.
+        val restore = batch?.takeIf { job.summary == null || job.error != null }
+        if (skipped > 0 || restore != null || job.error != null) {
+            val line = Component.literal(if (job.error != null) job.message else head).append("  ")
+            if (skipped > 0) {
+                line.append("\n" + job.skipped.summary() + "  ")
+                if (skipped > SkippedRegions.SHOWN) {
+                    line.append(ChatButton.of("[List all $skipped]", "/mapexposer skipped", job.skipped.all().take(40).joinToString("\n")))
+                    line.append("  ")
+                }
+            }
+            if (restore != null) {
+                line.append(ChatButton.of("[Restore]", "/mapexposer restore $restore", "Puts back your map as it was before this: /mapexposer restore $restore"))
+            }
+            Minecraft.getInstance().player?.sendSystemMessage(line)
+        }
     }
 
     private fun duration(millis: Long): String {

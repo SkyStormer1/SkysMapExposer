@@ -1,13 +1,12 @@
 package com.skystormer.skysmapexposer.mixin;
 
 import com.skystormer.skysmapexposer.MapView;
-import org.spongepowered.asm.mixin.Final;
+import com.skystormer.skysmapexposer.GuiMapFields;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import xaero.hud.minimap.element.render.MinimapElementRenderer;
 import xaero.hud.minimap.waypoint.render.WaypointMapRenderer;
 import xaero.map.element.render.ElementRenderLocation;
 
@@ -31,7 +30,16 @@ import xaero.map.element.render.ElementRenderLocation;
 @Mixin(targets = "xaero.map.mods.minimap.element.MinimapElementRendererWrapper", remap = false)
 public abstract class MinimapElementWrapperMixin {
 
-    @Shadow @Final private MinimapElementRenderer renderer;
+    /**
+     * Whether this wraps the minimap's waypoints, which are left alone. The renderer field is looked
+     * up by name rather than shadowed, so a Xaero that renamed it loses this hiding, not the game;
+     * without it, nothing is hidden.
+     */
+    @Unique
+    private boolean skysmapexposer$leaveAlone() {
+        if (!GuiMapFields.wrappedRenderer.getFound()) return true;
+        return GuiMapFields.wrappedRenderer.get(this) instanceof WaypointMapRenderer;
+    }
 
     /**
      * The hovered element is drawn by a second pass that asks only this, never
@@ -43,7 +51,7 @@ public abstract class MinimapElementWrapperMixin {
      * put minimap elements on the world map, so every call is the world map.
      */
     public boolean shouldRenderHovered(boolean pre) {
-        if (renderer instanceof WaypointMapRenderer) return true;
+        if (skysmapexposer$leaveAlone()) return true;
         return !MapView.hideWrappedMinimapElements();
     }
 
@@ -55,7 +63,7 @@ public abstract class MinimapElementWrapperMixin {
         if (location != ElementRenderLocation.WORLD_MAP && location != ElementRenderLocation.WORLD_MAP_MENU) return;
         // Waypoints are Xaero's own to place: its "only display current map waypoints" option
         // already swaps them with the dimension, so hiding them here would undo that.
-        if (renderer instanceof WaypointMapRenderer) return;
+        if (skysmapexposer$leaveAlone()) return;
         if (MapView.hideWrappedMinimapElements()) cir.setReturnValue(false);
     }
 }

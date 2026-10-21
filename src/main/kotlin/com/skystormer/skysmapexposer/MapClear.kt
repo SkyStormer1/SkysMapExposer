@@ -56,7 +56,8 @@ object MapClear {
         val (plan, why) = plan(kind, box)
         plan ?: return why
         if (plan.regions.isEmpty()) return plan.nothing
-        val command = "/mapexposer clear ${kind.word}${box?.let { " " + it.words } ?: ""} confirm"
+        // The button is for this map: clicked while the world map shows another, it refuses.
+        val command = "/mapexposer clear ${kind.word}${box?.let { " " + it.words } ?: ""} confirm \"${plan.dimensionId}\" ${plan.layer}"
         Minecraft.getInstance().player?.sendSystemMessage(
             Component.literal("Clear ${plan.what}? ${plan.shape?.let { "Border used: $it. " } ?: ""}Up to ${plan.regions.size} regions are looked at; each is copied aside first, " +
                 "so /mapexposer restore can put it back.  ")
@@ -65,10 +66,17 @@ object MapClear {
         return null
     }
 
-    /** Starts clearing what [kind] covers. Returns what to tell the player. */
-    fun confirm(kind: Kind, box: Box? = null): String {
+    /**
+     * Starts clearing what [kind] covers. [previewed] is the dimension and layer the preview's
+     * button was for; if the world map now shows another, nothing is cleared. Returns what to tell
+     * the player.
+     */
+    fun confirm(kind: Kind, box: Box? = null, previewed: Pair<String, Int>? = null): String {
         val (plan, why) = plan(kind, box)
         plan ?: return why!!
+        if (previewed != null) {
+            mismatch(previewed.first, previewed.second, plan.dimensionId, plan.layer) { MapMenus.dimensionName(it) ?: it }?.let { return it }
+        }
         if (plan.regions.isEmpty()) return plan.nothing
         val regions = plan.regions.map { (x, z) -> Triple(x, z) { Clearing(x, z, plan.clears) as XaeroWriter.Pixels? } }
         var label = ""
@@ -90,6 +98,20 @@ object MapClear {
             }
         } ?: return BlueMapDownload.lastRefusal
         return "Clearing ${plan.what}…"
+    }
+
+    /**
+     * Why a clear previewed for [dimensionId]'s [layer] cannot go ahead while the world map shows
+     * [shownDimension]'s [shownLayer]; null when they are the same map.
+     */
+    internal fun mismatch(dimensionId: String, layer: Int, shownDimension: String, shownLayer: Int, nameOf: (String) -> String): String? {
+        val name = nameOf(dimensionId)
+        fun layerName(l: Int) = if (l == XaeroWriter.SURFACE) "the surface" else "cave layer $l"
+        return when {
+            dimensionId != shownDimension -> "This clear is for the $name; switch the world map there and click again."
+            layer != shownLayer -> "This clear is for ${layerName(layer)} of the $name, but the world map shows ${layerName(shownLayer)}; switch back and click again."
+            else -> null
+        }
     }
 
     private fun plan(kind: Kind, box: Box?): Pair<Plan?, String?> {
