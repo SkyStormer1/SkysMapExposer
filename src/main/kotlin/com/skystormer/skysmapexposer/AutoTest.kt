@@ -28,6 +28,8 @@ import java.nio.file.Path
  * - `click <text>` runs the newest chat button reading that, e.g. `click [Add waypoints]`
  * - `fill <blocks>` starts a terrain fill that far around you, as the settings button does
  * - `fillwait` waits for a terrain fill to finish, then logs how it went
+ * - `mapzoom <scale>` zooms the open world map to that many pixels a block (Xaero eases to it)
+ * - `refresh` presses the map bar's Refresh button
  * - `close` closes whatever screen is open
  * - `quit` closes the game
  *
@@ -102,6 +104,8 @@ object AutoTest {
                         Log.info("AutoTest: fill: {}", com.skystormer.skysmapexposer.terrain.TerrainFill.status())
                     }
                 }
+                "mapzoom" -> GuiMapFields.destScale.set(client.gui.screen(), rest.toDouble())
+                "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
                 "close" -> client.gui.setScreen(null)
                 "quit" -> client.stop()
                 else -> Log.warn("AutoTest: no such step '{}'", verb)
