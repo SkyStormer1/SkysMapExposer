@@ -10,6 +10,7 @@ import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Overlay
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.SettingsCheck
 import com.skystormer.skysmapexposer.terrain.FillTarget
 import com.skystormer.skysmapexposer.terrain.TerrainFill
 import net.minecraft.client.Minecraft
@@ -757,20 +758,15 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
      * left completely empty is not a problem: it is simply not saved.
      */
     private fun check(): Pair<String, Problem>? {
-        if (staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 } == null) {
-            return "\"Replace after\" must be a number of days, 0 or more" to Problem(Page.MAP, selected, "stale")
+        val entries = drafts.map { SettingsCheck.Entry(splitAddresses(it.addresses), it.url, it.coverOverworld) }
+        val found = SettingsCheck.check(staleDays, entries, ::parseTime) ?: return null
+        val where = when (found.field) {
+            SettingsCheck.Field.STALE -> Problem(Page.MAP, selected, "stale")
+            SettingsCheck.Field.ADDRESS -> Problem(Page.SERVER, found.server, "address")
+            SettingsCheck.Field.URL -> Problem(Page.SERVER, found.server, "url")
+            SettingsCheck.Field.COVER -> Problem(Page.SERVER, found.server, "cover")
         }
-        drafts.forEachIndexed { i, draft ->
-            val addresses = splitAddresses(draft.addresses)
-            val url = draft.url.trim()
-            if (addresses.isEmpty() && url.isEmpty()) return@forEachIndexed
-            if (addresses.isEmpty()) return "The server with BlueMap $url has no server address" to Problem(Page.SERVER, i, "address")
-            if (url.isEmpty()) return "${addresses.first()} has no BlueMap address" to Problem(Page.SERVER, i, "url")
-            if (draft.coverOverworld.isNotBlank() && parseTime(draft.coverOverworld) == null) {
-                return "${addresses.first()}: the season date must look like 2026-10-20 14:00" to Problem(Page.SERVER, i, "cover")
-            }
-        }
-        return null
+        return found.message to where
     }
 
     /** Done and Escape: saves, unless something is wrong, which is shown instead. */
@@ -826,9 +822,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private val prepareWasOn = Config.prepareMap
 
-    /** The settings of one server that a session is built from, to compare. */
-    private fun describeServer(server: Config.Server): String =
-        listOf(server.addresses.map(Config::normalise).sorted(), server.url.trim(), server.maps.toSortedMap(), server.off.sorted(), server.coverBefore.toSortedMap()).toString()
+    private fun describeServer(server: Config.Server): String = SettingsCheck.serverKey(server)
 
     private fun describe(draft: Draft): String =
         splitAddresses(draft.addresses).firstOrNull() ?: "(new server)"
