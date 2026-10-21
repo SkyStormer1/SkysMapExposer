@@ -109,6 +109,13 @@ class TileStore(
         var standIn: Backfill.Mask? = null
         var standInLod: Int = 0
 
+        /**
+         * The sea floor from BlueMap's 3D tiles ([SeaFloor]), `tileSize` square: drawn over the
+         * picture wherever it is not 0. Null with the setting off or nothing in yet.
+         */
+        @Volatile
+        var floor: IntArray? = null
+
         /** When either map last drew it (epoch milliseconds). */
         var lastUsed: Long = 0
 
@@ -194,7 +201,8 @@ class TileStore(
         if (tile.state != State.READY || !tile.requested.add(factor)) return
         workers.execute {
             try {
-                tile.pending[factor] = TileFile.pixels(tileFile(tile.key), factor)
+                val floor = tile.floor
+                tile.pending[factor] = (if (floor == null) TileFile.pixels(tileFile(tile.key), factor) else withFloor(tile, floor, factor))
                     ?: throw IOException("the tile file has no 1:$factor picture")
             } catch (e: Exception) {
                 warnOnce(tile.key, "Could not read BlueMap tile back from disk; loading it again in a minute", e)
@@ -233,6 +241,16 @@ class TileStore(
         }
         // Until the wanted size is ready, any size will do: better blurry than a hole.
         return (tile.textures[factor] ?: tile.textures.values.firstOrNull())?.textureView
+    }
+
+    /** [tile]'s picture at a block a pixel, `tileSize` square, as it is drawn; null if it has none. Blocking. */
+    fun picture(tile: Tile): IntArray? = TileFile.pixels(tileFile(tile.key), 1)
+
+    /** The picture at [factor] with the sea floor [floor] in, where the picture has anything. */
+    private fun withFloor(tile: Tile, floor: IntArray, factor: Int): IntArray? {
+        val pixels = picture(tile) ?: return null
+        for (i in pixels.indices) if (floor[i] != 0 && pixels[i] != 0) pixels[i] = floor[i]
+        return if (factor == 1) pixels else TilePixels.shrink(pixels, tile.tileSize, tile.tileSize, factor)
     }
 
     /** Whether [tile] has a texture of [factor] waiting to be uploaded. */

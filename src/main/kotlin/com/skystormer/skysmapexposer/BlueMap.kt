@@ -13,6 +13,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import javax.imageio.ImageIO
+import kotlin.math.roundToInt
 
 /**
  * Talking to a BlueMap web server.
@@ -211,6 +212,24 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         val text = String(gunzipIfNeeded(response.body(), MAX_BODY), Charsets.UTF_8)
         return JsonParser.parseString(text).asJsonArray.map { entry ->
             entry.asJsonObject.get("resourcePath")?.asString ?: ""
+        }
+    }
+
+    /**
+     * [textures] with each one's average colour as BlueMap gives it, 0xAARRGGBB (the alpha is how
+     * see-through the texture is on average). Blocking.
+     */
+    @Throws(IOException::class)
+    fun textureColours(map: String): List<Pair<String, Int>> {
+        val response = getBytes("maps/${checkMapId(map)}/textures.json")
+        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map textures")
+        val text = String(gunzipIfNeeded(response.body(), MAX_BODY), Charsets.UTF_8)
+        return JsonParser.parseString(text).asJsonArray.map { entry ->
+            val texture = entry.asJsonObject
+            val colour = texture.getAsJsonArray("color")
+            fun channel(i: Int): Int = ((colour?.get(i)?.asFloat ?: 0f) * 255f).roundToInt().coerceIn(0, 255)
+            (texture.get("resourcePath")?.asString ?: "") to
+                (if (colour == null || colour.size() < 4) 0 else (channel(3) shl 24) or (channel(0) shl 16) or (channel(1) shl 8) or channel(2))
         }
     }
 
