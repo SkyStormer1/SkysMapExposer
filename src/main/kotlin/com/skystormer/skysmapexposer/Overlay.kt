@@ -85,7 +85,7 @@ object Overlay {
             if (debug) Minecraft.getInstance().player?.sendSystemMessage(net.minecraft.network.chat.Component.literal("§7Wrote what Xaero has of each region in view to the log"))
         }
         val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
-        val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget())
+        val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget(), seaFloor = true)
             ?: return standDown("too-far", "Zoomed out too far to cover with BlueMap")
 
         var renderer: MultiTextureRenderTypeRenderer? = null
@@ -118,7 +118,10 @@ object Overlay {
             Spinner.draw(buffer, matrix, plan.loading, target.layout.tileSize, flooredCameraX, flooredCameraZ, cameraX, cameraZ, blocksPerUnit)
         }
 
-        lastSummary = plan.summary + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
+        val floor = target.session.seaFloor
+        val floorSaid = if (!Config.seaFloorHires) "" else
+            "; sea floor: ${floor.downloaded.get()} 3D tiles downloaded (${floor.downloadedBytes.get() / 1024} KB), ${floor.waiting} waiting"
+        lastSummary = plan.summary + floorSaid + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
     }
 
     /**

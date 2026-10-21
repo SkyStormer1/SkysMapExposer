@@ -128,6 +128,12 @@ object Config {
     /** Experimental: the mods ("Bobby", "Voxy", "Distant Horizons") the terrain fill is switched off for. */
     val fillOff: MutableSet<String> = HashSet()
 
+    /**
+     * Experimental: the world map's sea floor from BlueMap's 3D tiles close up ([SeaFloor]), rather
+     * than from its flat pictures alone, which have none. Downloads far more.
+     */
+    var seaFloorHires: Boolean = false
+
     /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
     var minimapBiomes: Boolean = true
 
@@ -277,6 +283,7 @@ object Config {
             read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
             read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
             read("prepareMap") { prepareMap = it.asBoolean }
+            read("seaFloorHires") { seaFloorHires = it.asBoolean }
             read("prepareTilesPerSecond") { prepareTilesPerSecond = it.asInt.coerceIn(1, 50) }
             read("servers") { element ->
                 val list = ArrayList<Server>()
@@ -357,6 +364,7 @@ object Config {
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
         json.addProperty("textureBudgetMb", textureBudgetMb)
         json.addProperty("prepareMap", prepareMap)
+        json.addProperty("seaFloorHires", seaFloorHires)
         json.addProperty("prepareTilesPerSecond", prepareTilesPerSecond)
         val array = JsonArray()
         for (server in servers) {

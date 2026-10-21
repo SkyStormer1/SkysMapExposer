@@ -88,6 +88,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
     private var prepareMap = Config.prepareMap
+    private var seaFloorHires = Config.seaFloorHires
     private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -208,6 +209,16 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "These may get you warned, muted or kicked on some servers. Use them where you know the rules."
         ), font).setMaxWidth(WIDTH))
         y += font.lineHeight * 2 + GAP * 2
+        val floor = CycleButton.builder<Boolean>({ Component.literal(if (it) "High res" else "Low res") }, seaFloorHires)
+            .withValues(false, true)
+            .create(left, y, WIDTH, ROW, Component.literal("Sea floor")) { _, value -> seaFloorHires = value }
+        floor.setTooltip(SafeTooltip.of(
+            "Low res: the sea from BlueMap's flat pictures, which are one blue all over and quick to download. " +
+                "High res: close up on the world map, the sea floor under the water from BlueMap's 3D tiles, shaded the way " +
+                "Xaero shades water. Those are about 90 KB for each 32 blocks square of sea, downloaded two at a time and " +
+                "kept for a week, so a stretch of sea takes a minute or so to fill in the first time."))
+        addRenderableWidget(floor)
+        y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
 
@@ -728,7 +739,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun state(): String = listOf(
         enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
         playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, matchWaypoints, guessBiomes,
-        prepareMap, Config.fillOff.sorted(),
+        prepareMap, seaFloorHires, Config.fillOff.sorted(),
         drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
             listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
         },
@@ -797,6 +808,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
         Config.prepareMap = prepareMap
+        if (Config.seaFloorHires && !seaFloorHires) Session.current?.seaFloor?.clear()
+        Config.seaFloorHires = seaFloorHires
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
