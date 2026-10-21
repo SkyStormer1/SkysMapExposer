@@ -49,6 +49,26 @@ object XaeroWriter {
      */
     fun layerFolder(base: Path, layer: Int): Path = if (layer == SURFACE) base else base.resolve("caves").resolve(layer.toString())
 
+    /**
+     * The layer of [dimensionId] that BlueMap's picture belongs in while Xaero shows [shownLayer],
+     * or null if none. The surface, except in a dimension with a ceiling (the Nether) whose BlueMap
+     * terrain is switched on ([terrainUsed]): its map is then of the inside, which Xaero shows as a
+     * cave layer, the surface there being the roof. Xaero showing caves elsewhere is null: BlueMap
+     * has only the surface there.
+     */
+    fun blueMapLayer(dimensionId: String, shownLayer: Int, terrainUsed: Boolean): Int? = when {
+        shownLayer == SURFACE -> SURFACE
+        terrainUsed && hasCeiling(dimensionId) -> shownLayer
+        else -> null
+    }
+
+    /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
+    private fun hasCeiling(dimensionId: String): Boolean {
+        val level = Minecraft.getInstance().level
+        if (level != null && level.dimension().identifier().toString() == dimensionId) return level.dimensionType().hasCeiling()
+        return dimensionId == Config.NETHER
+    }
+
     /** The map the world map is showing: its dimension, and the folder of the layer on screen. */
     class Shown(
         val processor: MapProcessor,

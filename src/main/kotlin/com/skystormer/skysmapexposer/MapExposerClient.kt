@@ -347,6 +347,8 @@ object MapExposerClient : ClientModInitializer {
         // Only while Xaero is mapping the dimension you are in: its open regions are around you.
         val mapped = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
         if (mapped != dimension) return
+        // Only from the layer the overlay draws over, so cave gaps never count as surface gaps.
+        XaeroWriter.blueMapLayer(dimension, mapProcessor.currentCaveLayer, session.server.mapFor(dimension) != null) ?: return
         Backfill.learnGapsAround(
             mapProcessor, session.xaeroGapsIn(dimension),
             player.chunkPosition().x(), player.chunkPosition().z(),

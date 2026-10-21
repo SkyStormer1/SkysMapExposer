@@ -46,7 +46,11 @@ object Backfill {
     class Plan(val pieces: List<Piece>, val loading: IntArray, val summary: String)
 
     /** What there is to draw for one dimension on one server: null with a reason if nothing. */
-    class Target(val session: Session, val dimensionId: String, val mapId: String, val layout: BlueMap.MapLayout, val regionFolder: Path)
+    class Target(
+        val session: Session, val dimensionId: String, val mapId: String, val layout: BlueMap.MapLayout, val regionFolder: Path,
+        /** Xaero's layer drawn over: the surface, or the Nether's cave layer ([XaeroWriter.blueMapLayer]). */
+        val layer: Int,
+    )
 
     private class Candidate(val x: Int, val z: Int, val distance: Double)
 
@@ -57,22 +61,22 @@ object Backfill {
     fun target(mapProcessor: MapProcessor, standDown: (String, String) -> Unit): Target? {
         if (!Config.enabled) return standDown("off", "Backfill is switched off").let { null }
         val session = Session.current ?: return standDown("no-session", "This server has no BlueMap set up").let { null }
-        if (mapProcessor.currentCaveLayer != Int.MAX_VALUE) {
-            return standDown("cave", "Xaero is in cave mode; BlueMap only has the surface").let { null }
-        }
         val dimension: MapDimension = mapProcessor.mapWorld?.currentDimension
             ?: return standDown("no-dimension", "Xaero has no dimension open").let { null }
         val dimensionId = dimension.dimId?.identifier()?.toString()
             ?: return standDown("no-dimension-id", "Xaero's dimension has no id").let { null }
         val mapId = session.server.mapFor(dimensionId)
             ?: return standDown("no-map:$dimensionId", "BlueMap is not used for $dimensionId").let { null }
+        // In the Nether, Xaero's cave layer is the usual view, and BlueMap's map (switched on) is of the inside.
+        val layer = XaeroWriter.blueMapLayer(dimensionId, mapProcessor.currentCaveLayer, terrainUsed = true)
+            ?: return standDown("cave", "Xaero is in cave mode; BlueMap only has the surface").let { null }
         val layout = session.layout(mapId)
             ?: return standDown("layout:$mapId", "Waiting for BlueMap's settings for map '$mapId'").let { null }
         val multiworld = dimension.currentMultiworld
             ?: return standDown("no-folder", "Xaero has not chosen a map folder for this dimension yet").let { null }
-        val regionFolder = dimension.mainFolderPath?.resolve(multiworld)
+        val base = dimension.mainFolderPath?.resolve(multiworld)
             ?: return standDown("no-folder", "Xaero has not chosen a map folder for this dimension yet").let { null }
-        return Target(session, dimensionId, mapId, layout, regionFolder)
+        return Target(session, dimensionId, mapId, layout, XaeroWriter.layerFolder(base, layer), layer)
     }
 
     /**
@@ -406,7 +410,7 @@ object Backfill {
     }
 
     /**
-     * Has [UnshowableRegions] look at the regions of the surface in view, close up, where Xaero
+     * Has [UnshowableRegions] look at the regions of the layer in view, close up, where Xaero
      * always loads what it shows. With [debug], also writes what Xaero has of each to the log.
      */
     fun watchRegions(target: Target, mapProcessor: MapProcessor, minX: Double, maxX: Double, minZ: Double, maxZ: Double, closeUp: Boolean, debug: Boolean) {
@@ -420,7 +424,7 @@ object Backfill {
                 val minute = session.regionAges.minuteOf(folder, rx, rz)
                 if (minute == 0) continue
                 val region = try {
-                    mapProcessor.getLeafMapRegion(Int.MAX_VALUE, rx, rz, false)
+                    mapProcessor.getLeafMapRegion(target.layer, rx, rz, false)
                 } catch (e: RuntimeException) {
                     continue
                 }
@@ -480,7 +484,7 @@ object Backfill {
 
     private fun xaeroHasNothing(mapProcessor: MapProcessor, chunkX: Int, chunkZ: Int): Boolean? {
         return try {
-            val region = mapProcessor.getLeafMapRegion(Int.MAX_VALUE, chunkX shr 5, chunkZ shr 5, false) ?: return null
+            val region = mapProcessor.getLeafMapRegion(mapProcessor.currentCaveLayer, chunkX shr 5, chunkZ shr 5, false) ?: return null
             if (!region.isLoaded) return null
             val tileChunk = region.getChunk((chunkX shr 2) and 7, (chunkZ shr 2) and 7) ?: return true
             val texture = tileChunk.leafTexture ?: return null
