@@ -56,11 +56,8 @@ object XaeroWriter {
      * cave layer, the surface there being the roof. Xaero showing caves elsewhere is null: BlueMap
      * has only the surface there.
      */
-    fun blueMapLayer(dimensionId: String, shownLayer: Int, terrainUsed: Boolean): Int? = when {
-        shownLayer == SURFACE -> SURFACE
-        terrainUsed && hasCeiling(dimensionId) -> shownLayer
-        else -> null
-    }
+    fun blueMapLayer(dimensionId: String, shownLayer: Int, terrainUsed: Boolean): Int? =
+        MapLayers.blueMapLayer(shownLayer, terrainUsed) { hasCeiling(dimensionId) }
 
     /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
     private fun hasCeiling(dimensionId: String): Boolean {
