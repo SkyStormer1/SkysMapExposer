@@ -252,16 +252,10 @@ object BlueMapDownload {
                 finest.addAll(BlueMapPicture.tilesOver(a.minX, a.minZ, a.maxX, a.maxZ, size))
             } else {
                 // The coarsest level is a few tiles for a whole world, and says where the finest
-                // ones have anything. ±COARSE_REACH tiles covers any world border in use.
-                val lod = layout.lodCount
-                val blocksPerPixel = layout.blocksPerPixel(lod)
-                for (tx in -COARSE_REACH until COARSE_REACH) {
-                    for (tz in -COARSE_REACH until COARSE_REACH) {
-                        if (job.cancelled) return
-                        val bytes = blueMap.tile(mapId, lod, tx, tz) ?: continue
-                        BlueMapPicture.finestTilesIn(BlueMapPicture.decode(tx, tz, size, bytes), blocksPerPixel, size, finest)
-                    }
-                }
+                // ones have anything, out to wherever the world ends.
+                val scan = CoarseScan.scan(layout, 0, 0, { job.cancelled }) { tx, tz -> blueMap.tile(mapId, layout.lodCount, tx, tz) } ?: return
+                Log.info("Download: BlueMap map '{}': {}", mapId, scan)
+                finest.addAll(scan.finest)
                 val found = HashSet<Pair<Int, Int>>()
                 for ((tx, tz) in finest) found.addAll(BlueMapPicture.regionsOver(tx * size, tz * size, tx * size + size - 1, tz * size + size - 1))
                 regions = found.toList()
@@ -525,7 +519,6 @@ object BlueMapDownload {
         }
     }
 
-    private const val COARSE_REACH = 4
     private const val TILE_CHUNKS = 64
     private const val TILE_CHUNKS_PER_TICK = 8
     /** Time spent writing into your map per tick, so the game keeps its frame rate. */

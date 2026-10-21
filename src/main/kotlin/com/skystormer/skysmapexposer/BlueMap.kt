@@ -79,6 +79,19 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         return layout
     }
 
+    /** Where BlueMap's web viewer opens [map] (`startPos`, in blocks), or null if it does not say. Blocking. */
+    @Throws(IOException::class)
+    fun startPosition(map: String): Pair<Int, Int>? {
+        val response = getText("maps/${checkMapId(map)}/settings.json")
+        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
+        val start = JsonParser.parseString(response.body()).asJsonObject.getAsJsonArray("startPos") ?: return null
+        if (start.size() < 2) return null
+        val x = start[0].asDouble
+        val z = start[1].asDouble
+        if (!x.isFinite() || !z.isFinite() || Math.abs(x) > 30_000_000 || Math.abs(z) > 30_000_000) return null
+        return x.toInt() to z.toInt()
+    }
+
     /**
      * The maps this BlueMap has, as id to display name, from `settings.json` and each map's own
      * settings. Blocking; call it off the client thread.

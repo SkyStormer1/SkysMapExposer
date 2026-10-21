@@ -122,6 +122,8 @@ Hover over any setting in the game for an explanation.
 | **Find maps** | Asks the BlueMap which maps it has. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
+| **Prepare map** (Tiles tab) | After you join, downloads every tile BlueMap has, a few a second, and makes it ready to draw, so the map is ready before you open it. On as the mod comes. It starts from the middle of the map and works outwards, the dimension you are in first; tiles you are looking at always come first, and it pauses while the game is busy. **Stop preparing** / **Prepare now** stop it or go over the map again (`/mapexposer prepare` and `/mapexposer prepare cancel` too). How far it has got shows at the top of the world map. |
+| **Clear tile cache** (Tiles tab) | Deletes this server's BlueMap tiles kept on disk; they download again as needed. The tab also shows how much the cache takes, here and for all servers, and the video memory tiles hold. Your own map is not touched. |
 | **Experimental** tab | **Far terrain from BlueMap**; see below. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
@@ -135,6 +137,9 @@ A small see-through panel on the world map holds the mod's switches and the biom
 - **Terrain / Markers / Borders / Players** switch each part on or off, as the settings do.
   **Minimap** (only with Xaero's Minimap) chooses whether picked biomes are tinted there too.
   **List** opens the player list, and **Set** the settings.
+- **Refresh** downloads the BlueMap tiles in view again, to show changes made since they were last
+  checked (every 15 minutes on its own). Once every 30 seconds; zoomed far out, the tiles are
+  downloaded once you zoom in.
 - **The biome finder** lists the biomes of the dimension the map is showing. Type to search and
   click a biome to tint it; click again to stop, or **Clear** to stop them all. The tint shows
   wherever Xaero recorded that biome, so it covers the parts of the map Xaero has, not BlueMap's

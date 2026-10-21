@@ -149,6 +149,7 @@ object MapExposerClient : ClientModInitializer {
             MapBackup.tick()
             ChatShare.tick()
             TerrainFiles.tick()
+            MapPrep.tick(Session.current)
             val session = Session.current ?: return@register
             ticks++
             // Chunks you stay near are kept up to date by Xaero, so they stay current here too.
@@ -257,6 +258,14 @@ object MapExposerClient : ClientModInitializer {
                     }))
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
+                        ClientCommands.literal("prepare")
+                            .executes(::prepare)
+                            .then(ClientCommands.literal("cancel").executes {
+                                it.source.sendFeedback(Component.literal(if (MapPrep.cancel()) "Stopped preparing the map; what is done stays" else "The map is not being prepared"))
+                                1
+                            })
+                    )
+                    .then(
                         ClientCommands.literal("stale").then(
                             ClientCommands.argument("days", DoubleArgumentType.doubleArg(0.0, 3650.0)).executes(::setStale)
                         )
@@ -276,7 +285,7 @@ object MapExposerClient : ClientModInitializer {
                 MapBar.addTo(screen)
 
                 ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
-                    val status = BlueMapDownload.status() ?: return@register
+                    val status = BlueMapDownload.status() ?: MapPrep.status() ?: return@register
                     val font = Screens.getMinecraft(screen).font
                     val half = font.width(status) / 2 + 4
                     val middle = screen.width / 2
@@ -399,6 +408,7 @@ object MapExposerClient : ClientModInitializer {
                 )
             )
             source.sendFeedback(Component.literal(textureMemory(session)))
+            MapPrep.status()?.let { source.sendFeedback(Component.literal(it)) }
             val unshowable = session.unshowable.count
             if (unshowable > 0) {
                 source.sendFeedback(Component.literal("§e$unshowable region(s) Xaero has a file for but can't show are covered by BlueMap§r (the log names them)"))
@@ -648,6 +658,16 @@ object MapExposerClient : ClientModInitializer {
         }
         session.tiles.refetchBefore = System.currentTimeMillis()
         context.source.sendFeedback(Component.literal("Downloading BlueMap's tiles again as they are shown"))
+        return 1
+    }
+
+    private fun prepare(context: CommandContext<FabricClientCommandSource>): Int {
+        val session = Session.current
+        if (session == null) {
+            context.source.sendError(Component.literal("This server has no BlueMap in config/skysmapexposer.json"))
+            return 0
+        }
+        context.source.sendFeedback(Component.literal(MapPrep.status()?.takeIf { MapPrep.running } ?: MapPrep.start(session, MarkerElements.worldMapDimension())))
         return 1
     }
 }
