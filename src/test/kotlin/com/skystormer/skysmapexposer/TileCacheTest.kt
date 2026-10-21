@@ -41,12 +41,15 @@ class TileCacheTest {
         override fun awaitTermination(timeout: Long, unit: TimeUnit) = true
     }
 
-    private class Reply(val status: Int, val body: ByteArray = ByteArray(0))
+    /** With an [etag], a request that sends it back is answered 304. */
+    private class Reply(val status: Int, val body: ByteArray = ByteArray(0), val etag: String? = null)
 
     private lateinit var server: HttpServer
     private val replies = HashMap<String, Reply>()
     private val tileRequests = AtomicInteger()
-    private var refreshSeconds = 0
+    private var checkMinutes = 0
+    private var hardHours = 0
+    private val plainRequests = AtomicInteger()
 
     private val key = TileStore.Key("world", 1, 0, 0)
     private val tilePath = "/" + BlueMap.tilePath("world", 1, 0, 0)
@@ -54,12 +57,23 @@ class TileCacheTest {
 
     @BeforeEach
     fun start() {
-        refreshSeconds = Config.tileRefreshSeconds
+        checkMinutes = Config.tileCheckMinutes
+        hardHours = Config.tileHardRefreshHours
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->
             val path = exchange.requestURI.path
-            if (path == tilePath) tileRequests.incrementAndGet()
+            val asked = exchange.requestHeaders.getFirst("If-None-Match")
+            if (path == tilePath) {
+                tileRequests.incrementAndGet()
+                if (asked == null) plainRequests.incrementAndGet()
+            }
             val reply = synchronized(replies) { replies[path] } ?: Reply(404)
+            if (reply.etag != null && asked == reply.etag) {
+                exchange.sendResponseHeaders(304, -1)
+                exchange.close()
+                return@createContext
+            }
+            reply.etag?.let { exchange.responseHeaders.add("ETag", it) }
             exchange.sendResponseHeaders(reply.status, if (reply.body.isEmpty()) -1 else reply.body.size.toLong())
             if (reply.body.isNotEmpty()) exchange.responseBody.use { it.write(reply.body) }
             exchange.close()
@@ -71,7 +85,8 @@ class TileCacheTest {
     @AfterEach
     fun stop() {
         server.stop(0)
-        Config.tileRefreshSeconds = refreshSeconds
+        Config.tileCheckMinutes = checkMinutes
+        Config.tileHardRefreshHours = hardHours
     }
 
     private fun serve(path: String, reply: Reply) = synchronized(replies) { replies[path] = reply }
@@ -86,7 +101,7 @@ class TileCacheTest {
         return ByteArrayOutputStream().also { ImageIO.write(image, "png", it) }.toByteArray()
     }
 
-    private fun picture(folder: Path) = folder.resolve("world/1/0_0.png")
+    private fun picture(folder: Path) = folder.resolve("world/1/0_0.smet")
 
     @Test
     fun `a junk 200 reply is not cached, and a later good one loads`(@TempDir folder: Path) {
@@ -116,7 +131,7 @@ class TileCacheTest {
     @Test
     fun `a tile BlueMap empties loses its picture on the second check, and is then left alone`(@TempDir folder: Path) {
         serve(tilePath, Reply(200, png()))
-        Config.tileRefreshSeconds = 0
+        Config.tileCheckMinutes = 0
         val store = TileStore(blueMap(), folder, Direct())
         val tile = store.get(key, 1, 4)
         assertEquals(TileStore.State.READY, tile.state)
@@ -131,6 +146,7 @@ class TileCacheTest {
         assertEquals(TileStore.State.EMPTY, tile.state)
         assertFalse(Files.exists(picture(folder)))
 
+        Config.tileCheckMinutes = 15
         val requests = tileRequests.get()
         repeat(20) { store.get(key, 1, 4) }
         assertEquals(requests, tileRequests.get(), "an empty tile is asked about every frame")
@@ -139,7 +155,7 @@ class TileCacheTest {
     @Test
     fun `a 404 is only believed while the map's settings load`(@TempDir folder: Path) {
         serve(tilePath, Reply(200, png()))
-        Config.tileRefreshSeconds = 0
+        Config.tileCheckMinutes = 0
         val store = TileStore(blueMap(), folder, Direct())
         val tile = store.get(key, 1, 4)
 
@@ -159,7 +175,7 @@ class TileCacheTest {
     @Test
     fun `a failed check still counts as checked`(@TempDir folder: Path) {
         serve(tilePath, Reply(200, png()))
-        Config.tileRefreshSeconds = 60
+        Config.tileCheckMinutes = 1
         val store = TileStore(blueMap(), folder, Direct())
         val tile = store.get(key, 1, 4)
         tile.checkedAt = 0 // due for a check
@@ -169,6 +185,109 @@ class TileCacheTest {
         repeat(20) { store.get(key, 1, 4) }
         assertEquals(requests, tileRequests.get())
         assertEquals(TileStore.State.READY, tile.state)
+    }
+
+    @Test
+    fun `a 304 downloads nothing and keeps the tile, and a changed tile is rebuilt`(@TempDir folder: Path) {
+        serve(tilePath, Reply(200, png(), etag = "\"one\""))
+        Config.tileCheckMinutes = 0
+        val store = TileStore(blueMap(), folder, Direct())
+        val tile = store.get(key, 1, 4)
+        val built = Files.readAllBytes(picture(folder))
+        val plain = plainRequests.get()
+        repeat(3) { store.get(key, 1, 4) }
+        assertEquals(plain, plainRequests.get(), "a check downloaded the tile")
+        assertEquals(TileStore.State.READY, tile.state)
+        assertTrue(built.contentEquals(Files.readAllBytes(picture(folder))))
+
+        serve(tilePath, Reply(200, png(0xFF993366.toInt()), etag = "\"two\""))
+        store.get(key, 1, 4)
+        assertFalse(built.contentEquals(Files.readAllBytes(picture(folder))), "the change was not taken")
+        assertEquals(0xFF993366.toInt() and 0xFFFFFF, TileFile.pixels(picture(folder), 1)!![0] and 0xFFFFFF)
+    }
+
+    @Test
+    fun `the hard refresh downloads even when checks say unchanged`(@TempDir folder: Path) {
+        serve(tilePath, Reply(200, png(), etag = "\"one\""))
+        Config.tileCheckMinutes = 0
+        val store = TileStore(blueMap(), folder, Direct())
+        val tile = store.get(key, 1, 4)
+        val plain = plainRequests.get()
+        tile.hardAt = System.currentTimeMillis() - Config.tileHardRefreshHours * 3_600_000L - 1
+        store.get(key, 1, 4)
+        assertEquals(plain + 1, plainRequests.get())
+        // The refresh button: whole downloads again, as they are drawn, for tiles already in memory.
+        store.refetchBefore = System.currentTimeMillis() + 1
+        store.get(key, 1, 4)
+        assertEquals(plain + 2, plainRequests.get())
+    }
+
+    @Test
+    fun `zoomed far out, tiles on screen are not asked about`(@TempDir folder: Path) {
+        serve(tilePath, Reply(200, png()))
+        Config.tileCheckMinutes = 0
+        val store = TileStore(blueMap(), folder, Direct())
+        store.get(key, 1, 4)
+        val requests = tileRequests.get()
+        repeat(5) { store.get(key, 1, 4, mayCheck = false) }
+        assertEquals(requests, tileRequests.get())
+    }
+
+    @Test
+    fun `empty tiles are checked again and show what BlueMap renders later`(@TempDir folder: Path) {
+        serve(tilePath, Reply(204))
+        Config.tileCheckMinutes = 0
+        val store = TileStore(blueMap(), folder, Direct())
+        val tile = store.get(key, 1, 4)
+        assertEquals(TileStore.State.EMPTY, tile.state)
+        serve(tilePath, Reply(200, png()))
+        store.get(key, 1, 4)
+        assertEquals(TileStore.State.READY, tile.state)
+        assertTrue(Files.exists(picture(folder)))
+    }
+
+    @Test
+    fun `the tile file reads back every size, and a damaged one is fetched again`(@TempDir folder: Path) {
+        val colours = IntArray(101 * 101) { i -> if (i % 7 == 0) 0 else TilePixels.OPAQUE or ((i * 2654435761L).toInt() and 0xFFFFFF) }
+        colours[5] = TilePixels.OPAQUE // black, which must not turn into "nothing"
+        val factors = TilePixels.factorsFor(100)
+        val file = folder.resolve("t.smet")
+        Files.write(file, TileFile.encode("abc", colours, 101, 100, factors))
+        assertEquals("abc", TileFile.header(file).hash)
+        assertEquals(TilePixels.presence(colours), TileFile.presence(file).second)
+        for (factor in factors) {
+            val expected = TilePixels.shrink(colours, 101, 100, factor).map { if (it == TilePixels.OPAQUE) TilePixels.OPAQUE or 1 else it }
+            assertEquals(expected, TileFile.pixels(file, factor)!!.toList(), "1:$factor")
+        }
+        // Another version, or cut short: refused, so the store deletes it and downloads again.
+        val bytes = Files.readAllBytes(file)
+        bytes[7] = 9
+        Files.write(file, bytes)
+        assertTrue(runCatching { TileFile.header(file) }.isFailure)
+        Files.write(file, Files.readAllBytes(file).copyOf(200).also { it[7] = 1 })
+        assertTrue(runCatching { TileFile.pixels(file, 1) }.isFailure)
+
+        serve(tilePath, Reply(200, png()))
+        TileStore(blueMap(), folder.resolve("store"), Direct()).get(key, 1, 4)
+        Files.write(picture(folder.resolve("store")), bytes)
+        val requests = tileRequests.get()
+        val tile = TileStore(blueMap(), folder.resolve("store"), Direct()).get(key, 1, 4)
+        assertEquals(TileStore.State.READY, tile.state)
+        assertEquals(requests + 1, tileRequests.get())
+    }
+
+    @Test
+    fun `an old PNG cache is converted without downloading it again`(@TempDir folder: Path) {
+        val old = folder.resolve("world/1/0_0.png")
+        Files.createDirectories(old.parent)
+        Files.write(old, png())
+        Files.writeString(folder.resolve("world/1/0_0.meta"), "fetched=${System.currentTimeMillis()}\nsince=1234\nhash=old\n")
+        val tile = TileStore(blueMap(), folder, Direct()).get(key, 1, 4)
+        assertEquals(TileStore.State.READY, tile.state)
+        assertEquals(1234, tile.contentMinute)
+        assertEquals(0, tileRequests.get())
+        assertFalse(Files.exists(old))
+        assertEquals("old", TileFile.header(picture(folder)).hash)
     }
 
     @Test

@@ -647,8 +647,7 @@ object MapExposerClient : ClientModInitializer {
             return 0
         }
         session.tiles.refetchBefore = System.currentTimeMillis()
-        session.tiles.clear()
-        context.source.sendFeedback(Component.literal("Fetching BlueMap's tiles again"))
+        context.source.sendFeedback(Component.literal("Downloading BlueMap's tiles again as they are shown"))
         return 1
     }
 }

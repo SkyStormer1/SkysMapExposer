@@ -131,8 +131,12 @@ object Config {
     /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
     var minimapBiomes: Boolean = true
 
-    /** How often a tile on screen is checked for changes on the server. */
-    var tileRefreshSeconds: Int = 60
+    /**
+     * How often a tile on screen is asked about on the server ("has it changed?", which costs
+     * nothing when the server can say "not modified"), and how often it is downloaded whole anyway.
+     */
+    var tileCheckMinutes: Int = 15
+    var tileHardRefreshHours: Int = 4
 
     /** How often BlueMap's markers are read again. */
     var markerRefreshSeconds: Int = 30
@@ -263,7 +267,9 @@ object Config {
             }
             read("minimapMarkerScale") { minimapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
             read("minimapShrinkChunks") { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
-            read("tileRefreshSeconds") { tileRefreshSeconds = it.asInt.coerceAtLeast(10) }
+            // The old "tileRefreshSeconds" is ignored: its 60 seconds asked far too often.
+            read("tileCheckMinutes") { tileCheckMinutes = it.asInt.coerceIn(1, 24 * 60) }
+            read("tileHardRefreshHours") { tileHardRefreshHours = it.asInt.coerceIn(1, 24 * 7) }
             read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
             read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
             read("servers") { element ->
@@ -340,7 +346,8 @@ object Config {
         json.addProperty("minimapHeadScale", minimapHeadScale)
         json.addProperty("minimapMarkerScale", minimapMarkerScale)
         json.addProperty("minimapShrinkChunks", minimapShrinkChunks)
-        json.addProperty("tileRefreshSeconds", tileRefreshSeconds)
+        json.addProperty("tileCheckMinutes", tileCheckMinutes)
+        json.addProperty("tileHardRefreshHours", tileHardRefreshHours)
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
         json.addProperty("textureBudgetMb", textureBudgetMb)
         val array = JsonArray()

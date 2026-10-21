@@ -112,7 +112,10 @@ class BlueMap(baseUrl: String) : AutoCloseable {
 
     /** What BlueMap said about one tile. */
     sealed interface TileReply {
-        class Image(val bytes: ByteArray) : TileReply
+        /** The picture, with what the server said to ask about it next time by, if anything. */
+        class Image(val bytes: ByteArray, val etag: String? = null, val lastModified: String? = null) : TileReply
+        /** 304: unchanged since the [Image] whose `etag` or `lastModified` was sent. */
+        object NotModified : TileReply
         /** 204: BlueMap has rendered nothing there. */
         object Empty : TileReply
         /**
@@ -123,12 +126,20 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         object NotFound : TileReply
     }
 
-    /** Fetches one lowres tile, telling BlueMap's "nothing here" apart from "not found". Blocking. */
+    /**
+     * Fetches one lowres tile, telling BlueMap's "nothing here" apart from "not found". Given the
+     * [etag] or [lastModified] of the copy already held, only asks whether it changed. Blocking.
+     */
     @Throws(IOException::class)
-    fun fetchTile(map: String, lod: Int, tileX: Int, tileZ: Int): TileReply {
-        val response = getBytes(tilePath(map, lod, tileX, tileZ))
+    fun fetchTile(map: String, lod: Int, tileX: Int, tileZ: Int, etag: String? = null, lastModified: String? = null): TileReply {
+        val headers = buildList {
+            if (etag != null) add("If-None-Match" to etag)
+            if (lastModified != null) add("If-Modified-Since" to lastModified)
+        }
+        val response = getBytes(tilePath(map, lod, tileX, tileZ), headers)
         return when (response.statusCode()) {
-            200 -> TileReply.Image(response.body())
+            200 -> TileReply.Image(response.body(), response.header("ETag"), response.header("Last-Modified"))
+            304 -> if (headers.isEmpty()) throw IOException("HTTP 304 unasked for tile $map/$lod/$tileX,$tileZ") else TileReply.NotModified
             204 -> TileReply.Empty
             404 -> TileReply.NotFound
             else -> throw IOException("HTTP ${response.statusCode()} for tile $map/$lod/$tileX,$tileZ")
@@ -222,14 +233,17 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     }
 
     /** A reply, read whole on the calling thread, but never more than [MAX_BODY] bytes of it. */
-    private class Reply<T>(private val status: Int, private val content: T) {
+    private class Reply<T>(private val status: Int, private val content: T, private val headers: java.net.http.HttpHeaders? = null) {
         fun statusCode() = status
         fun body() = content
+
+        /** A header the server sent, if it is short enough to be one worth keeping. */
+        fun header(name: String): String? = headers?.firstValue(name)?.orElse(null)?.takeIf { it.isNotBlank() && it.length <= 200 }
     }
 
-    private fun getBytes(path: String): Reply<ByteArray> {
-        val response = get(path, HttpResponse.BodyHandlers.ofInputStream())
-        return Reply(response.statusCode(), readCapped(response.body()))
+    private fun getBytes(path: String, headers: List<Pair<String, String>> = emptyList()): Reply<ByteArray> {
+        val response = get(path, HttpResponse.BodyHandlers.ofInputStream(), headers)
+        return Reply(response.statusCode(), readCapped(response.body()), response.headers())
     }
 
     private fun getText(path: String): Reply<String> {
@@ -237,7 +251,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         return Reply(reply.statusCode(), String(reply.body(), Charsets.UTF_8))
     }
 
-    private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
+    private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>, headers: List<Pair<String, String>> = emptyList()): HttpResponse<T> {
         val uri = try {
             URI.create(base + path)
         } catch (e: IllegalArgumentException) {
@@ -246,6 +260,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         val request = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(20))
             .header("User-Agent", "SkysMapExposer (Minecraft mod)")
+            .apply { for ((name, value) in headers) header(name, value) }
             .GET()
             .build()
         try {
