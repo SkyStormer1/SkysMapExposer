@@ -137,8 +137,8 @@ object Config {
     /** How often BlueMap's markers are read again. */
     var markerRefreshSeconds: Int = 30
 
-    /** How many BlueMap tiles to keep in memory. */
-    var maxLoadedTiles: Int = 64
+    /** Video memory the BlueMap tiles may hold, in MB; tiles on screen are drawn coarser rather than dropped when over it. */
+    var textureBudgetMb: Int = 256
 
     var servers: List<Server> = defaultServers()
 
@@ -265,7 +265,7 @@ object Config {
             read("minimapShrinkChunks") { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
             read("tileRefreshSeconds") { tileRefreshSeconds = it.asInt.coerceAtLeast(10) }
             read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
-            read("maxLoadedTiles") { maxLoadedTiles = it.asInt.coerceIn(8, 1024) }
+            read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
             read("servers") { element ->
                 val list = ArrayList<Server>()
                 element.asJsonArray.forEachIndexed { index, entry ->
@@ -342,7 +342,7 @@ object Config {
         json.addProperty("minimapShrinkChunks", minimapShrinkChunks)
         json.addProperty("tileRefreshSeconds", tileRefreshSeconds)
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
-        json.addProperty("maxLoadedTiles", maxLoadedTiles)
+        json.addProperty("textureBudgetMb", textureBudgetMb)
         val array = JsonArray()
         for (server in servers) {
             val entry = JsonObject()

@@ -64,6 +64,18 @@ object MapExposerClient : ClientModInitializer {
         false
     }
 
+    /** "Texture memory 180 / 256 MB", and why it is held back, if it is. */
+    fun textureMemory(session: Session): String {
+        val pacer = FramePacer.game
+        val mb = 1024 * 1024
+        val notes = listOfNotNull(
+            "drawn ${session.tiles.coarser} step(s) coarser to fit".takeIf { session.tiles.coarser > 0 },
+            "budget halved: Java memory is low".takeIf { pacer.heapLow },
+            "uploading ${pacer.uploads} per frame: the game is busy".takeIf { pacer.slow },
+        )
+        return "Texture memory ${session.tiles.heldBytes / mb} / ${pacer.budgetBytes() / mb} MB" + if (notes.isEmpty()) "" else " (${notes.joinToString("; ")})"
+    }
+
     /** Whether dropping map files onto the game window reaches [TerrainFiles] (`MouseHandlerMixin`). */
     private fun dropHookInstalled() = injected("net.minecraft.client.MouseHandler", "skysmapexposer\$onDrop")
 
@@ -145,6 +157,7 @@ object MapExposerClient : ClientModInitializer {
             if (ticks % 6000 == 0L) {
                 session.visits.save()
                 session.gaps.save()
+                session.unshowable.save()
             }
         }
 
@@ -237,6 +250,11 @@ object MapExposerClient : ClientModInitializer {
                             )
                     )
                     .then(ClientCommands.literal("skipped").executes(::skipped))
+                    .then(ClientCommands.literal("debug").then(ClientCommands.literal("regions").executes {
+                        Overlay.debugRegions = true
+                        it.source.sendFeedback(Component.literal("Open the world map where it shows black; the next frame writes what Xaero has of each region there to the log"))
+                        1
+                    }))
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
                         ClientCommands.literal("stale").then(
@@ -380,6 +398,11 @@ object MapExposerClient : ClientModInitializer {
                         "tiles in memory: ${session.tiles.size} (${session.tiles.countIn(TileStore.State.FAILED)} failed)"
                 )
             )
+            source.sendFeedback(Component.literal(textureMemory(session)))
+            val unshowable = session.unshowable.count
+            if (unshowable > 0) {
+                source.sendFeedback(Component.literal("§e$unshowable region(s) Xaero has a file for but can't show are covered by BlueMap§r (the log names them)"))
+            }
         }
         val locked = LockedPlayers.count()
         if (locked > 0) source.sendFeedback(Component.literal("Locked on to $locked player(s); /mapexposer players lists everyone"))

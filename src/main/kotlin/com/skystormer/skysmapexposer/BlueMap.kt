@@ -107,11 +107,30 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      * @return the PNG, or null if BlueMap has never rendered anything there (it answers 204).
      */
     @Throws(IOException::class)
-    fun tile(map: String, lod: Int, tileX: Int, tileZ: Int): ByteArray? {
+    fun tile(map: String, lod: Int, tileX: Int, tileZ: Int): ByteArray? =
+        (fetchTile(map, lod, tileX, tileZ) as? TileReply.Image)?.bytes
+
+    /** What BlueMap said about one tile. */
+    sealed interface TileReply {
+        class Image(val bytes: ByteArray) : TileReply
+        /** 204: BlueMap has rendered nothing there. */
+        object Empty : TileReply
+        /**
+         * 404: nothing there too, as BlueMap's own server says it, but also what a wrong address,
+         * a proxy's error page or a restarting BlueMap answers for every tile. Only believed while
+         * the map's settings still load.
+         */
+        object NotFound : TileReply
+    }
+
+    /** Fetches one lowres tile, telling BlueMap's "nothing here" apart from "not found". Blocking. */
+    @Throws(IOException::class)
+    fun fetchTile(map: String, lod: Int, tileX: Int, tileZ: Int): TileReply {
         val response = getBytes(tilePath(map, lod, tileX, tileZ))
         return when (response.statusCode()) {
-            200 -> response.body()
-            204, 404 -> null
+            200 -> TileReply.Image(response.body())
+            204 -> TileReply.Empty
+            404 -> TileReply.NotFound
             else -> throw IOException("HTTP ${response.statusCode()} for tile $map/$lod/$tileX,$tileZ")
         }
     }

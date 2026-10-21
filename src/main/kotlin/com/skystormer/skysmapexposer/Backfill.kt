@@ -48,12 +48,7 @@ object Backfill {
     /** What there is to draw for one dimension on one server: null with a reason if nothing. */
     class Target(val session: Session, val dimensionId: String, val mapId: String, val layout: BlueMap.MapLayout, val regionFolder: Path)
 
-    private var frame = 0L
-
     private class Candidate(val x: Int, val z: Int, val distance: Double)
-
-    /** Frame counter shared by everything that touches tiles, so eviction knows what is in use. */
-    fun nextFrame(): Long = ++frame
 
     /**
      * Works out whether anything can be drawn for Xaero's current map, or says why not (through
@@ -94,12 +89,14 @@ object Backfill {
         maxX: Double,
         minZ: Double,
         maxZ: Double,
-        factor: Int,
+        wantedFactor: Int,
         budget: Budget,
     ): Plan? {
         val session = target.session
         val layout = target.layout
         val tileSize = layout.tileSize
+        // Over the memory budget with what is on screen alone: coarser pictures, not fewer.
+        val factor = coarser(tileSize, wantedFactor, session.tiles.coarser)
         val tilesX = floor(minX / tileSize).toInt()..floor(maxX / tileSize).toInt()
         val tilesZ = floor(minZ / tileSize).toInt()..floor(maxZ / tileSize).toInt()
         val inView = tilesX.count().toLong() * tilesZ.count()
@@ -136,7 +133,7 @@ object Backfill {
         var failed = 0
         var gaps = 0
         for (candidate in candidates) {
-            val tile = session.tiles.get(TileStore.Key(target.mapId, 1, candidate.x, candidate.z), 1, tileSize, frame)
+            val tile = session.tiles.get(TileStore.Key(target.mapId, 1, candidate.x, candidate.z), 1, tileSize)
             val originX = candidate.x * tileSize
             val originZ = candidate.z * tileSize
             fun standInFor() {
@@ -169,7 +166,7 @@ object Backfill {
             tile.standIn = null
             pieces.add(Piece(texture, mask, originX, originZ, tileSize))
         }
-        session.tiles.trim(maxOf(Config.maxLoadedTiles, candidates.size * 2 + 16), frame)
+        session.tiles.trim(FramePacer.game.budgetBytes())
 
         val summary = "${target.dimensionId} → '${target.mapId}' at 1:$factor: ${candidates.size} tiles with data in view " +
             "($waitingForIndex awaiting the index), $ready ready, $waiting loading, $empty empty, $failed failed; " +
@@ -193,7 +190,7 @@ object Backfill {
             val span = layout.tileBlocks(lod)
             val coarseX = Math.floorDiv(originX, span)
             val coarseZ = Math.floorDiv(originZ, span)
-            val coarse = session.tiles.get(TileStore.Key(target.mapId, lod, coarseX, coarseZ), layout.blocksPerPixel(lod), layout.tileSize, frame)
+            val coarse = session.tiles.get(TileStore.Key(target.mapId, lod, coarseX, coarseZ), layout.blocksPerPixel(lod), layout.tileSize)
             when (coarse.state) {
                 TileStore.State.LOADING, TileStore.State.FAILED -> continue
                 TileStore.State.EMPTY -> return false // BlueMap has nothing here at all
@@ -244,20 +241,31 @@ object Backfill {
             val pixelX = Math.floorDiv((chunkX shl 4) + 8 - coarseX, blocksPerPixel).coerceIn(0, coarse.tileSize - 1)
             val pixelZ = Math.floorDiv((chunkZ shl 4) + 8 - coarseZ, blocksPerPixel).coerceIn(0, coarse.tileSize - 1)
             if (!coarse.hasDataAt(pixelX, pixelZ)) return false
-            if (isXaeroGap(mapProcessor, remembered, chunkX, chunkZ)) return true
+            if (isXaeroGap(mapProcessor, remembered, chunkX, chunkZ) || unshowable(target, chunkX, chunkZ, regionsKnown)) return true
             return regionsKnown && session.regionAges.minuteOf(target.regionFolder, chunkX shr 5, chunkZ shr 5) == 0
         }
         return rectanglesOf(originX, originZ, tileSize, coarse.contentMinute, 0, ::wanted)
     }
 
-    /** Uploads and mask builds allowed per frame, shared by the world map and the minimap. */
-    class Budget(var uploads: Int = 8, var masks: Int = 8)
+    /**
+     * Uploads and mask builds allowed per frame, shared by the world map and the minimap. Uploads
+     * are fewer while frames are slow ([FramePacer]).
+     */
+    class Budget(var uploads: Int = FramePacer.game.uploads, var masks: Int = 8)
+
+    private val FACTORS = listOf(1, 2, 4, 5, 8, 10, 16, 20, 25, 32, 50, 100)
 
     /** Divisors of the tile size, so a shrunk tile is still a whole number of pixels across. */
     fun factorFor(tileSize: Int, blocksPerPixel: Float): Int =
-        listOf(1, 2, 4, 5, 8, 10, 16, 20, 25, 32, 50, 100)
-            .filter { tileSize % it == 0 }
-            .lastOrNull { it <= blocksPerPixel.coerceAtLeast(1f) } ?: 1
+        FACTORS.filter { tileSize % it == 0 }.lastOrNull { it <= blocksPerPixel.coerceAtLeast(1f) } ?: 1
+
+    /** [factor], [steps] of the tile size's factors coarser, as far as there are any. */
+    fun coarser(tileSize: Int, factor: Int, steps: Int): Int {
+        if (steps <= 0) return factor
+        val usable = FACTORS.filter { tileSize % it == 0 }
+        val at = usable.indexOf(factor).coerceAtLeast(0)
+        return usable[minOf(at + steps, usable.lastIndex)]
+    }
 
     /**
      * Whether BlueMap's coarsest tile says the finest tile ([tileX], [tileZ]) has anything in it:
@@ -268,7 +276,7 @@ object Backfill {
         val ratio = layout.tileBlocks(lod) / layout.tileSize
         val indexX = Math.floorDiv(tileX, ratio)
         val indexZ = Math.floorDiv(tileZ, ratio)
-        val index = session.tiles.get(TileStore.Key(mapId, lod, indexX, indexZ), layout.blocksPerPixel(lod), layout.tileSize, frame)
+        val index = session.tiles.get(TileStore.Key(mapId, lod, indexX, indexZ), layout.blocksPerPixel(lod), layout.tileSize)
         return when (index.state) {
             TileStore.State.LOADING -> null
             TileStore.State.EMPTY -> false
@@ -320,7 +328,7 @@ object Backfill {
             val pixelZ = ((chunkZ shl 4) + 8 - originZ).coerceIn(0, tileSize - 1)
             if (!tile.hasDataAt(pixelX, pixelZ)) return false
 
-            if (isXaeroGap(mapProcessor, remembered, chunkX, chunkZ)) {
+            if (isXaeroGap(mapProcessor, remembered, chunkX, chunkZ) || unshowable(target, chunkX, chunkZ, regionsKnown)) {
                 gapCount++
                 return true
             }
@@ -392,6 +400,70 @@ object Backfill {
         return live
     }
 
+    /** Whether the chunk's region is one Xaero has a file for but cannot show ([UnshowableRegions]). */
+    private fun unshowable(target: Target, chunkX: Int, chunkZ: Int, regionsKnown: Boolean): Boolean {
+        if (!regionsKnown || target.session.unshowable.count == 0) return false
+        val minute = target.session.regionAges.minuteOf(target.regionFolder, chunkX shr 5, chunkZ shr 5)
+        return minute != 0 && target.session.unshowable.covers(target.regionFolder, chunkX shr 5, chunkZ shr 5, minute)
+    }
+
+    /**
+     * Has [UnshowableRegions] look at the regions of the surface in view, close up, where Xaero
+     * always loads what it shows. With [debug], also writes what Xaero has of each to the log.
+     */
+    fun watchRegions(target: Target, mapProcessor: MapProcessor, minX: Double, maxX: Double, minZ: Double, maxZ: Double, closeUp: Boolean, debug: Boolean) {
+        val session = target.session
+        val folder = target.regionFolder
+        if (!session.regionAges.isKnown(folder)) return
+        val now = System.currentTimeMillis()
+        val lines = if (debug) ArrayList<String>() else null
+        for (rx in floor(minX / 512).toInt()..floor(maxX / 512).toInt()) {
+            for (rz in floor(minZ / 512).toInt()..floor(maxZ / 512).toInt()) {
+                val minute = session.regionAges.minuteOf(folder, rx, rz)
+                if (minute == 0) continue
+                val region = try {
+                    mapProcessor.getLeafMapRegion(Int.MAX_VALUE, rx, rz, false)
+                } catch (e: RuntimeException) {
+                    continue
+                }
+                val state = region?.loadState?.toInt()
+                if (closeUp) {
+                    val seen = when {
+                        region == null -> UnshowableRegions.Seen.NOTHING
+                        state == LOADED -> UnshowableRegions.Seen.LOADED
+                        else -> UnshowableRegions.Seen.NOT_LOADED
+                    }
+                    session.unshowable.observe(folder, rx, rz, minute, seen, now)
+                }
+                lines?.add(describeRegion(folder, rx, rz, region, state))
+            }
+        }
+        if (lines != null) {
+            Log.info("Regions in view with a file ({}), as Xaero has them:\n  {}", folder, lines.joinToString("\n  "))
+        }
+    }
+
+    /** One region for the debug log: what Xaero holds of it, and whether its file opens. */
+    private fun describeRegion(folder: Path, rx: Int, rz: Int, region: xaero.map.region.MapRegion?, state: Int?): String {
+        val path = folder.resolve(MapBackup.regionFile(rx, rz))
+        val file = try {
+            java.util.zip.ZipFile(path.toFile()).use { zip ->
+                "file ${java.nio.file.Files.size(path)} bytes, zip entries ${zip.entries().toList().joinToString { "${it.name} (${it.size})" }}"
+            }
+        } catch (e: Exception) {
+            "file does not open as a zip: $e"
+        }
+        val xaero = if (region == null) "no region object" else try {
+            var chunks = 0
+            for (x in 0 until 8) for (z in 0 until 8) if (region.getChunk(x, z) != null) chunks++
+            "load state $state, loaded ${region.isLoaded}, resting ${region.isResting}, has had terrain ${region.hasHadTerrain()}, " +
+                "being written ${region.isBeingWritten}, $chunks of 64 tile chunks"
+        } catch (e: RuntimeException) {
+            "region object, load state $state, unreadable: $e"
+        }
+        return "${rx}_$rz: $xaero; $file"
+    }
+
     /**
      * Asks Xaero about every chunk within [radius] chunks of ([centreChunkX], [centreChunkZ]) and
      * remembers the answers. Xaero always has the regions around the player open for the minimap,
@@ -422,6 +494,7 @@ object Backfill {
     }
 
     private const val NO_HEIGHT = 32767
+    private const val LOADED = 2
     private const val UNKNOWN: Byte = 0
     private const val NOTHING: Byte = 1
     private const val SOMETHING: Byte = 2

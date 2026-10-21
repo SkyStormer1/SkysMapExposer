@@ -65,7 +65,7 @@ object MinimapOverlay {
         mapRenderType: RenderType,
         finalizer: Consumer<GpuTextureView>?,
     ) {
-        Backfill.nextFrame()
+        FramePacer.game.frame()
         if (!hookRan) {
             hookRan = true
         }
@@ -95,7 +95,7 @@ object MinimapOverlay {
         val target = Backfill.target(mapProcessor, ::standDown) ?: return
         val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
 
-        val plan = Backfill.plan(target, mapProcessor, originX.toDouble(), originZ.toDouble(), minX, maxX, minZ, maxZ, factor, Backfill.Budget(uploads = 4, masks = 4))
+        val plan = Backfill.plan(target, mapProcessor, originX.toDouble(), originZ.toDouble(), minX, maxX, minZ, maxZ, factor, Backfill.Budget(uploads = minOf(4, FramePacer.game.uploads), masks = 4))
             ?: return standDown("too-far", "The minimap covers too much to backfill")
 
         var renderer: MultiTextureRenderTypeRenderer? = null

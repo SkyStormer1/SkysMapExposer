@@ -29,6 +29,9 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
 
     val gaps = GapStore(folder, io)
 
+    /** Regions Xaero has a file for but cannot show, which BlueMap covers. */
+    val unshowable = UnshowableRegions(folder.resolve("unshowable-regions.json"), io)
+
     /**
      * Chunks Xaero was last seen to have nothing for, per dimension. Remembered, on disk too,
      * because Xaero only answers while it has the region open, which it does not when zoomed out.
@@ -60,6 +63,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     private fun close() {
         visits.save()
         gaps.save()
+        unshowable.save()
         tiles.clear()
         markers.close()
         workers.shutdownNow()

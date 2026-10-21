@@ -24,6 +24,12 @@ object Overlay {
     var hookRan = false
         private set
 
+    /** Set by `/mapexposer debug regions`: the next frame writes what Xaero has of each region in view to the log. */
+    @Volatile
+    var debugRegions = false
+
+    private var regionsWatchedAt = 0L
+
     /** One line on what the last frame did, for `/mapexposer` and the settings screen. */
     var lastSummary = "The world map has not been opened yet."
         private set
@@ -55,7 +61,7 @@ object Overlay {
         cameraZ: Double,
         rendererProvider: MultiTextureRenderTypeRendererProvider,
     ) {
-        Backfill.nextFrame()
+        FramePacer.game.frame()
         if (!hookRan) {
             hookRan = true
         }
@@ -69,6 +75,15 @@ object Overlay {
         drawOutlines(mapProcessor, matrix, flooredCameraX, flooredCameraZ, blocksPerUnit, minX, maxX, minZ, maxZ)
 
         val target = Backfill.target(mapProcessor, ::standDown) ?: return
+        val now = System.currentTimeMillis()
+        if (debugRegions || now - regionsWatchedAt >= 1000L) {
+            regionsWatchedAt = now
+            val debug = debugRegions
+            debugRegions = false
+            // Close up, Xaero always loads the regions it shows, so one it has not is one it cannot.
+            Backfill.watchRegions(target, mapProcessor, minX, maxX, minZ, maxZ, closeUp = blocksPerUnit <= 1f, debug = debug)
+            if (debug) Minecraft.getInstance().player?.sendSystemMessage(net.minecraft.network.chat.Component.literal("§7Wrote what Xaero has of each region in view to the log"))
+        }
         val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
         val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget())
             ?: return standDown("too-far", "Zoomed out too far to cover with BlueMap")

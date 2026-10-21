@@ -81,7 +81,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapBiomes = Config.minimapBiomes
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
-    private var message: Component = Component.literal(Overlay.lastSummary)
+    private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
     // Only the boxes of the tab showing exist; the other tab's are null.
