@@ -50,9 +50,11 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     fun clearTiles(done: (String) -> Unit) {
         MapPrep.cancel()
         tiles.clear()
+        seaFloor.clear()
         io.execute {
             val said = try {
                 TileCache.clear(folder.resolve("tiles"))
+                seaFloor.clearDisk()
                 "Tile cache cleared"
             } catch (e: Exception) {
                 Log.warn("Could not clear the tile cache: {}", e.toString())
@@ -61,6 +63,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
             Minecraft.getInstance().execute {
                 if (current === this) {
                     tiles.clear()
+                    seaFloor.clear()
                     if (Config.prepareMap) MapPrep.start(this, MarkerElements.worldMapDimension())
                 }
                 done(said)

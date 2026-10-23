@@ -142,6 +142,14 @@ class TileStore(
     @Volatile
     var refetchBefore: Long = 0
 
+    /**
+     * Told when a finest tile's picture is replaced by a different one, with both pictures at a
+     * block a pixel (`tileSize` square), so what depends on it can find what changed ([SeaFloor]).
+     * Called on a worker thread.
+     */
+    @Volatile
+    var pictureChanged: ((key: Key, tileSize: Int, before: IntArray, after: IntArray) -> Unit)? = null
+
     val size: Int get() = tiles.size
 
     fun countIn(state: State): Int = tiles.values.count { it.state == state }
@@ -435,9 +443,12 @@ class TileStore(
         val same = hash == meta.getProperty("hash") && tile.state == State.READY
         if (!same) {
             if (hash != meta.getProperty("hash") || minute == 0) minute = Clock.nowMinutes()
+            val listener = pictureChanged?.takeIf { tile.key.lod == 1 && tile.state == State.READY }
+            val before = listener?.let { picture(tile) }
             build(tile, reply.bytes, hash, minute)
             // Every size of the old picture is out of date; they are remade as they are drawn.
             tile.requested.clear()
+            if (listener != null && before != null) picture(tile)?.let { after -> listener(tile.key, tile.tileSize, before, after) }
         }
         meta.remove("empty")
         meta.remove("emptyAt")

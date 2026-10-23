@@ -129,6 +129,39 @@ class SettingsAndScheduleTest {
     }
 
     @Test
+    fun `sea floor tiles are asked about like the terrain, and downloaded again under what changed`() {
+        val checkMinutes = Config.tileCheckMinutes
+        val hardHours = Config.fullDownloadHours
+        try {
+            Config.tileCheckMinutes = 15
+            Config.fullDownloadHours = 72
+            val hour = 3_600_000L
+            // A server that can say "not modified": asked every 15 minutes.
+            assertFalse(SeaFloor.due(14 * 60_000L, true, 0.0))
+            assertTrue(SeaFloor.due(15 * 60_000L, true, 0.0))
+            // One that cannot: downloaded whole every 3 days, spread over half as long again.
+            assertFalse(SeaFloor.due(71 * hour, false, 0.0))
+            assertTrue(SeaFloor.due(72 * hour, false, 0.0))
+            assertFalse(SeaFloor.due(100 * hour, false, 0.9))
+            Config.fullDownloadHours = 0
+            assertFalse(SeaFloor.due(365 * 24 * hour, false, 0.0), "off: only when BlueMap's picture changes")
+
+            // A 64-block tile at block (64, -64) over 32-block 3D tiles starting at block 2, 2.
+            val layout = BlueMap.HiresLayout(32, 2, 2)
+            val before = IntArray(64 * 64) { 0xFF1E4A7A.toInt() }
+            assertEquals(emptySet<Pair<Int, Int>>(), SeaFloor.changedHires(layout, 64, -64, 64, before, before.copyOf()))
+            val after = before.copyOf()
+            after[10 * 64 + 40] = 0xFF8A7F5C.toInt() // block 104, -54
+            assertEquals(setOf(3 to -2), SeaFloor.changedHires(layout, 64, -64, 64, before, after))
+            after[0] = 0xFF8A7F5C.toInt() // block 64, -64: the 3D tile west and north of it
+            assertEquals(setOf(1 to -3, 3 to -2), SeaFloor.changedHires(layout, 64, -64, 64, before, after))
+        } finally {
+            Config.tileCheckMinutes = checkMinutes
+            Config.fullDownloadHours = hardHours
+        }
+    }
+
+    @Test
     fun `Refresh can be pressed once every 30 seconds and counts down`() {
         val cooldown = MapRefresh.Cooldown(MapRefresh.COOLDOWN_MS)
         assertEquals(0, cooldown.secondsLeft(1_000_000L))

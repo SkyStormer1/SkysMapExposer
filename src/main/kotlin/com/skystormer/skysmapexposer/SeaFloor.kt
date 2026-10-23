@@ -5,6 +5,7 @@ import com.skystormer.skysmapexposer.terrain.HiresTile
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
@@ -17,9 +18,16 @@ import java.util.concurrent.Executors
  * Only the 3D tiles on screen whose part of the flat picture looks like water are downloaded,
  * nearest the middle of the screen first, two at a time so the server (BlueMap usually runs on the
  * game server) is not slowed down. Of each, only what the sea floor needs is kept on disk
- * ([FloorColumns]), for a week. It is drawn only close up (the world map at a block a pixel or
- * more); further out the tiles on screen are only downloaded ahead, onto disk, so zooming in on
- * them finds them there.
+ * ([FloorColumns]). It is drawn only close up (the world map at a block a pixel or more); further
+ * out the tiles on screen are only downloaded ahead, onto disk, so zooming in on them finds them
+ * there.
+ *
+ * What is on disk follows BlueMap: when the regular check of BlueMap's flat picture finds part of
+ * it changed ([TileStore.pictureChanged]), the 3D tiles under the changed part are downloaded again
+ * next time they are on screen. Where BlueMap's server can say "not modified", each 3D tile on
+ * screen is also asked about every [Config.tileCheckMinutes]; where it cannot, each is downloaded
+ * whole every [Config.fullDownloadHours], spread out like the flat pictures. Meanwhile the copy on
+ * disk is shown.
  *
  * Each of BlueMap's tiles being drawn gets a [Build]: the 3D tiles it needs, and, as they come in,
  * its sea floor drawn the way Xaero draws water ([FloorColumns.xaeroWater]) into [TileStore.Tile.floor],
@@ -72,7 +80,11 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     val downloaded = java.util.concurrent.atomic.AtomicInteger()
     val downloadedBytes = java.util.concurrent.atomic.AtomicLong()
 
+    /** BlueMap tiles whose picture changed under a build: started again when next drawn. */
+    private val restart: MutableSet<TileStore.Key> = ConcurrentHashMap.newKeySet()
+
     init {
+        tiles.pictureChanged = { key, size, before, after -> if (!closed) worker.execute { changedUnder(key, size, before, after) } }
         repeat(DOWNLOADERS) { n ->
             Thread(::download, "SkysMapExposer sea floor download ${n + 1}").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         }
@@ -96,7 +108,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
         centreZ = cameraZ
         var build = builds[tile.key]
         // Zoomed in on a tile only downloaded ahead: started again, finding its 3D tiles on disk.
-        if (build == null || build.tile !== tile || build.ahead && closeUp) {
+        if (build == null || build.tile !== tile || build.ahead && closeUp || restart.remove(tile.key)) {
             build = Build(tile, map, tile.key.x * tile.tileSize, tile.key.z * tile.tileSize, ahead = !closeUp)
             builds[tile.key] = build
         }
@@ -121,6 +133,12 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
             queue(build)
         }
         if (builds.size > MAX_BUILDS) builds.values.removeIf { now - it.wantedAt > FORGET_MS && it !== build }
+    }
+
+    /** Deletes the sea floor kept on disk too ("Clear tile cache"), after [clear]. Blocking. */
+    fun clearDisk() {
+        if (!Files.isDirectory(folder)) return
+        Files.walk(folder).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) } }
     }
 
     /** Leaves BlueMap's flat picture everywhere again: the setting was switched off. Client thread. */
@@ -158,15 +176,10 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
                 for (hx in firstX..lastX) {
                     if (!looksWet(picture, size, build, layout, hx, hz)) continue
                     val hires = Hires(build.map, hx, hz)
-                    if (build.ahead) {
-                        if (!isKept(hires)) build.waiting.add(hires)
-                        continue
-                    }
-                    when (val kept = readKept(hires)) {
-                        null -> build.waiting.add(hires)
-                        NOTHING -> {}
-                        else -> build.arrived.add(hires to kept)
-                    }
+                    val kept = disk(hires)
+                    // What is on disk is shown meanwhile, even when it is due to be asked about.
+                    if (!build.ahead && kept.columns) readColumns(hires)?.let { build.arrived.add(hires to it) }
+                    if (kept.due) build.waiting.add(hires)
                 }
             }
             queue(build)
@@ -232,15 +245,16 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
             // Scrolled away from, or the world map closed: left for when it is back on screen.
             val still = waiting.filter { now - it.wantedAt < STALE_MS && onScreen(hires, it.view) }
             if (still.isEmpty()) continue
+            // Null: unchanged, or it could not be had this time; what is on disk stays.
             val columns = try {
                 fetch(hires)
             } catch (e: Exception) {
                 if (failures.getAndIncrement() < LOGGED_FAILURES) Log.warn("Sea floor: could not download BlueMap 3D tile {}: {}", hires, e.toString())
-                NOTHING
+                null
             }
             for (build in waiting) {
                 // In before it is no longer waited for, so a build never looks finished with it still to come.
-                if (columns !== NOTHING && !build.ahead) build.arrived.add(hires to columns)
+                if (columns != null && !build.ahead) build.arrived.add(hires to columns)
                 build.waiting.remove(hires)
             }
         }
@@ -261,53 +275,109 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
         return best
     }
 
-    /** Downloads one 3D tile and keeps what the sea floor needs of it. */
-    private fun fetch(hires: Hires): FloorColumns {
-        val source = sources[hires.map] ?: return NOTHING
-        val bytes = blueMap.hiresTile(hires.map, hires.x, hires.z)
+    /**
+     * Downloads one 3D tile, or only asks whether it changed when the server gave something to ask
+     * by, and keeps what the sea floor needs of it. Returns what is new ([NOTHING] when there is no
+     * sea floor there now), or null when it is the same as what was kept.
+     */
+    private fun fetch(hires: Hires): FloorColumns? {
+        val source = sources[hires.map] ?: return null
+        val data = fileOf(hires, DATA_SUFFIX)
+        val tag = fileOf(hires, TAG_SUFFIX)
+        val asked = if (Files.exists(data) && Files.exists(tag)) Files.readAllLines(tag) else emptyList()
+        val reply = blueMap.fetchHires(
+            hires.map, hires.x, hires.z, asked.getOrNull(0)?.ifEmpty { null }, asked.getOrNull(1)?.ifEmpty { null },
+        )
         downloaded.incrementAndGet()
-        val columns = if (bytes == null) NOTHING else {
-            downloadedBytes.addAndGet(bytes.size.toLong())
-            FloorColumns.of(HiresTile.read(BlueMap.gunzipIfNeeded(bytes, MAX_TILE_BYTES)), source.textures, source.layout.tileSize)
+        val now = FileTime.fromMillis(System.currentTimeMillis())
+        val columns = when (reply) {
+            is BlueMap.TileReply.NotModified -> {
+                Files.setLastModifiedTime(data, now)
+                Files.deleteIfExists(fileOf(hires, CHANGED_SUFFIX))
+                return null
+            }
+            is BlueMap.TileReply.Image -> {
+                downloadedBytes.addAndGet(reply.bytes.size.toLong())
+                FloorColumns.of(HiresTile.read(BlueMap.gunzipIfNeeded(reply.bytes, MAX_TILE_BYTES)), source.textures, source.layout.tileSize)
+            }
+            else -> NOTHING
         }
+        var same: Boolean
         try {
-            if (columns === NOTHING || columns.count == 0) {
+            if (columns.count == 0) {
+                same = !Files.exists(data) && Files.exists(fileOf(hires, NONE_SUFFIX))
                 SafeFiles.write(fileOf(hires, NONE_SUFFIX), ByteArray(0))
-                Files.deleteIfExists(fileOf(hires, DATA_SUFFIX))
+                Files.deleteIfExists(data)
+                Files.deleteIfExists(tag)
             } else {
-                SafeFiles.write(fileOf(hires, DATA_SUFFIX), columns.encode())
+                val encoded = columns.encode()
+                same = Files.exists(data) && Files.readAllBytes(data).contentEquals(encoded)
+                if (same) Files.setLastModifiedTime(data, now) else SafeFiles.write(data, encoded)
+                val image = reply as BlueMap.TileReply.Image
+                if (image.etag != null || image.lastModified != null) {
+                    SafeFiles.write(tag, "${image.etag.orEmpty()}\n${image.lastModified.orEmpty()}\n".toByteArray(Charsets.UTF_8))
+                } else {
+                    Files.deleteIfExists(tag)
+                }
                 Files.deleteIfExists(fileOf(hires, NONE_SUFFIX))
             }
+            Files.deleteIfExists(fileOf(hires, CHANGED_SUFFIX))
         } catch (e: IOException) {
+            same = false
             if (failures.getAndIncrement() < LOGGED_FAILURES) Log.warn("Sea floor: could not keep {} on disk: {}", hires, e.toString())
         }
-        return if (columns.count == 0) NOTHING else columns
+        return if (same) null else if (columns.count == 0) NOTHING else columns
     }
 
-    /** What is on disk for [hires] and recent enough: its columns, [NOTHING], or null to download it. */
-    private fun readKept(hires: Hires): FloorColumns? {
+    /** What is on disk for a 3D tile: whether it has columns to show, and whether to ask BlueMap about it. */
+    private class Kept(val columns: Boolean, val due: Boolean)
+
+    private fun disk(hires: Hires): Kept {
         val now = System.currentTimeMillis()
+        val changed = Files.exists(fileOf(hires, CHANGED_SUFFIX))
         val data = fileOf(hires, DATA_SUFFIX)
-        if (Files.exists(data) && now - Files.getLastModifiedTime(data).toMillis() < KEEP_MS) {
-            return try {
-                FloorColumns.decode(Files.readAllBytes(data))
-            } catch (e: Exception) {
-                Files.deleteIfExists(data)
-                null
-            }
+        if (Files.exists(data)) {
+            val age = now - Files.getLastModifiedTime(data).toMillis()
+            val askable = Files.exists(fileOf(hires, TAG_SUFFIX))
+            return Kept(true, changed || due(age, askable, TileStore.Schedule.spread(TileStore.Key(hires.map, 0, hires.x, hires.z))))
         }
         val none = fileOf(hires, NONE_SUFFIX)
-        if (Files.exists(none) && now - Files.getLastModifiedTime(none).toMillis() < KEEP_NONE_MS) return NOTHING
-        return null
+        if (Files.exists(none)) return Kept(false, changed || now - Files.getLastModifiedTime(none).toMillis() >= KEEP_NONE_MS)
+        return Kept(false, true)
     }
 
-    /** Whether [hires] is on disk and recent enough, without reading it. */
-    private fun isKept(hires: Hires): Boolean {
-        val now = System.currentTimeMillis()
+    /** The columns kept on disk for [hires], or null if there are none it can read. */
+    private fun readColumns(hires: Hires): FloorColumns? {
         val data = fileOf(hires, DATA_SUFFIX)
-        if (Files.exists(data) && now - Files.getLastModifiedTime(data).toMillis() < KEEP_MS) return true
-        val none = fileOf(hires, NONE_SUFFIX)
-        return Files.exists(none) && now - Files.getLastModifiedTime(none).toMillis() < KEEP_NONE_MS
+        if (!Files.exists(data)) return null
+        return try {
+            FloorColumns.decode(Files.readAllBytes(data))
+        } catch (e: Exception) {
+            Files.deleteIfExists(data)
+            null
+        }
+    }
+
+    /**
+     * BlueMap's picture of [key] changed from [before] to [after] (both [size] square): the 3D
+     * tiles under the pixels that changed are to be downloaded again, and a build of it starts over.
+     */
+    private fun changedUnder(key: TileStore.Key, size: Int, before: IntArray, after: IntArray) {
+        try {
+            // Nothing kept for this map yet (the setting never on here): nothing to follow, nor to ask BlueMap about.
+            if (sources[key.map] == null && !Files.isDirectory(folder.resolve(if (BlueMap.isMapId(key.map)) key.map else "_"))) return
+            val layout = (sources[key.map] ?: source(key.map))?.layout ?: return
+            val changed = changedHires(layout, key.x * size, key.z * size, size, before, after)
+            for ((hx, hz) in changed) {
+                val hires = Hires(key.map, hx, hz)
+                if (Files.exists(fileOf(hires, DATA_SUFFIX)) || Files.exists(fileOf(hires, NONE_SUFFIX))) {
+                    SafeFiles.write(fileOf(hires, CHANGED_SUFFIX), ByteArray(0))
+                }
+            }
+            if (changed.isNotEmpty()) restart.add(key)
+        } catch (e: Exception) {
+            if (failures.getAndIncrement() < LOGGED_FAILURES) Log.warn("Sea floor: could not follow a change to BlueMap tile {}: {}", key, e.toString())
+        }
     }
 
     // The map id came from the server and becomes a folder name, so only ever a safe one.
@@ -342,6 +412,20 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
                 val layout = sources[hires.map]?.layout ?: continue
                 val hiresX = hires.x * layout.tileSize + layout.offsetX
                 val hiresZ = hires.z * layout.tileSize + layout.offsetZ
+                if (columns.size == 0) {
+                    // No sea floor there any more: BlueMap's flat picture again.
+                    for (z in 0 until layout.tileSize) {
+                        val tz = hiresZ + z - build.originZ
+                        if (tz !in 0 until size) continue
+                        for (x in 0 until layout.tileSize) {
+                            val tx = hiresX + x - build.originX
+                            if (tx !in 0 until size) continue
+                            bedTop[tz * size + tx] = FloorColumns.NONE
+                            waterTop[tz * size + tx] = FloorColumns.NONE
+                        }
+                    }
+                    continue
+                }
                 for (z in 0 until columns.size) {
                     val tz = hiresZ + z - build.originZ
                     if (tz !in 0 until size) continue
@@ -385,12 +469,44 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
         private const val FORGET_MS = 5 * 60_000L
         private const val MAX_BUILDS = 64
         private const val SOURCE_RETRY_MS = 10 * 60_000L
-        private const val KEEP_MS = 7L * 24 * 60 * 60 * 1000
+        /** How long "no sea floor here" is believed before BlueMap is asked again. */
         private const val KEEP_NONE_MS = 24L * 60 * 60 * 1000
         private const val LOGGED_FAILURES = 5
         private const val MAX_TILE_BYTES = 32 * 1024 * 1024
         private const val DATA_SUFFIX = ".floor"
         private const val NONE_SUFFIX = ".none"
+        /** What BlueMap's server said to ask about the tile by: its ETag, then its Last-Modified. */
+        private const val TAG_SUFFIX = ".tag"
+        /** BlueMap's flat picture changed over the tile: it is downloaded again. */
+        private const val CHANGED_SUFFIX = ".changed"
+
+        /**
+         * Whether a 3D tile kept for [ageMs] is due to be asked about: every [Config.tileCheckMinutes]
+         * where the server can say "not modified" ([askable]); otherwise downloaded whole every
+         * [Config.fullDownloadHours], each tile up to half as long again later by its [spread], and
+         * never when that is off.
+         */
+        fun due(ageMs: Long, askable: Boolean, spread: Double): Boolean {
+            if (askable) return ageMs >= Config.tileCheckMinutes * 60_000L
+            val hours = Config.fullDownloadHours
+            return hours > 0 && ageMs >= (hours * 3_600_000L * (1 + TileStore.Schedule.SPREAD * spread)).toLong()
+        }
+
+        /**
+         * The 3D tiles of [layout] under the pixels that differ between [before] and [after], two
+         * pictures of the [size]-square tile at block ([originX], [originZ]).
+         */
+        fun changedHires(layout: BlueMap.HiresLayout, originX: Int, originZ: Int, size: Int, before: IntArray, after: IntArray): Set<Pair<Int, Int>> {
+            val out = LinkedHashSet<Pair<Int, Int>>()
+            for (z in 0 until size) {
+                for (x in 0 until size) {
+                    val i = z * size + x
+                    if (before[i] == after[i]) continue
+                    out.add(layout.tileOf(originX + x, layout.offsetX) to layout.tileOf(originZ + z, layout.offsetZ))
+                }
+            }
+            return out
+        }
 
         /** Blocks around the screen's edge also fetched, so scrolling a little finds them there. */
         private const val MARGIN = 32.0

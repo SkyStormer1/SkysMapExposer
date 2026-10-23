@@ -192,11 +192,24 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      * @return the file, or null if BlueMap has never rendered anything there.
      */
     @Throws(IOException::class)
-    fun hiresTile(map: String, tileX: Int, tileZ: Int): ByteArray? {
-        val response = getBytes("maps/${checkMapId(map)}/tiles/0/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.prbm")
+    fun hiresTile(map: String, tileX: Int, tileZ: Int): ByteArray? =
+        (fetchHires(map, tileX, tileZ) as? TileReply.Image)?.bytes
+
+    /**
+     * [hiresTile], telling "nothing there" (204 or 404, as [TileReply.Empty]) from a picture; given
+     * the [etag] or [lastModified] of the copy already held, only asks whether it changed. Blocking.
+     */
+    @Throws(IOException::class)
+    fun fetchHires(map: String, tileX: Int, tileZ: Int, etag: String? = null, lastModified: String? = null): TileReply {
+        val headers = buildList {
+            if (etag != null) add("If-None-Match" to etag)
+            if (lastModified != null) add("If-Modified-Since" to lastModified)
+        }
+        val response = getBytes("maps/${checkMapId(map)}/tiles/0/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.prbm", headers)
         return when (response.statusCode()) {
-            200 -> response.body()
-            204, 404 -> null
+            200 -> TileReply.Image(response.body(), response.header("ETag"), response.header("Last-Modified"))
+            304 -> if (headers.isEmpty()) throw IOException("HTTP 304 unasked for hires tile $map/$tileX,$tileZ") else TileReply.NotModified
+            204, 404 -> TileReply.Empty
             else -> throw IOException("HTTP ${response.statusCode()} for hires tile $map/$tileX,$tileZ")
         }
     }
