@@ -81,12 +81,12 @@ class SettingsAndScheduleTest {
     @Test
     fun `tiles are asked about every 15 minutes and downloaded whole every 4 hours`() {
         val checkMinutes = Config.tileCheckMinutes
-        val hardHours = Config.tileHardRefreshHours
+        val hardHours = Config.fullDownloadHours
         try {
             Config.tileCheckMinutes = 15
-            Config.tileHardRefreshHours = 4
+            Config.fullDownloadHours = 4
             val now = 100L * 3_600_000L
-            val due = TileStore.Schedule::due
+            val due = { checked: Long, hard: Long, refetch: Long, at: Long -> TileStore.Schedule.due(checked, hard, refetch, at) }
             assertEquals(TileStore.Schedule.Due.NO, due(now - 14 * 60_000L, now - 60_000L, 0L, now))
             assertEquals(TileStore.Schedule.Due.CHECK, due(now - 15 * 60_000L, now - 60_000L, 0L, now))
             assertEquals(TileStore.Schedule.Due.DOWNLOAD, due(now, now - 4 * 3_600_000L, 0L, now))
@@ -95,7 +95,36 @@ class SettingsAndScheduleTest {
             assertEquals(TileStore.Schedule.Due.NO, due(now, now - 1000L, now - 2000L, now))
         } finally {
             Config.tileCheckMinutes = checkMinutes
-            Config.tileHardRefreshHours = hardHours
+            Config.fullDownloadHours = hardHours
+        }
+    }
+
+    @Test
+    fun `whole downloads come due every 3 days, spread over half as long again, and never when off`() {
+        val hardHours = Config.fullDownloadHours
+        try {
+            Config.fullDownloadHours = 72
+            val day = 24 * 3_600_000L
+            val now = 1000 * day
+            val due = TileStore.Schedule::due
+            assertEquals(TileStore.Schedule.Due.DOWNLOAD, due(now, now - 3 * day, 0L, now, 0.0))
+            assertEquals(TileStore.Schedule.Due.NO, due(now, now - 3 * day, 0L, now, 0.5), "a tile further into the spread waits")
+            assertEquals(TileStore.Schedule.Due.DOWNLOAD, due(now, now - 3 * day - 18 * 3_600_000L, 0L, now, 0.5))
+            assertEquals(TileStore.Schedule.Due.NO, due(now, now - 3 * day - day / 2 + 1, 0L, now, 0.9999))
+
+            // Tiles downloaded together: about a third come due in the first 12 hours after the 3 days are up.
+            val keys = (0 until 40).flatMap { x -> (0 until 40).map { z -> TileStore.Key("world", 1, x, z) } }
+            val spreads = keys.map(TileStore.Schedule::spread)
+            assertTrue(spreads.all { it >= 0.0 && it < 1.0 })
+            assertEquals(spreads, keys.map(TileStore.Schedule::spread), "the same for a tile every time")
+            val dueSoon = spreads.count { due(now, now - 3 * day - day / 2, 0L, now, it) == TileStore.Schedule.Due.DOWNLOAD }
+            assertTrue(dueSoon in 450..620, "$dueSoon of ${keys.size}")
+
+            Config.fullDownloadHours = 0
+            assertEquals(TileStore.Schedule.Due.CHECK, due(now - day, now - 365 * day, 0L, now, 0.0), "off: only asked")
+            assertEquals(TileStore.Schedule.Due.DOWNLOAD, due(now, now - 1000L, now - 500L, now, 0.0), "Refresh still downloads")
+        } finally {
+            Config.fullDownloadHours = hardHours
         }
     }
 

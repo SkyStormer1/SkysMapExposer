@@ -58,7 +58,7 @@ class TileCacheTest {
     @BeforeEach
     fun start() {
         checkMinutes = Config.tileCheckMinutes
-        hardHours = Config.tileHardRefreshHours
+        hardHours = Config.fullDownloadHours
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->
             val path = exchange.requestURI.path
@@ -86,7 +86,7 @@ class TileCacheTest {
     fun stop() {
         server.stop(0)
         Config.tileCheckMinutes = checkMinutes
-        Config.tileHardRefreshHours = hardHours
+        Config.fullDownloadHours = hardHours
     }
 
     private fun serve(path: String, reply: Reply) = synchronized(replies) { replies[path] = reply }
@@ -216,7 +216,7 @@ class TileCacheTest {
         val store = TileStore(blueMap(), folder, Direct())
         val tile = store.get(key, 1, 4)
         val plain = plainRequests.get()
-        tile.hardAt = System.currentTimeMillis() - Config.tileHardRefreshHours * 3_600_000L - 1
+        tile.hardAt = System.currentTimeMillis() - (Config.fullDownloadHours * 3_600_000L * (1 + TileStore.Schedule.SPREAD)).toLong() - 1
         store.get(key, 1, 4)
         assertEquals(plain + 1, plainRequests.get())
         // The refresh button: whole downloads again, as they are drawn, for tiles already in memory.

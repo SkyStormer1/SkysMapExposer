@@ -88,6 +88,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
     private var prepareMap = Config.prepareMap
+    private var fullDownloadHours = Config.fullDownloadHours
     private var seaFloorHires = Config.seaFloorHires
     private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
@@ -348,7 +349,15 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         if (Session.current == null) "Not on a server with BlueMap." else "Not preparing the map now."
     }
 
-    /** Preparing the whole map in the background, the video memory tiles hold, and the tile cache on disk. */
+    /** "Every 3 days" for 72 hours; "Off" for 0. */
+    private fun everyLabel(hours: Int): String = when {
+        hours == 0 -> "Off"
+        hours % 168 == 0 -> if (hours == 168) "Every week" else "Every ${hours / 168} weeks"
+        hours % 24 == 0 -> if (hours == 24) "Every day" else "Every ${hours / 24} days"
+        else -> "Every $hours hours"
+    }
+
+    /** Preparing the whole map in the background, how often tiles are downloaded whole, the video memory tiles hold, and the tile cache on disk. */
     private fun tilesPage(left: Int, top: Int) {
         var y = top
         val half = (WIDTH - GAP) / 2
@@ -368,7 +377,19 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         y += ROW + GAP
         prepareWidget = MultiLineTextWidget(left, y + 1, Component.literal(prepareLine()), font)
             .setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
-        y += font.lineHeight * 2 + GAP * 3
+        y += font.lineHeight * 2 + GAP * 2
+
+        val choices = (Config.FULL_DOWNLOAD_CHOICES + fullDownloadHours).distinct().sortedBy { if (it == 0) Int.MAX_VALUE else it }
+        val full = CycleButton.builder<Int>({ Component.literal(everyLabel(it)) }, fullDownloadHours)
+            .withValues(choices)
+            .create(left, y, WIDTH, ROW, Component.literal("Full download")) { _, value -> fullDownloadHours = value }
+        full.setTooltip(SafeTooltip.of(
+            "Every ${Config.tileCheckMinutes} minutes a tile on screen is only asked \"has it changed?\", and downloaded " +
+                "only if it has. This is how often each tile is downloaded whole anyway, in case a change was missed. " +
+                "Each tile comes due a little later than this, up to half as long again, so they do not all download at once " +
+                "when you join. Off: only what the checks find changed is downloaded."))
+        addRenderableWidget(full)
+        y += ROW + GAP * 3
 
         val memory = session?.let { MapExposerClient.textureMemory(it) } ?: "Texture memory: not on a server with BlueMap"
         addRenderableWidget(MultiLineTextWidget(left, y + 1, Component.literal(memory), font).setMaxWidth(WIDTH).setMaxRows(2))
@@ -739,7 +760,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun state(): String = listOf(
         enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
         playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, matchWaypoints, guessBiomes,
-        prepareMap, seaFloorHires, Config.fillOff.sorted(),
+        prepareMap, fullDownloadHours, seaFloorHires, Config.fillOff.sorted(),
         drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
             listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
         },
@@ -808,6 +829,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
         Config.prepareMap = prepareMap
+        Config.fullDownloadHours = fullDownloadHours
         if (Config.seaFloorHires && !seaFloorHires) Session.current?.seaFloor?.clear()
         Config.seaFloorHires = seaFloorHires
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }

@@ -34,8 +34,9 @@ import java.util.concurrent.ExecutorService
  *
  * Tiles on screen are asked about every [Config.tileCheckMinutes] ("has it changed?", which costs
  * nothing when the server can answer "not modified") and downloaded whole every
- * [Config.tileHardRefreshHours] whatever the checks said; empty tiles too, so newly rendered areas
- * appear. Zoomed far out nothing is asked about: there are thousands of tiles on screen, and they
+ * [Config.fullDownloadHours] whatever the checks said, each tile up to half as long again later
+ * ([Schedule.spread]) so they do not all come due together; empty tiles too, so newly rendered
+ * areas appear. Zoomed far out nothing is asked about: there are thousands of tiles on screen, and they
  * still load from the cache.
  *
  * Nothing is kept that does not decode: a reply is decoded before it is saved, and a saved tile
@@ -177,7 +178,7 @@ class TileStore(
             busy.incrementAndGet()
             workers.execute { try { load(loading) } finally { busy.decrementAndGet() } }
         } else if ((tile.state == State.READY || tile.state == State.EMPTY) && !tile.refreshing &&
-            (mayCheck || key.lod > 1) && Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now) != Schedule.Due.NO
+            (mayCheck || key.lod > 1) && Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now, Schedule.spread(key)) != Schedule.Due.NO
         ) {
             tile.refreshing = true
             val refreshing = tile
@@ -458,7 +459,7 @@ class TileStore(
     private fun refresh(tile: Tile) {
         val key = tile.key
         val now = System.currentTimeMillis()
-        val hard = Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now) == Schedule.Due.DOWNLOAD
+        val hard = Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now, Schedule.spread(key)) == Schedule.Due.DOWNLOAD
         try {
             val meta = readMeta(metaOf(key))
             val reply = if (hard || tile.state != State.READY) fetch(key)
@@ -519,7 +520,7 @@ class TileStore(
                 return true
             }
             val cheap = meta.getProperty("etag") != null || meta.getProperty("modified") != null
-            when (Schedule.due(fetchedAt, hardAt, refetchBefore, now)) {
+            when (Schedule.due(fetchedAt, hardAt, refetchBefore, now, Schedule.spread(key))) {
                 Schedule.Due.NO -> return false
                 Schedule.Due.CHECK -> if (!cheap) return false
                 Schedule.Due.DOWNLOAD -> {}
@@ -575,10 +576,30 @@ class TileStore(
     object Schedule {
         enum class Due { NO, CHECK, DOWNLOAD }
 
-        fun due(checkedAt: Long, hardAt: Long, refetchBefore: Long, now: Long): Due = when {
-            hardAt < refetchBefore || now - hardAt >= Config.tileHardRefreshHours * 3_600_000L -> Due.DOWNLOAD
-            now - checkedAt >= Config.tileCheckMinutes * 60_000L -> Due.CHECK
-            else -> Due.NO
+        /** How much later than [Config.fullDownloadHours] a tile's whole download may fall, as a share of it. */
+        const val SPREAD = 0.5
+
+        /**
+         * [spread] (0 to 1) puts the tile's whole download that far into [SPREAD] past the interval,
+         * so tiles downloaded together come due over a stretch of time instead of all at once.
+         */
+        fun due(checkedAt: Long, hardAt: Long, refetchBefore: Long, now: Long, spread: Double = 0.0): Due {
+            val hours = Config.fullDownloadHours
+            return when {
+                hardAt < refetchBefore || hours > 0 && now - hardAt >= (hours * 3_600_000L * (1 + SPREAD * spread)).toLong() -> Due.DOWNLOAD
+                now - checkedAt >= Config.tileCheckMinutes * 60_000L -> Due.CHECK
+                else -> Due.NO
+            }
+        }
+
+        /** 0 to 1, the same for [key] every time and scattered between neighbours. */
+        fun spread(key: Key): Double {
+            var h = (key.map.hashCode().toLong() shl 32) xor (key.lod.toLong() * 0x9E3779B97F4A7C15uL.toLong()) xor
+                (key.x.toLong() shl 16) xor key.z.toLong()
+            h = (h xor (h ushr 33)) * -0xae502812aa7333L
+            h = (h xor (h ushr 33)) * -0x3b314601e57a13adL
+            h = h xor (h ushr 33)
+            return (h ushr 11).toDouble() / (1L shl 53)
         }
     }
 
