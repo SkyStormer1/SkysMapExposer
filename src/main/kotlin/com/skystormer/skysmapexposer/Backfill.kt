@@ -104,7 +104,7 @@ object Backfill {
         maxZ: Double,
         wantedFactor: Int,
         budget: Budget,
-        /** The world map, not the minimap: close up, it asks for the sea floor ([SeaFloor]) if that is switched on. */
+        /** The world map, not the minimap: it asks for the sea floor ([SeaFloor]) if that is switched on, drawn close up and downloaded ahead further out. */
         seaFloor: Boolean = false,
     ): Plan? {
         val session = target.session
@@ -139,7 +139,7 @@ object Backfill {
         if (candidates.size > MAX_TILES_DRAWN) candidates.subList(MAX_TILES_DRAWN, candidates.size).clear()
 
         // Under a roof there is no sea to see the floor of.
-        val wantsFloor = seaFloor && Config.seaFloorHires && factor <= SeaFloor.CLOSE_UP && !XaeroWriter.hasCeiling(target.dimensionId)
+        val wantsFloor = seaFloor && Config.seaFloorHires && !XaeroWriter.hasCeiling(target.dimensionId)
         val now = Clock.nowMinutes()
         val pieces = ArrayList<Piece>()
         val loading = ArrayList<Int>()
@@ -163,7 +163,7 @@ object Backfill {
                 TileStore.State.READY -> ready++
             }
             session.tiles.requestFactor(tile, factor)
-            if (wantsFloor) session.seaFloor.want(tile, target.mapId, centreX, centreZ, minX, maxX, minZ, maxZ)
+            if (wantsFloor) session.seaFloor.want(tile, target.mapId, centreX, centreZ, minX, maxX, minZ, maxZ, closeUp = factor <= SeaFloor.CLOSE_UP)
 
             var mask = tile.mask
             val maskStale = mask == null || mask.contentMinute != tile.contentMinute ||

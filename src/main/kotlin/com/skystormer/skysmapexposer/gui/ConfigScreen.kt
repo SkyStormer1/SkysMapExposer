@@ -217,7 +217,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "Low res: the sea from BlueMap's flat pictures, which are one blue all over and quick to download. " +
                 "High res: close up on the world map, the sea floor under the water from BlueMap's 3D tiles, shaded the way " +
                 "Xaero shades water. Those are about 90 KB for each 32 blocks square of sea, downloaded two at a time and " +
-                "kept for a week, so a stretch of sea takes a minute or so to fill in the first time."))
+                "kept for a week. The sea on screen is downloaded at any zoom, nearest the middle first, so zooming in later " +
+                "finds it ready; the first time, a stretch of sea takes a minute or so. Needs Terrain on."))
         addRenderableWidget(floor)
         y += ROW + GAP * 3
         terrainFillRows(left, y)

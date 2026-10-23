@@ -14,10 +14,12 @@ import java.util.concurrent.Executors
  * world map shows BlueMap's picture. BlueMap's flat pictures have one colour and one height per
  * block, the water's surface, so open sea comes out one flat blue; the 3D tiles have the bed.
  *
- * Only close up (the world map at a block a pixel or more) and only the 3D tiles on screen whose
- * part of the flat picture looks like water are downloaded, nearest the middle of the screen
- * first, two at a time so the server (BlueMap usually runs on the game server) is not slowed down.
- * Of each, only what the sea floor needs is kept on disk ([FloorColumns]), for a week.
+ * Only the 3D tiles on screen whose part of the flat picture looks like water are downloaded,
+ * nearest the middle of the screen first, two at a time so the server (BlueMap usually runs on the
+ * game server) is not slowed down. Of each, only what the sea floor needs is kept on disk
+ * ([FloorColumns]), for a week. It is drawn only close up (the world map at a block a pixel or
+ * more); further out the tiles on screen are only downloaded ahead, onto disk, so zooming in on
+ * them finds them there.
  *
  * Each of BlueMap's tiles being drawn gets a [Build]: the 3D tiles it needs, and, as they come in,
  * its sea floor drawn the way Xaero draws water ([FloorColumns.xaeroWater]) into [TileStore.Tile.floor],
@@ -30,7 +32,8 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     /** A map's 3D tile layout and its textures' colours, read once. */
     private class Source(val layout: BlueMap.HiresLayout, val textures: List<FloorColumns.Texture>)
 
-    private class Build(val tile: TileStore.Tile, val map: String, val originX: Int, val originZ: Int) {
+    /** [ahead]: zoomed out, only downloading onto disk; nothing is kept in memory or drawn. */
+    private class Build(val tile: TileStore.Tile, val map: String, val originX: Int, val originZ: Int, val ahead: Boolean) {
         @Volatile var wantedAt = 0L
 
         /** The block area on screen when last drawn: `minX, minZ, maxX, maxZ`. */
@@ -79,17 +82,22 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     val waiting: Int get() = queued.size
 
     /**
-     * [tile] of BlueMap map [map] is being drawn close up, with the block area [minX]..[maxX],
-     * [minZ]..[maxZ] on screen around ([cameraX], [cameraZ]). Client thread.
+     * [tile] of BlueMap map [map] is being drawn, with the block area [minX]..[maxX], [minZ]..[maxZ]
+     * on screen around ([cameraX], [cameraZ]); [closeUp] when the sea floor is drawn at that zoom,
+     * otherwise its 3D tiles are only downloaded ahead. Client thread.
      */
-    fun want(tile: TileStore.Tile, map: String, cameraX: Double, cameraZ: Double, minX: Double, maxX: Double, minZ: Double, maxZ: Double) {
+    fun want(
+        tile: TileStore.Tile, map: String, cameraX: Double, cameraZ: Double, minX: Double, maxX: Double, minZ: Double, maxZ: Double,
+        closeUp: Boolean = true,
+    ) {
         if (closed || tile.state != TileStore.State.READY) return
         val now = System.currentTimeMillis()
         centreX = cameraX
         centreZ = cameraZ
         var build = builds[tile.key]
-        if (build == null || build.tile !== tile) {
-            build = Build(tile, map, tile.key.x * tile.tileSize, tile.key.z * tile.tileSize)
+        // Zoomed in on a tile only downloaded ahead: started again, finding its 3D tiles on disk.
+        if (build == null || build.tile !== tile || build.ahead && closeUp) {
+            build = Build(tile, map, tile.key.x * tile.tileSize, tile.key.z * tile.tileSize, ahead = !closeUp)
             builds[tile.key] = build
         }
         build.wantedAt = now
@@ -150,6 +158,10 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
                 for (hx in firstX..lastX) {
                     if (!looksWet(picture, size, build, layout, hx, hz)) continue
                     val hires = Hires(build.map, hx, hz)
+                    if (build.ahead) {
+                        if (!isKept(hires)) build.waiting.add(hires)
+                        continue
+                    }
                     when (val kept = readKept(hires)) {
                         null -> build.waiting.add(hires)
                         NOTHING -> {}
@@ -228,7 +240,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
             }
             for (build in waiting) {
                 // In before it is no longer waited for, so a build never looks finished with it still to come.
-                if (columns !== NOTHING) build.arrived.add(hires to columns)
+                if (columns !== NOTHING && !build.ahead) build.arrived.add(hires to columns)
                 build.waiting.remove(hires)
             }
         }
@@ -287,6 +299,15 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
         val none = fileOf(hires, NONE_SUFFIX)
         if (Files.exists(none) && now - Files.getLastModifiedTime(none).toMillis() < KEEP_NONE_MS) return NOTHING
         return null
+    }
+
+    /** Whether [hires] is on disk and recent enough, without reading it. */
+    private fun isKept(hires: Hires): Boolean {
+        val now = System.currentTimeMillis()
+        val data = fileOf(hires, DATA_SUFFIX)
+        if (Files.exists(data) && now - Files.getLastModifiedTime(data).toMillis() < KEEP_MS) return true
+        val none = fileOf(hires, NONE_SUFFIX)
+        return Files.exists(none) && now - Files.getLastModifiedTime(none).toMillis() < KEEP_NONE_MS
     }
 
     // The map id came from the server and becomes a folder name, so only ever a safe one.
@@ -354,7 +375,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     }
 
     companion object {
-        /** Blocks a texture pixel, at most, for the sea floor to be fetched: the world map at a block a pixel or closer. */
+        /** Blocks a texture pixel, at most, for the sea floor to be drawn: the world map at a block a pixel or closer. Further out it is only downloaded ahead. */
         const val CLOSE_UP = 1
 
         private const val DOWNLOADERS = 2
