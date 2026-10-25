@@ -24,7 +24,7 @@ object WaypointShare {
         val label: String get() = "$name  ${waypoint.x}, ${if (waypoint.isYIncluded) "${waypoint.y}, " else ""}${waypoint.z}"
 
         fun shared() = ShareFormat.SharedWaypoint(
-            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.color,
+            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
         )
     }
 
@@ -38,7 +38,7 @@ object WaypointShare {
         val entries = ArrayList<Entry>()
         for (set in world.iterableWaypointSets) {
             for (waypoint in set.waypoints) {
-                if (waypoint.isTemporary || waypoint.isServerWaypoint || waypoint.isDestination) continue
+                if (waypoint.isTemporary || waypoint.isThirdParty || waypoint.isDestination) continue
                 entries.add(Entry(setName(set.name), waypoint))
             }
         }
@@ -61,7 +61,7 @@ object WaypointShare {
             if (set.waypoints.any { it.x == w.x && it.z == w.z && it.getName() == w.name }) continue
             // Xaero's colours by number: one past the end would break its waypoint screens.
             val colour = w.color.coerceIn(0, WaypointColor.values().lastIndex)
-            val waypoint = Waypoint(w.x, w.y, w.z, w.name, w.initials.ifEmpty { w.name.take(1).uppercase() }, colour)
+            val waypoint = Waypoint(w.x, w.y, w.z, w.name, w.initials.ifEmpty { w.name.take(1).uppercase() }, WaypointColor.values()[colour])
             waypoint.isYIncluded = w.yIncluded
             set.add(waypoint)
             added++

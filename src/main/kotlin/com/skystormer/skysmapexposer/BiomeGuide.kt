@@ -13,7 +13,7 @@ import java.util.zip.GZIPOutputStream
 /**
  * Guesses the biome of blocks nobody has mapped, from BlueMap's lowres picture alone.
  *
- * BlueMap publishes no biomes, and the world's seed is not to be had. But BlueMap draws biomes —
+ * BlueMap publishes no biomes. But it draws them —
  * grass, leaves and water tinted by the biome, the lie of the land — so the guide compares a
  * block's [BiomeFeatures] with blocks whose biome is known, and takes the biome most of the
  * nearest [K] of them are in: nearest-neighbour matching, no more. The known blocks come with the

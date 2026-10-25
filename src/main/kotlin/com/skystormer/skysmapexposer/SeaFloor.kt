@@ -70,6 +70,8 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
 
     /** 3D tiles to download, with the builds waiting on each; the downloaders take the nearest. */
     private val queued = ConcurrentHashMap<Hires, MutableSet<Build>>()
+    // A Java object, which Kotlin's Any is not: the downloaders wait on it.
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     private val lock = Object()
     @Volatile private var closed = false
     @Volatile private var centreX = 0.0
