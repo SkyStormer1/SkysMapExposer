@@ -54,7 +54,7 @@ A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b
 - **Copies coordinates.** Right-click anywhere on the world map, or any marker or player, and
   choose **Copy coordinates**. The dimension comes with them.
 - **Keeps up live.** Terrain on screen is checked for changes every 15 minutes (and downloaded
-  whole every 4 hours), markers every 30 seconds,
+  whole every 3 days), markers every 30 seconds,
   players every 2 seconds.
 - **Downloads BlueMap into your own map, if you ask it to.** Write BlueMap's terrain into Xaero's
   map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See
@@ -124,7 +124,8 @@ Hover over any setting in the game for an explanation.
 | **Remove server** | Forgets the server shown. |
 | **Prepare map** (Tiles tab) | After you join, downloads every tile BlueMap has, a few a second, and makes it ready to draw, so the map is ready before you open it. On as the mod comes. It starts from the middle of the map and works outwards, the dimension you are in first; tiles you are looking at always come first, and it pauses while the game is busy. **Stop preparing** / **Prepare now** stop it or go over the map again (`/mapexposer prepare` and `/mapexposer prepare cancel` too). How far it has got shows at the top of the world map. |
 | **Clear tile cache** (Tiles tab) | Deletes this server's BlueMap tiles kept on disk; they download again as needed. The tab also shows how much the cache takes, here and for all servers, and the video memory tiles hold. Your own map is not touched. |
-| **Experimental** tab | **Far terrain from BlueMap**; see below. |
+| **Full download** (Tiles tab) | How often each tile is downloaded whole, even if BlueMap says it has not changed: 4 hours to a week, or off. Every 3 days as the mod comes. |
+| **Experimental** tab | **Far terrain from BlueMap**; see below. **Sea floor**: **Low res** as the mod comes; **High res** draws the sea bed under the water from BlueMap's 3D tiles on the world map close up, shaded like Xaero's water. |
 | **Done** / **Cancel** | **Done** (or Escape) saves, once everything checks out: a server without a BlueMap address, a mistyped season date or a "Replace after" that is not a number is pointed out instead, and nothing is saved until it is fixed. **Cancel** leaves without saving, asking first if anything was changed. Only changing the server you are on starts the map over; everything else takes effect as it is. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
