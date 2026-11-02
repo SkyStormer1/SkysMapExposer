@@ -85,7 +85,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapMarkerScale = Config.minimapMarkerScale
     private var otherDimensionCoords = Config.otherDimensionCoords
     private var minimapBiomes = Config.minimapBiomes
-    private var pings = Config.pings
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
     private var prepareMap = Config.prepareMap
@@ -155,7 +154,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         minimapMarkerScale = 1f
         otherDimensionCoords = true
         minimapBiomes = true
-        pings = true
         matchWaypoints = true
         guessBiomes = true
         staleDays = formatDays(7.0)
@@ -454,10 +452,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(toggle(left, y, half, "Other dimension XZ", otherDimensionCoords,
             "On the world map, under the coordinates of the block under the mouse: the same block in the other dimension. " +
                 "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth).") { otherDimensionCoords = it })
-        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP * 2 - PINGS_WIDTH, "Minimap tint", minimapBiomes,
+        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP, "Biomes on minimap", minimapBiomes,
             "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map.") { minimapBiomes = it })
-        addRenderableWidget(toggle(left + WIDTH - PINGS_WIDTH, y, PINGS_WIDTH, "Pings", pings,
-            "Show the spots players you trust ping, as a flashing beam. Trust someone in the player list.") { pings = it })
         y += ROW + GAP
 
         addRenderableWidget(toggle(left, y, half, "Waypoints follow map", matchWaypoints,
@@ -765,7 +761,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
      */
     private fun state(): String = listOf(
         enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
-        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, pings, matchWaypoints, guessBiomes,
+        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, matchWaypoints, guessBiomes,
         prepareMap, fullDownloadHours, seaFloorHires, Config.fillOff.sorted(),
         drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
             listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
@@ -832,7 +828,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.minimapMarkerScale = minimapMarkerScale
         Config.otherDimensionCoords = otherDimensionCoords
         Config.minimapBiomes = minimapBiomes
-        Config.pings = pings
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
         Config.prepareMap = prepareMap
@@ -887,7 +882,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private companion object {
         const val WIDTH = 300
-        private const val PINGS_WIDTH = 60
         const val ROW = 20
         const val GAP = 2
         const val NEW = -1

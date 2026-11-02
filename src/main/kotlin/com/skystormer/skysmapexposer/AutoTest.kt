@@ -19,7 +19,6 @@ import java.nio.file.Path
  *
  * One step a line; `#` starts a comment:
  * - `wait <seconds>`
- * - `waitplayer <name>` waits until that player is on the server, to keep two test clients in step
  * - `cmd <command>` runs a command as if typed in chat, this mod's client commands included
  * - `chat <text>` says something
  * - `look <yaw> <pitch>` turns you to look that way
@@ -70,12 +69,6 @@ object AutoTest {
         try {
             when (verb) {
                 "wait" -> waitUntil = now + (rest.toDouble() * 1000).toLong()
-                "waitplayer" -> {
-                    if (ChatShare.others().none { it == rest }) {
-                        queue.addFirst(step)
-                        waitUntil = now + 1_000L
-                    }
-                }
                 "cmd" -> player.connection.sendCommand(rest.removePrefix("/"))
                 "chat" -> player.connection.sendChat(rest)
                 "look" -> {

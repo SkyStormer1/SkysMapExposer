@@ -12,7 +12,7 @@ import java.util.concurrent.Executor
  *   Where a chat plugin delivers `/msg` as a system message ([system]), the sender is read from a
  *   whisper line of a known format ([WHISPERS]) and must be online; the game cannot check it, so
  *   such shares are labelled unverified. Either way the name inside the share must be the sender's.
- * - Only a valid part, ask, answer or ping is hidden from chat; anything else carrying [MARKER] stays.
+ * - Only a valid part, ask or answer is hidden from chat; anything else carrying [MARKER] stays.
  * - Asks are answered only as private messages, at most [ANSWERS_PER_MINUTE] a minute.
  * - A batch is limited before and after it is unpacked ([MAX_MESSAGES], [ShareFormat.MAX_BATCH]),
  *   few transfers are kept half done, and batches are unpacked off the client thread.
@@ -33,8 +33,6 @@ class ShareInbox(
     /** The client thread. */
     private val onClient: Executor,
     private val clock: () -> Long = System::currentTimeMillis,
-    /** A ping, whoever it is from: whether to believe them is [PlayerPings]'s to decide. */
-    private val pinged: (ReceivedPing) -> Unit = {},
 ) {
     /** Where a chat message came from, as the game tells it. */
     enum class Kind {
@@ -52,8 +50,6 @@ class ShareInbox(
         val shareId: Int,
         val waypoints: List<ShareFormat.SharedWaypoint>,
     )
-
-    class ReceivedPing(val from: String, val verified: Boolean, val dimensionId: String, val x: Int, val y: Int, val z: Int)
 
     private class Incoming(val from: String, val verified: Boolean, val total: Int, now: Long) {
         val parts = arrayOfNulls<String>(total)
@@ -120,14 +116,6 @@ class ShareInbox(
             ANSWER -> {
                 if (!rest.drop(1).equals(from, ignoreCase = true)) return false
                 withMod.add(from.lowercase())
-                return true
-            }
-            PING -> {
-                val (x, y, z, dimension) = PING_BODY.matchEntire(rest)?.destructured ?: return false
-                val at = listOf(x, y, z).map { it.toIntOrNull() ?: return false }
-                if (at[0] !in -MAX_COORDINATE..MAX_COORDINATE || at[2] !in -MAX_COORDINATE..MAX_COORDINATE) return false
-                withMod.add(from.lowercase())
-                pinged(ReceivedPing(from, verified, dimension, at[0], at[1], at[2]))
                 return true
             }
         }
@@ -222,8 +210,6 @@ class ShareInbox(
         /** After [MARKER]: "would you take a map?", readable by anyone; and the hidden answer. */
         const val ASK = '?'
         const val ANSWER = '!'
-        /** After [MARKER]: a ping ([pingBody]), which reads as one to anyone without this mod too. */
-        const val PING = '*'
         const val ANSWER_WAIT = 15_000L
         const val ANSWERS_PER_MINUTE = 3
         private const val MINUTE = 60_000L
@@ -270,14 +256,6 @@ class ShareInbox(
         fun validName(name: String) = NAME.matches(name)
 
         private val DIMENSION = Regex("[a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,64}")
-
-        private val PING_BODY = Regex("""\* ping at (-?\d{1,8}) (-?\d{1,4}) (-?\d{1,8}) in ($DIMENSION)""")
-
-        /** Further out than the world goes. */
-        private const val MAX_COORDINATE = 30_000_000
-
-        /** The private message that pings block ([x], [y], [z]) of [dimension]. */
-        fun pingBody(x: Int, y: Int, z: Int, dimension: String) = "$MARKER$PING ping at $x $y $z in $dimension"
 
         /** The messages, without `msg <name> `, that carry [bytes] as transfer [id] to [to]. */
         fun messages(to: String, bytes: ByteArray, id: Int): List<String> {

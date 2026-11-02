@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.mojang.blaze3d.platform.InputConstants
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
@@ -15,11 +14,9 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
-import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.network.chat.Component
@@ -38,14 +35,6 @@ object MapExposerClient : ClientModInitializer {
 
     /** The heads of locked players, as a HUD element of this mod's own. */
     private val BEACON: Identifier = Identifier.fromNamespaceAndPath("skysmapexposer", "locked_players")
-
-    /** Pings the block you are looking at. Unbound until you pick a key in Controls. */
-    private val pingKey = KeyMapping(
-        "key.skysmapexposer.ping",
-        InputConstants.Type.KEYSYM,
-        InputConstants.UNKNOWN.value,
-        KeyMapping.Category.register(Identifier.fromNamespaceAndPath("skysmapexposer", "map_exposer")),
-    )
 
     /**
      * Whether the mixin made it into Xaero's map screen. It is optional, so that an unsupported
@@ -94,7 +83,6 @@ object MapExposerClient : ClientModInitializer {
 
     override fun onInitializeClient() {
         Config.load()
-        KeyMappingHelper.registerKeyMapping(pingKey)
 
         // Under the whole HUD, like anything else out in the world: the minimap (Xaero's draws
         // just after this point), crosshair, hotbar, health and XP bars and chat all go over it.
@@ -113,7 +101,6 @@ object MapExposerClient : ClientModInitializer {
             BlueMapDownload.forget()
             com.skystormer.skysmapexposer.terrain.TerrainFill.forget()
             ChatShare.forget()
-            PlayerPings.forget()
             TerrainFiles.forget()
             MapView.forget()
             MapBackup.leave()
@@ -164,8 +151,6 @@ object MapExposerClient : ClientModInitializer {
             BlueMapDownload.tick()
             MapBackup.tick()
             ChatShare.tick()
-            PlayerPings.tick()
-            while (pingKey.consumeClick()) MapMenus.say(PlayerPings.sendLookedAt())
             TerrainFiles.tick()
             MapPrep.tick(Session.current)
             AutoTest.tick(client)
@@ -189,26 +174,6 @@ object MapExposerClient : ClientModInitializer {
                     .then(ClientCommands.literal("off").executes { setEnabled(it, false) })
                     .then(ClientCommands.literal("reload").executes(::reload))
                     .then(ClientCommands.literal("players").executes(::players))
-                    .then(
-                        ClientCommands.literal("ping")
-                            .executes { say(it, PlayerPings.sendLookedAt()) }
-                            .then(ClientCommands.argument("x", IntegerArgumentType.integer())
-                                .then(ClientCommands.argument("z", IntegerArgumentType.integer()).executes(::ping)))
-                    )
-                    .then(
-                        ClientCommands.literal("trust")
-                            .executes(::trusted)
-                            .then(ClientCommands.argument("player", StringArgumentType.word())
-                                .suggests { _, builder -> ChatShare.others().forEach(builder::suggest); builder.buildFuture() }
-                                .executes { setTrusted(it, true) })
-                    )
-                    .then(
-                        ClientCommands.literal("untrust").then(
-                            ClientCommands.argument("player", StringArgumentType.word())
-                                .suggests { _, builder -> PlayerPings.trustedOnline().forEach(builder::suggest); builder.buildFuture() }
-                                .executes { setTrusted(it, false) }
-                        )
-                    )
                     .then(
                         ClientCommands.literal("download")
                             .then(ClientCommands.literal("all").executes { download(it, unexploredOnly = false) })
@@ -472,30 +437,6 @@ object MapExposerClient : ClientModInitializer {
         val minecraft = Minecraft.getInstance()
         minecraft.execute { minecraft.gui.setScreen(PlayerListScreen(null)) }
         return 1
-    }
-
-    private fun say(context: CommandContext<FabricClientCommandSource>, message: String): Int {
-        context.source.sendFeedback(Component.literal(message))
-        return 1
-    }
-
-    /** Pings a block of the dimension you are in. */
-    private fun ping(context: CommandContext<FabricClientCommandSource>): Int {
-        val dimension = dimensionOf(context.source.level)
-        return say(context, PlayerPings.send(dimension, IntegerArgumentType.getInteger(context, "x"), IntegerArgumentType.getInteger(context, "z")))
-    }
-
-    /** Who you trust among those online. Anyone else stays trusted, but only shows here once they are on. */
-    private fun trusted(context: CommandContext<FabricClientCommandSource>): Int {
-        val online = PlayerPings.trustedOnline()
-        return say(context, if (online.isEmpty()) "Nobody you trust is online; /mapexposer trust <player> adds someone" else "Trusted and online: ${online.joinToString()}")
-    }
-
-    private fun setTrusted(context: CommandContext<FabricClientCommandSource>, trusted: Boolean): Int {
-        val wanted = StringArgumentType.getString(context, "player")
-        val (uuid, name) = PlayerPings.online(wanted) ?: return say(context, "$wanted is not on the server")
-        PlayerPings.setTrusted(uuid, trusted)
-        return say(context, if (trusted) "You and $name can ping each other once they trust you too" else "No longer trusting $name")
     }
 
     /**

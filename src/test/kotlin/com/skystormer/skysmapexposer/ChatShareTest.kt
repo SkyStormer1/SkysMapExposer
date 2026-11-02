@@ -20,7 +20,6 @@ class ChatShareTest {
         val commands = ArrayList<String>()
         val received = ArrayList<ShareInbox.Received>()
         val failures = ArrayList<Throwable>()
-        val pings = ArrayList<ShareInbox.ReceivedPing>()
         val players = online.toList()
         val inbox = ShareInbox(
             me = { name },
@@ -31,44 +30,7 @@ class ChatShareTest {
             decode = Executor { it.run() },
             onClient = Executor { it.run() },
             clock = { now },
-            pinged = { pings.add(it) },
         )
-    }
-
-    @Test
-    fun `a ping in a private message is taken in and hidden`() {
-        val client = Client("Me", "Friend")
-        assertTrue(client.inbox.chat(Kind.PRIVATE, "Friend", ShareInbox.pingBody(-120, 64, 7, "minecraft:the_nether")))
-        val ping = client.pings.single()
-        assertEquals("Friend", ping.from)
-        assertTrue(ping.verified)
-        assertEquals(listOf(-120, 64, 7), listOf(ping.x, ping.y, ping.z))
-        assertEquals("minecraft:the_nether", ping.dimensionId)
-    }
-
-    @Test
-    fun `a ping in public chat is ignored and stays in chat`() {
-        val client = Client("Me", "Friend")
-        assertFalse(client.inbox.chat(Kind.OTHER, "Friend", ShareInbox.pingBody(1, 2, 3, "minecraft:overworld")))
-        assertTrue(client.pings.isEmpty())
-    }
-
-    @Test
-    fun `a ping read from a chat plugin's whisper line is unverified`() {
-        val client = Client("Me", "Friend")
-        assertTrue(client.inbox.system("[Friend -> me] " + ShareInbox.pingBody(1, 2, 3, "minecraft:overworld")))
-        assertFalse(client.pings.single().verified)
-    }
-
-    @Test
-    fun `a malformed or far out ping stays in chat`() {
-        val client = Client("Me", "Friend")
-        for (body in listOf(
-            "$MARKER* ping at 1 2 in minecraft:overworld",
-            "$MARKER* ping at 1 2 3 in Not A Dimension",
-            "$MARKER* ping at 99999999 2 3 in minecraft:overworld",
-        )) assertFalse(client.inbox.chat(Kind.PRIVATE, "Friend", body), body)
-        assertTrue(client.pings.isEmpty())
     }
 
     private fun ask(from: String) = "$MARKER?$from: would like to share map waypoints with you using the mod Sky's Map Exposer."
