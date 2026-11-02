@@ -39,6 +39,12 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
     /** A player BlueMap reports in this map's dimension. */
     class Player(val uuid: java.util.UUID, label: String, x: Double, y: Double, z: Double) : Pin(label, x, y, z)
 
+    /** A spot a trusted player pinged ([PlayerPings]): their face under a flashing beam. */
+    class Ping(val uuid: java.util.UUID, label: String, x: Double, y: Double, z: Double, val startedAt: Long) : Pin(label, x, y, z) {
+        /** The same ping in the dimension whose coordinates are [scale] times these. */
+        fun scaled(scale: Double) = Ping(uuid, label, x * scale, y, z * scale, startedAt)
+    }
+
     /**
      * @property points x and z of each corner, in order, two floats per corner.
      * @property closed whether the last corner joins back to the first.

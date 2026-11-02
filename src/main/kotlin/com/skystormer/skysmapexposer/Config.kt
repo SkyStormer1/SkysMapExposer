@@ -11,6 +11,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 /**
  * `config/skysmapexposer.json`: which servers have a BlueMap, where, and when your own map counts as
@@ -137,6 +138,12 @@ object Config {
     /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
     var minimapBiomes: Boolean = true
 
+    /** Whether pings from trusted players are shown ([PlayerPings]). */
+    var pings: Boolean = true
+
+    /** The players whose pings you take and who get yours, by server address as [normalise] writes it. */
+    val trusted: MutableMap<String, MutableSet<UUID>> = HashMap()
+
     /**
      * How often a tile on screen is asked about on the server ("has it changed?", which costs
      * nothing when the server can say "not modified"), and how often it is downloaded whole anyway
@@ -259,6 +266,14 @@ object Config {
             read("barTop") { barTop = it.asInt }
             read("barRows") { barRows = it.asInt.coerceIn(1, 40) }
             read("minimapBiomes") { minimapBiomes = it.asBoolean }
+            read("pings") { pings = it.asBoolean }
+            read("trusted") { element ->
+                val read = element.asJsonObject.entrySet().associate { (server, players) ->
+                    server to players.asJsonArray.mapTo(LinkedHashSet()) { UUID.fromString(it.asString) }
+                }
+                trusted.clear()
+                trusted.putAll(read)
+            }
             read("fillOff") { element ->
                 val names = element.asJsonArray.map { it.asString }
                 fillOff.clear()
@@ -353,6 +368,12 @@ object Config {
         json.addProperty("barTop", barTop)
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
+        json.addProperty("pings", pings)
+        json.add("trusted", JsonObject().also { servers ->
+            trusted.forEach { (server, players) ->
+                servers.add(server, JsonArray().also { list -> players.forEach { list.add(it.toString()) } })
+            }
+        })
         json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
         json.addProperty("barScale", barScale)
         json.addProperty("barExtra", barExtra)

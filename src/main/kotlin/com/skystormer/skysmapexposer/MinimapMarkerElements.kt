@@ -25,7 +25,7 @@ import xaero.lib.client.graphics.XaeroBufferProvider
  * [Config.minimapPlayers], and they keep their size at any distance, because a head shrunk to a few
  * pixels tells you nothing. An ordinary one is drawn only while it falls inside the minimap, so the
  * whole server is not stacked around the edge; one you have locked on to is pinned to the edge like
- * a waypoint, so you can always see which way they are.
+ * a waypoint, so you can always see which way they are. So is a ping ([PlayerPings]) while it flashes.
  *
  * Only touched when Xaero's Minimap is installed.
  */
@@ -66,7 +66,8 @@ object MinimapMarkerElements {
         override fun getInteractionBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
         override fun getRenderBoxLeft(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin)
         override fun getRenderBoxRight(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
-        override fun getRenderBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin)
+        override fun getRenderBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int =
+            -halfOf(pin) - if (pin is Markers.Ping) (BEAM_HEIGHT * sizeOf(pin)).toInt() else 0
         override fun getRenderBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
         override fun getLeftSideLength(pin: Markers.Pin, minecraft: Minecraft): Int = minecraft.font.width(pin.label) + 9
         override fun getMenuName(pin: Markers.Pin): String = pin.label
@@ -80,7 +81,7 @@ object MinimapMarkerElements {
         MinimapElementRenderer<Markers.Pin, Context>(reader, provider, context) {
 
         override fun shouldRender(location: MinimapElementRenderLocation): Boolean =
-            (Config.showMarkers || playersShown()) &&
+            (Config.showMarkers || playersShown() || PlayerPings.showing) &&
                 (location == MinimapElementRenderLocation.OVER_MINIMAP || location == MinimapElementRenderLocation.IN_MINIMAP)
 
         override fun preRender(info: MinimapElementRenderInfo, buffers: XaeroBufferProvider, renderers: MultiTextureRenderTypeRendererProvider) {
@@ -105,6 +106,7 @@ object MinimapMarkerElements {
             pose.translate(partialX, partialY, 0.0)
             val size = sizeOf(pin)
             pose.scale(scale * size, scale * size, 1f)
+            if (pin is Markers.Ping) PinDrawing.beam(pin, HALF, BEAM_HEIGHT) { x1, y1, x2, y2, colour -> graphics.fill(x1, y1, x2, y2, colour) }
             val icon = MarkerElements.iconFor(pin)
             val renderer = context.iconRenderer
             if (icon != null && renderer != null) {
@@ -134,6 +136,7 @@ object MinimapMarkerElements {
                 Config.minimapPlayers == Config.MinimapPlayers.ALWAYS ||
                 LockedPlayers.loaded(pin.uuid) == null
             )
+        is Markers.Ping -> true
     }
 
     /**
@@ -141,7 +144,7 @@ object MinimapMarkerElements {
      * with distance; players keep their size, since the point of them is to be read far away.
      */
     fun sizeOf(pin: Markers.Pin): Float = when (pin) {
-        is Markers.Player -> PLAYER * Config.minimapHeadScale
+        is Markers.Player, is Markers.Ping -> PLAYER * Config.minimapHeadScale
         is Markers.Point -> scaleFor(pin) * Config.minimapMarkerScale
     }
 
@@ -187,4 +190,7 @@ object MinimapMarkerElements {
     }
 
     private const val HALF = MarkerElements.HALF
+
+    /** How far a ping's beam rises above its head, before a pin's size is applied. */
+    private const val BEAM_HEIGHT = 40
 }

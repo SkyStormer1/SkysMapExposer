@@ -29,6 +29,9 @@ import java.util.concurrent.ThreadLocalRandom
  * readable line saying what this is; their client, if it has the mod, hides it and answers, and
  * only then does the rest follow. With no answer, nothing more is sent.
  *
+ * Pings ([PlayerPings]) go the same way at the same pace, one message each, without asking first:
+ * they only go to players you put on your trusted list, and read as a ping if they lack the mod.
+ *
  * Receiving ([ShareInbox]): only private messages count, from the player the share names. Valid
  * parts are hidden from chat; a button adds the waypoints to yours.
  */
@@ -53,15 +56,19 @@ object ChatShare {
         var messages: List<String>? = null
         var next = 0
         var sent = 0
-        var ticks = 0
-        var lastSent = -CLOCK_STOPPED
-        /** The world's clock at the last message, which follows the server's ticks. */
-        var lastSentTime = Long.MIN_VALUE / 2
         /** When [to] was asked whether they have the mod; 0 before. */
         var askedAt = 0L
     }
 
     private var outgoing: Outgoing? = null
+
+    /** Pings waiting for their turn: who to, and the message. */
+    private val pings = ArrayDeque<Pair<String, String>>()
+
+    private var ticks = 0
+    private var lastSent = -CLOCK_STOPPED
+    /** The world's clock at the last message, which follows the server's ticks. */
+    private var lastSentTime = Long.MIN_VALUE / 2
 
     val sending: Boolean get() = outgoing != null
 
@@ -94,9 +101,16 @@ object ChatShare {
 
     private fun busy() = "Already sharing with someone; /mapexposer share cancel stops it"
 
+    /** Queues ping [body] for each of [to]; false if the last ping is still going out. */
+    fun ping(to: List<String>, body: String): Boolean {
+        if (pings.isNotEmpty()) return false
+        to.mapTo(pings) { it to body }
+        return true
+    }
+
     /** Watches the server's own messages while sharing: being muted or the server having no /msg stops it. */
     private fun watch(text: String) {
-        if (outgoing == null) return
+        if (outgoing == null && pings.isEmpty()) return
         if (MARKER in text || MapMenus.saying) return
         when {
             MUTED.containsMatchIn(text) -> stop("Sharing stopped: the server muted you (\"$text\")")
@@ -114,29 +128,52 @@ object ChatShare {
     /** Leaving the server: nothing more can be sent, and what was half received is useless. */
     fun forget() {
         outgoing = null
+        pings.clear()
         inbox.forget()
         receivedWaypoints.clear()
     }
 
     fun tick() {
+        ticks++
+        tickPings()
         outgoing?.let { tickOutgoing(it) }
         inbox.tick()
     }
 
     private fun stop(message: String) {
         outgoing = null
+        pings.clear()
         MapMenus.say(message)
         Log.info("Sharing: {}", message)
+    }
+
+    /** Whether it is long enough since the last message, of a share or a ping, for another. */
+    private fun mayTalk(): Boolean {
+        val since = ticks - lastSent
+        val time = Minecraft.getInstance().level?.gameTime ?: 0L
+        return since >= TICKS_PER_MESSAGE && (time - lastSentTime >= TICKS_PER_MESSAGE || since >= CLOCK_STOPPED)
+    }
+
+    /** Sends [body] to [to] by private message, remembering it so its echo is hidden. */
+    private fun whisper(to: String, body: String, connection: ClientPacketListener) {
+        inbox.sent(body)
+        connection.sendCommand("msg $to $body")
+        lastSent = ticks
+        lastSentTime = Minecraft.getInstance().level?.gameTime ?: 0L
+    }
+
+    private fun tickPings() {
+        if (pings.isEmpty() || !mayTalk()) return
+        val connection = Minecraft.getInstance().player?.connection ?: return
+        val (to, body) = pings.removeFirst()
+        if (others().any { it == to }) whisper(to, body, connection)
     }
 
     private fun tickOutgoing(out: Outgoing) {
         val minecraft = Minecraft.getInstance()
         val connection = minecraft.player?.connection ?: return
         val source = out.source
-        out.ticks++
-        val time = minecraft.level?.gameTime ?: 0L
-        val since = out.ticks - out.lastSent
-        val mayTalk = since >= TICKS_PER_MESSAGE && (time - out.lastSentTime >= TICKS_PER_MESSAGE || since >= CLOCK_STOPPED)
+        val mayTalk = mayTalk()
         if (others().none { it == out.to }) return stop("Sharing stopped: ${out.to} left the server")
 
         // First: does the other end have this mod? Asked once, before anything is read.
@@ -146,11 +183,8 @@ object ChatShare {
                 // The one line someone without the mod may see, so it says what it is.
                 val body = "$MARKER$ASK${me()}: would like to share map ${source.label} with you using the mod " +
                     "Sky's Map Exposer. You can ignore this."
-                inbox.sent(body)
-                connection.sendCommand("msg ${out.to} $body")
+                whisper(out.to, body, connection)
                 out.askedAt = now
-                out.lastSent = out.ticks
-                out.lastSentTime = time
                 MapMenus.say("Checking that ${out.to} has Sky's Map Exposer…")
             } else if (out.askedAt != 0L && now - out.askedAt > ANSWER_WAIT) {
                 stop("${out.to} did not answer, so they probably do not have Sky's Map Exposer; nothing was sent")
@@ -177,7 +211,8 @@ object ChatShare {
             return
         }
         if (!mayTalk) return
-        send(out, connection, messages[out.next++], time)
+        whisper(out.to, messages[out.next++], connection)
+        out.sent++
         if (out.next < messages.size) {
             if (minecraft.gui.screen() == null || out.next % 4 == 0) {
                 MapMenus.say("Sharing ${source.label} with ${out.to}: message ${out.next} of ${messages.size}")
@@ -187,14 +222,6 @@ object ChatShare {
         // That batch is out; on to the next.
         out.messages = null
         out.next = 0
-    }
-
-    private fun send(out: Outgoing, connection: ClientPacketListener, body: String, time: Long) {
-        inbox.sent(body)
-        connection.sendCommand("msg ${out.to} $body")
-        out.lastSent = out.ticks
-        out.lastSentTime = time
-        out.sent++
     }
 
     // ---- receiving ----
@@ -218,6 +245,7 @@ object ChatShare {
         },
         decode = unpacking,
         onClient = { Minecraft.getInstance().execute(it) },
+        pinged = PlayerPings::received,
     )
 
     fun register() {
@@ -254,10 +282,22 @@ object ChatShare {
         return "${text(args[0])} whispers to you: ${text(args[1])}"
     }
 
+    private fun keepReceived(id: Int, from: String, dimensionId: String, waypoints: List<ShareFormat.SharedWaypoint>) {
+        receivedWaypoints.remove(id)
+        receivedWaypoints[id] = ReceivedWaypoints(from, dimensionId, waypoints)
+        while (receivedWaypoints.size > KEEP_RECEIVED) receivedWaypoints.remove(receivedWaypoints.keys.first())
+    }
+
+    /** Keeps [waypoints] for [addWaypoints], as a share is kept. Returns the id its button asks for. */
+    fun offerWaypoints(from: String, dimensionId: String, waypoints: List<ShareFormat.SharedWaypoint>): Int {
+        val id = ThreadLocalRandom.current().nextInt(1 shl 30)
+        keepReceived(id, from, dimensionId, waypoints)
+        return id
+    }
+
     private fun waypointsArrived(received: ShareInbox.Received) {
         val waypoints = received.waypoints
-        receivedWaypoints[received.shareId] = ReceivedWaypoints(received.from, received.dimensionId, waypoints)
-        while (receivedWaypoints.size > KEEP_RECEIVED) receivedWaypoints.remove(receivedWaypoints.keys.first())
+        keepReceived(received.shareId, received.from, received.dimensionId, waypoints)
         Log.info(
             "Received {} waypoints of the {} from {} ({}), share {}", waypoints.size, received.dimensionId, received.from,
             if (received.verified) "verified" else "unverified", received.shareId,
