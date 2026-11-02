@@ -7,7 +7,6 @@ import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.MapView
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Markers
-import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
@@ -23,7 +22,7 @@ import kotlin.math.hypot
 
 /**
  * Everyone BlueMap can see on this server, like Xaero's waypoint list: search by name, your
- * dimension or all of them, jump the world map to someone, trust them for pings, and lock on to them.
+ * dimension or all of them, jump the world map to someone, and lock on to them.
  *
  * Opened from the Players button on the world map, its right-click menu, the settings screen, or
  * `/mapexposer players`. The list refreshes itself while it is open, because people move; the
@@ -153,7 +152,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         val visible = players.drop(page * rows).take(rows)
         // Rebuilding every tick would flicker the tooltips, so it only happens on a real change.
         val signature = visible.joinToString("|") {
-            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}${PlayerPings.isTrusted(it.player.uuid)}"
+            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}"
         } + "/$pages/$page"
         if (!force && signature == shown) return
         shown = signature
@@ -180,7 +179,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         // Go to moves the open world map, or opens one; either way only for the dimension it shows.
         val mapDimension = MarkerElements.worldMapDimension() ?: myDimension()
         val buttonWidth = 44
-        val textWidth = listWidth - (buttonWidth + GAP) * 3
+        val textWidth = listWidth - (buttonWidth + GAP) * 2
 
         // The columns are as wide as the widest thing going in them, measured over every player the
         // list holds rather than just this page, so paging does not shuffle them sideways.
@@ -220,21 +219,6 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 ))
                 .build()
             row(go)
-            x += buttonWidth + GAP
-
-            val trusted = PlayerPings.isTrusted(player.uuid)
-            row(
-                Button.builder(Component.literal(if (trusted) "Untrust" else "Trust")) {
-                    PlayerPings.setTrusted(player.uuid, !trusted)
-                    refreshRows(force = true)
-                }
-                    .bounds(x, y, buttonWidth, ROW)
-                    .tooltip(SafeTooltip.of(
-                        if (trusted) "Stop taking pings from ${player.label} and sending yours to them."
-                        else "Take pings from ${player.label} and send yours to them, by private message."
-                    ))
-                    .build()
-            )
             x += buttonWidth + GAP
 
             val lock = Button.builder(Component.literal(if (locked) "Unlock" else "Lock")) {

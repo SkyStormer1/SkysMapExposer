@@ -199,5 +199,5 @@ object Waypoints {
     private const val NETHER_Y = 128
 
     /** Overworld blocks to one Nether block. */
-    const val NETHER_SCALE = 8
+    private const val NETHER_SCALE = 8
 }
