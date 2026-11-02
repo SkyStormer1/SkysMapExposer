@@ -19,10 +19,12 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.FilterInputStream
+import java.io.IOException
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.BitSet
 import java.util.concurrent.ThreadLocalRandom
 import java.util.zip.CRC32
 import java.util.zip.Deflater
@@ -30,26 +32,31 @@ import java.util.zip.DeflaterOutputStream
 import java.util.zip.InflaterInputStream
 
 /**
- * What a shared map is made of, however it travels — private messages ([ChatShare]) or a file
- * ([TerrainFiles]): your Xaero map read in batches ([RegionReader]), each batch packed as one
+ * What is shared, however it travels: terrain by file ([TerrainFiles]), your Xaero map read in
+ * batches ([RegionReader]); waypoints by private message ([ChatShare]). Each batch is packed as one
  * compressed block behind a CRC-32 and its length, so one changed or cut short on the way is turned
  * away rather than misread.
  *
  * A batch holds its [format], a [Header] (who, which dimension, which share, which batch of how
  * many, the whole area), the chunk count, then what the format carries:
- * - [BIOMES]: the biomes as one grid of 4×4-block cells, Minecraft's own resolution ([BiomeGrid]).
  * - [TERRAIN]: every block exactly as Xaero keeps it ([TerrainBody]).
  * - [WAYPOINTS]: waypoints, with their names, letters, colours and coordinates.
  */
 object ShareFormat {
 
     const val TERRAIN = 4
-    const val BIOMES = 5
+    // 5 was biomes, shared in chat until 1.9.2; not reused, so an old client's biomes are turned away.
     const val WAYPOINTS = 6
 
     /** Chunks per side, at most, of an area shared. */
     const val MAX_SIDE = 512
     const val MAX_WAYPOINTS = 1000
+    /** The most a batch shared in chat may unpack to: [MAX_WAYPOINTS] of the longest waypoints fit. */
+    const val MAX_BATCH = 256 * 1024
+    private const val MAX_NAME = 64
+    private const val MAX_INITIALS = 3
+    /** Xaero's waypoint colours (`WaypointColor`), 0 to 20. */
+    const val WAYPOINT_COLOURS = 21
     private const val MAX_OVERLAYS = 16
 
     /** A chunk rectangle, inclusive. */
@@ -103,46 +110,6 @@ object ShareFormat {
         abstract fun chunk(cx: Int, cz: Int, blocks: Array<MapBlock?>)
 
         abstract fun pack(header: Header): ByteArray
-    }
-
-    /**
-     * Biomes as one grid of 4×4-block cells over the batch's area, row by row (0 = none, else
-     * name + 1), after a bit per chunk saying which are there. Each cell takes the biome most of
-     * its 16 blocks have. Neighbouring cells are nearly always the same biome, so the rows compress
-     * to very little.
-     */
-    class BiomeGrid(part: Area) : Collector(part) {
-        private val names = LinkedHashMap<ResourceKey<Biome>, Int>()
-        private val cells = ShortArray(part.width * 4 * part.height * 4)
-        private val present = BitSet(part.width * part.height)
-        private val counts = HashMap<Int, Int>()
-
-        override fun chunk(cx: Int, cz: Int, blocks: Array<MapBlock?>) {
-            val gx = cx - part.left
-            val gz = cz - part.top
-            present.set(gz * part.width + gx)
-            for (cell in 0 until 16) {
-                counts.clear()
-                for (dx in 0 until 4) {
-                    for (dz in 0 until 4) {
-                        val biome = blocks[((cell shr 2) * 4 + dx) * 16 + (cell and 3) * 4 + dz]!!.biome ?: continue
-                        counts.merge(names.getOrPut(biome) { names.size } + 1, 1, Int::plus)
-                    }
-                }
-                val value = counts.maxByOrNull { it.value }?.key ?: 0
-                cells[(gz * 4 + (cell and 3)) * part.width * 4 + gx * 4 + (cell shr 2)] = value.toShort()
-            }
-        }
-
-        override fun pack(header: Header): ByteArray = pack(BIOMES, header, chunks) { out ->
-            writeArea(out, part)
-            varint(out, names.size)
-            for (name in names.keys) out.writeUTF(name.identifier().toString())
-            val bits = present.toByteArray()
-            varint(out, bits.size)
-            out.write(bits)
-            for (value in cells) varint(out, value.toInt())
-        }
     }
 
     /** Terrain: per chunk its position and 256 blocks (x * 16 + z), each as Xaero keeps it. */
@@ -200,7 +167,7 @@ object ShareFormat {
 
     /** Where batches to share come from, a tick at a time. */
     interface Source {
-        /** "biomes", "terrain", "waypoints". */
+        /** "terrain", "waypoints". */
         val label: String
         val batches: Int
         /** Chunks (or waypoints) in the batches handed out so far. */
@@ -227,13 +194,11 @@ object ShareFormat {
     }
 
     /**
-     * Reads chunks [area] of the dimension the world map shows, a batch at a time: the regions of
-     * each batch as Xaero loads them, a few per tick, then packed. A batch is [BIOME_BATCH] ×
-     * [BIOME_BATCH] regions of biomes, or one region of terrain. Only regions there is anything of
-     * are read: on disk, or in Xaero's memory and not yet saved.
+     * Reads the terrain of chunks [area] of the dimension the world map shows, a batch (one region)
+     * at a time, as Xaero loads it, then packed. Only regions there is anything of are read: on
+     * disk, or in Xaero's memory and not yet saved.
      */
     class RegionReader private constructor(
-        val terrain: Boolean,
         private val from: String,
         private val dimension: MapDimension,
         val dimensionId: String,
@@ -245,7 +210,7 @@ object ShareFormat {
         val parts: List<Pair<Area, List<Pair<Int, Int>>>>,
     ) : Source {
         val shareId = ThreadLocalRandom.current().nextInt(1 shl 30)
-        override val label = if (terrain) "terrain" else "biomes"
+        override val label = "terrain"
         override val batches get() = parts.size
         override var count = 0
         var skippedRegions = 0
@@ -273,7 +238,7 @@ object ShareFormat {
                 pending.clear()
                 pending.addAll(regions)
                 regionSince = System.currentTimeMillis()
-                (if (terrain) TerrainBody(part) else BiomeGrid(part)).also { it.age = age; collector = it }
+                TerrainBody(part).also { it.age = age; collector = it }
             }
             val now = System.currentTimeMillis()
             val deadline = System.nanoTime() + READ_BUDGET
@@ -308,19 +273,17 @@ object ShareFormat {
             return Step.Ready({ collector.pack(header) }, index, collector.chunks)
         }
 
-        /** The regions of batch [index]; one, for terrain. */
+        /** The regions of batch [index]: one. */
         fun regionsOf(index: Int): List<Pair<Int, Int>> = parts[index].second
 
         companion object {
-            /** Regions per side of a batch of biomes. */
-            private const val BIOME_BATCH = 4
             private const val REGIONS_AT_ONCE = 3
             private const val LOAD_WAIT = 30_000L
             /** Time spent reading your map per tick, so the game keeps its frame rate. */
             private const val READ_BUDGET = 4_000_000L
 
             /** A reader of chunks [left]..[right], [top]..[bottom] (inclusive), or why there cannot be one. */
-            fun plan(terrain: Boolean, from: String, left: Int, top: Int, right: Int, bottom: Int): Pair<RegionReader?, String?> {
+            fun plan(from: String, left: Int, top: Int, right: Int, bottom: Int): Pair<RegionReader?, String?> {
                 val area = Area(left, top, right, bottom)
                 if (area.width > MAX_SIDE || area.height > MAX_SIDE) {
                     return null to "That is ${area.width} × ${area.height} chunks; pick at most $MAX_SIDE × $MAX_SIDE"
@@ -330,28 +293,21 @@ object ShareFormat {
                 val processor = shown.processor
                 val layer = shown.layer
                 val folder = shown.folder
-                val step = if (terrain) 1 else BIOME_BATCH
                 val parts = ArrayList<Pair<Area, List<Pair<Int, Int>>>>()
-                for (bz in (top shr 5)..(bottom shr 5) step step) {
-                    for (bx in (left shr 5)..(right shr 5) step step) {
-                        val regions = ArrayList<Pair<Int, Int>>()
-                        for (rz in bz until minOf(bz + step, (bottom shr 5) + 1)) {
-                            for (rx in bx until minOf(bx + step, (right shr 5) + 1)) {
-                                if (Files.exists(folder.resolve(MapBackup.regionFile(rx, rz))) ||
-                                    processor.getLeafMapRegion(layer, rx, rz, false) != null
-                                ) regions.add(rx to rz)
-                            }
-                        }
-                        if (regions.isEmpty()) continue
+                for (rz in (top shr 5)..(bottom shr 5)) {
+                    for (rx in (left shr 5)..(right shr 5)) {
+                        if (!Files.exists(folder.resolve(MapBackup.regionFile(rx, rz))) &&
+                            processor.getLeafMapRegion(layer, rx, rz, false) == null
+                        ) continue
                         val part = Area(
-                            maxOf(left, bx * 32), maxOf(top, bz * 32),
-                            minOf(right, (bx + step) * 32 - 1), minOf(bottom, (bz + step) * 32 - 1),
+                            maxOf(left, rx * 32), maxOf(top, rz * 32),
+                            minOf(right, rx * 32 + 31), minOf(bottom, rz * 32 + 31),
                         )
-                        parts.add(part to regions)
+                        parts.add(part to listOf(rx to rz))
                     }
                 }
                 if (parts.isEmpty()) return null to "Nothing of your map there to share: you have not mapped those chunks"
-                return RegionReader(terrain, from, shown.dimension, shown.dimensionId, folder, layer, area, parts) to null
+                return RegionReader(from, shown.dimension, shown.dimensionId, folder, layer, area, parts) to null
             }
         }
     }
@@ -362,8 +318,8 @@ object ShareFormat {
 
     fun packWaypoints(header: Header, waypoints: List<SharedWaypoint>): ByteArray = pack(WAYPOINTS, header, waypoints.size) { out ->
         for (w in waypoints) {
-            out.writeUTF(w.name)
-            out.writeUTF(w.initials)
+            out.writeUTF(clean(w.name).take(MAX_NAME))
+            out.writeUTF(clean(w.initials).take(MAX_INITIALS))
             varint(out, zigzag(w.x))
             varint(out, zigzag(w.y))
             varint(out, zigzag(w.z))
@@ -376,12 +332,25 @@ object ShareFormat {
         if (count !in 1..MAX_WAYPOINTS) error("$count waypoints")
         return List(count) {
             SharedWaypoint(
-                input.readUTF().take(64), input.readUTF().take(3),
+                clean(input.readUTF()).take(MAX_NAME), clean(input.readUTF()).take(MAX_INITIALS),
                 unzigzag(varint(input)), unzigzag(varint(input)), unzigzag(varint(input)),
-                input.readBoolean(), varint(input),
+                input.readBoolean(), varint(input).coerceIn(0, WAYPOINT_COLOURS - 1),
             )
         }
     }
+
+    private val CODE = Regex("§.?")
+
+    /** [text] without formatting codes. */
+    fun stripCodes(text: String): String = text.replace(CODE, "")
+
+    /** [text] without formatting codes, line breaks or other control and invisible format characters. */
+    fun clean(text: String): String = stripCodes(text).filter {
+        when (Character.getType(it).toByte()) {
+            Character.CONTROL, Character.FORMAT, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR -> false
+            else -> true
+        }
+    }.trim()
 
     // ---- packing ----
 
@@ -390,7 +359,7 @@ object ShareFormat {
      * length of the compressed bytes: a batch changed on the way is turned away rather than
      * misread, and anything after the length (chat's padding) is cut off.
      */
-    private fun pack(format: Int, header: Header, count: Int, rest: (DataOutputStream) -> Unit): ByteArray {
+    internal fun pack(format: Int, header: Header, count: Int, rest: (DataOutputStream) -> Unit): ByteArray {
         val compressed = ByteArrayOutputStream()
         DataOutputStream(DeflaterOutputStream(compressed, Deflater(Deflater.BEST_COMPRESSION))).use { out ->
             out.writeByte(format)
@@ -411,17 +380,20 @@ object ShareFormat {
     /** A batch opened: its format, header and count, and the rest still to read from [input]. */
     class Opened(val format: Int, val header: Header, val count: Int, val input: DataInputStream)
 
-    /** Checks and opens a batch made by [pack], hands it to [action] and closes it. */
-    fun <T> open(bytes: ByteArray, action: (Opened) -> T): T {
+    /**
+     * Checks and opens a batch made by [pack], hands it to [action] and closes it. Reading more
+     * than [limit] bytes out of it fails, so a small batch cannot unpack into a huge one.
+     */
+    fun <T> open(bytes: ByteArray, limit: Int = Int.MAX_VALUE, action: (Opened) -> T): T {
         if (bytes.size < 9) error("too short")
         val head = ByteBuffer.wrap(bytes, 0, 8)
         val crc = head.int
         val length = head.int
         if (length !in 1..bytes.size - 8) error("bad length")
         if (CRC32().apply { update(bytes, 8, length) }.value.toInt() != crc) error("it was changed on the way (checksum)")
-        DataInputStream(InflaterInputStream(ByteArrayInputStream(bytes, 8, length))).use { input ->
+        DataInputStream(Limited(InflaterInputStream(ByteArrayInputStream(bytes, 8, length)), limit)).use { input ->
             val format = input.readUnsignedByte()
-            if (format != TERRAIN && format != BIOMES && format != WAYPOINTS) error("made by a different version of the mod (format $format)")
+            if (format != TERRAIN && format != WAYPOINTS) error("made by a different version of the mod (format $format)")
             val from = input.readUTF()
             val dimensionId = input.readUTF()
             val shareId = input.readInt()
@@ -434,30 +406,20 @@ object ShareFormat {
         }
     }
 
-    /** The biomes of an opened [BIOMES] batch, by [Session.chunkKey]. */
-    fun readBiomes(input: DataInputStream, count: Int): Map<Long, Array<ResourceKey<Biome>?>> {
-        val part = readArea(input)
-        val names = varint(input)
-        if (names > 65536) error("$names biomes")
-        val biomes = List(names) { ResourceKey.create(Registries.BIOME, Identifier.parse(input.readUTF())) }
-        val bitBytes = varint(input)
-        if (bitBytes > part.width * part.height / 8 + 1) error("bad chunk list")
-        val present = BitSet.valueOf(ByteArray(bitBytes).also { input.readFully(it) })
-        if (present.cardinality() != count) error("chunk count does not match")
-        val rowCells = part.width * 4
-        val cells = ShortArray(rowCells * part.height * 4) { varint(input).also { if (it > names) error("bad biome") }.toShort() }
-        val out = HashMap<Long, Array<ResourceKey<Biome>?>>()
-        var i = present.nextSetBit(0)
-        while (i >= 0) {
-            val gx = i % part.width
-            val gz = i / part.width
-            out[Session.chunkKey(part.left + gx, part.top + gz)] = Array(16) { cell ->
-                val value = cells[(gz * 4 + (cell and 3)) * rowCells + gx * 4 + (cell shr 2)].toInt()
-                if (value == 0) null else biomes[value - 1]
-            }
-            i = present.nextSetBit(i + 1)
+    /** [input], failing once more than [limit] bytes have been read from it. */
+    private class Limited(input: InputStream, private val limit: Int) : FilterInputStream(input) {
+        private var count = 0L
+
+        private fun counted(n: Int): Int {
+            if (n > 0) count += n
+            if (count > limit) throw IOException("it unpacks to more than $limit bytes")
+            return n
         }
-        return out
+
+        override fun read(): Int = super.read().also { if (it >= 0) counted(1) }
+        override fun read(b: ByteArray, off: Int, len: Int): Int = counted(super.read(b, off, len))
+        override fun skip(n: Long): Long = super.skip(n).also { counted(it.toInt()) }
+        override fun markSupported() = false
     }
 
     /** Reads an opened [TERRAIN] batch into [into], by region. */
@@ -474,11 +436,11 @@ object ShareFormat {
             val cz = input.readInt()
             val chunk = SharedChunk()
             for (i in 0 until 256) {
-                chunk.state[i] = states[varint(input)]
+                chunk.state[i] = states.entry(varint(input), "block")
                 val height = input.readShort()
                 chunk.height[i] = height
                 chunk.top[i] = (height + unzigzag(varint(input))).toShort()
-                chunk.biome[i] = varint(input).let { if (it == 0) null else biomes[it - 1] }
+                chunk.biome[i] = varint(input).let { if (it == 0) null else biomes.entry(it - 1, "biome") }
                 val lightAndGlow = input.readUnsignedByte()
                 chunk.light[i] = (lightAndGlow and 15).toByte()
                 chunk.glowing[i] = lightAndGlow and 16 != 0
@@ -486,7 +448,7 @@ object ShareFormat {
                 if (overlays > MAX_OVERLAYS) error("$overlays layers on one block")
                 if (overlays > 0) {
                     chunk.overlays[i] = List(overlays) {
-                        val state = states[varint(input)]
+                        val state = states.entry(varint(input), "block")
                         val bits = input.readUnsignedByte()
                         SharedOverlay(state, (bits and 15).toByte(), bits and 16 != 0, input.readUnsignedByte())
                     }
@@ -496,6 +458,10 @@ object ShareFormat {
             region.chunks[(cz and 31) * 32 + (cx and 31)] = chunk
         }
     }
+
+    /** Entry [index] of a list read from the file, or "the file is damaged" if there is no such entry. */
+    private fun <T> List<T>.entry(index: Int, what: String): T =
+        getOrNull(index) ?: error("the file is damaged ($what $index of $size)")
 
     // ---- terrain, as it is written into your map ----
 

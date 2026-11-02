@@ -206,8 +206,13 @@ class DhTarget private constructor(
 ) : FillTarget {
     override val name = "Distant Horizons"
 
-    /** Only where DH has nothing but air for the chunk. */
+    /**
+     * Only where DH has nothing but air for the chunk, and never a chunk you have loaded: DH takes
+     * those in itself, but not at once, and until then it has nothing for them either.
+     */
     override fun wants(pos: ChunkPos): Boolean {
+        // Found in game: just after joining, the chunks around you were filled over.
+        if (level.chunkSource.hasChunk(pos.x(), pos.z())) return false
         val result = DhApi.Delayed.terrainRepo.getAllTerrainDataAtChunkPos(wrapper, pos.x(), pos.z(), null)
         val columns = result.payload ?: return true
         if (!result.success) return true

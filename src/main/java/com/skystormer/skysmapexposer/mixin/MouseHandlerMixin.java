@@ -17,7 +17,10 @@ import java.util.List;
 @Mixin(MouseHandler.class)
 public class MouseHandlerMixin {
 
-    @Inject(method = "onDrop", at = @At("HEAD"), cancellable = true)
+    // 26.2 hands the dropped files over as paths, with a count of the ones it could not read.
+    // Optional, like the hooks into Xaero: a game version that changes onDrop loses dropping files
+    // (/mapexposer says so, and /mapexposer terrain open still works), not the game.
+    @Inject(method = "onDrop", at = @At("HEAD"), cancellable = true, require = 0)
     private void skysmapexposer$onDrop(long window, List<Path> paths, int failed, CallbackInfo ci) {
         if (TerrainFiles.INSTANCE.dropped(paths)) ci.cancel();
     }

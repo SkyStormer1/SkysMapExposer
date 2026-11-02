@@ -13,13 +13,14 @@ import java.util.zip.GZIPOutputStream
 /**
  * Guesses the biome of blocks nobody has mapped, from BlueMap's lowres picture alone.
  *
- * BlueMap publishes no biomes, and the world's seed is not to be had. But BlueMap draws biomes —
+ * BlueMap publishes no biomes. But it draws them —
  * grass, leaves and water tinted by the biome, the lie of the land — so the guide compares a
  * block's [BiomeFeatures] with blocks whose biome is known, and takes the biome most of the
  * nearest [K] of them are in: nearest-neighbour matching, no more. The known blocks come with the
  * mod (`/skysmapexposer/biomes/`), 12,000 blocks sampled from a real survival map where Xaero had
  * recorded every biome — colours, heights and a biome name each, no places — so a new player who
- * has mapped nothing gets guesses too. Tested on regions left out of that set, the guess is the exact
+ * has mapped nothing gets guesses too. 26.3's dappled forest was added later, from a 26.3 world of
+ * its own (`BiomeGuideAdder`). Tested on regions left out of that set, the guess is the exact
  * biome about 75% of the time; most misses are look-alikes (plains or sunflower plains) that Xaero
  * tints the same.
  *
@@ -196,6 +197,16 @@ class BiomeGuide private constructor(
                 for (row in labels.indices) out.writeByte(quantise(points[row * d + j] / BiomeFeatures.WEIGHTS[j]))
             }
         }
+    }
+
+    /**
+     * The known blocks back as [build] took them, raw numbers and biome each (to within the
+     * rounding [write] does), so a guide can be added to without the map it was made from.
+     */
+    fun samples(): Pair<List<FloatArray>, List<String>> {
+        val d = BiomeFeatures.SIZE
+        val rows = labels.indices.map { row -> FloatArray(d) { j -> mean[j] + points[row * d + j] / scale[j] } }
+        return rows to labels.map { names[it.toInt()] }
     }
 
     val known: Int get() = labels.size

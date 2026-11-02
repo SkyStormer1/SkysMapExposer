@@ -86,20 +86,20 @@ class MapExposerTest {
         val workers = Executors.newFixedThreadPool(2)
         try {
             val key = TileStore.Key("world", 1, 0, 0)
-            val first = TileStore(BlueMap(url), folder, workers).get(key, 1, 500, 0).awaitSettled()
+            val first = TileStore(BlueMap(url), folder, workers).get(key, 1, 500).awaitSettled()
             assertEquals(TileStore.State.READY, first.state)
             assertEquals(501, first.imageSize)
             val present = first.present!!
             assertTrue(present.cardinality() > 501 * 501 / 2, "only ${present.cardinality()} pixels have colour")
 
             // A second store reading the same folder gets the copy on disk, with the same date.
-            val second = TileStore(BlueMap("http://127.0.0.1:1/"), folder, workers).get(key, 1, 500, 0).awaitSettled()
+            val second = TileStore(BlueMap("http://127.0.0.1:1/"), folder, workers).get(key, 1, 500).awaitSettled()
             assertEquals(TileStore.State.READY, second.state)
             assertEquals(first.contentMinute, second.contentMinute)
             assertEquals(present, second.present)
 
             val nothing = TileStore(BlueMap(url), folder, workers)
-                .get(TileStore.Key("world", 1, 999, 0), 1, 500, 0).awaitSettled()
+                .get(TileStore.Key("world", 1, 999, 0), 1, 500).awaitSettled()
             assertEquals(TileStore.State.EMPTY, nothing.state)
         } finally {
             workers.shutdownNow()

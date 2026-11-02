@@ -6,7 +6,6 @@ import com.skystormer.skysmapexposer.WaypointShare
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
@@ -59,7 +58,7 @@ class WaypointShareScreen(
 
         val third = (width - GAP * 2) / 3
         addRenderableWidget(Button.builder(Component.literal("Tick all")) { picked.addAll(shown); fill() }
-            .bounds(left, y, third, ROW).tooltip(Tooltip.create(Component.literal("Ticks every waypoint the search shows, on every page."))).build())
+            .bounds(left, y, third, ROW).tooltip(SafeTooltip.of("Ticks every waypoint the search shows, on every page.")).build())
         addRenderableWidget(Button.builder(Component.literal("Untick all")) { picked.clear(); fill() }
             .bounds(left + third + GAP, y, third, ROW).build())
         previous = addRenderableWidget(Button.builder(Component.literal("<")) { page--; fill() }
@@ -101,7 +100,7 @@ class WaypointShareScreen(
             row.visible = entry != null
             row.active = entry != null
             row.message = Component.literal(if (entry == null) "" else (if (entry in picked) "§a☑ " else "§7☐ ") + "§r" + entry.label)
-            row.setTooltip(entry?.let { Tooltip.create(Component.literal("Set: ${it.set}")) })
+            row.setTooltip(entry?.let { SafeTooltip.of("Set: ${it.set}") })
         }
         if (shown.isEmpty()) {
             rows.first().apply {

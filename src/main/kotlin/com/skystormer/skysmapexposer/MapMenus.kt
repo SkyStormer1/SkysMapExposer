@@ -1,7 +1,6 @@
 package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
-import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
@@ -39,11 +38,9 @@ object MapMenus {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
             options.add(option("Copy coordinates", options.size, target) { copy(x, null, z, where) })
-            if (selection != null) {
-                options.add(shareOption(options.size, target, selection))
-                options.add(saveOption(options.size, target, selection))
-            }
+            if (selection != null) options.add(saveOption(options.size, target, selection))
             options.add(waypointsOption(options.size, target))
+            if (where != null) options.add(pingOption(options.size, target, x, z, where))
             if (where != null) addCounterpartOption(options, target, x, z, where)
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
@@ -102,15 +99,12 @@ object MapMenus {
      * outlines on the map.
      */
     private fun downloadOption(index: Int, target: IRightClickableElement, selection: MapTileSelection): RightClickOption {
-        val wide = selection.right - selection.left + 1
-        val high = selection.bottom - selection.top + 1
-        val size = if (wide == 1 && high == 1) "This chunk" else "These $wide × $high chunks"
         val busy = BlueMapDownload.running
         val tooltip = listOf(
             Component.literal("Download from BlueMap"),
             Component.literal(
                 if (busy) "§7A download is already running."
-                else "§7$size, written into your own map wherever BlueMap has them. Each region is backed up just before it is replaced."
+                else "§7${sizeOf(selection)}, written into your own map wherever BlueMap has them. Each region is backed up just before it is replaced."
             ),
         )
         val area = BlueMapDownload.Area(selection.left * 16, selection.top * 16, selection.right * 16 + 15, selection.bottom * 16 + 15)
@@ -122,24 +116,6 @@ object MapMenus {
         val wide = selection.right - selection.left + 1
         val high = selection.bottom - selection.top + 1
         return if (wide == 1 && high == 1) "This chunk" else "These $wide × $high chunks"
-    }
-
-    /** "Share biomes…" for the chunks Xaero has selected, the same selection "Download" takes. */
-    private fun shareOption(index: Int, target: IRightClickableElement, selection: MapTileSelection): RightClickOption {
-        val busy = ChatShare.sending
-        val tooltip = listOf(
-            Component.literal("Share biomes with a player"),
-            Component.literal(
-                if (busy) "§7Something is already being shared; /mapexposer share cancel stops it."
-                else "§7Which biome is where in ${sizeOf(selection).lowercase()}, sent by private message to a player who has this mod. " +
-                    "A few messages even for a big area. They see them highlighted and named on their map."
-            ),
-        )
-        return MenuTooltips.Option("Share biomes…", index, target, tooltip) { parent ->
-            open(ShareScreen(parent, "Share biomes with…") { name ->
-                ChatShare.shareBiomes(name, selection.left, selection.top, selection.right, selection.bottom)
-            })
-        }.also { it.setActive(!busy) }
     }
 
     /** "Save terrain file" for the chunks Xaero has selected: the whole map of them, to send however you like. */
@@ -176,6 +152,20 @@ object MapMenus {
             if (mine == null) say("Xaero's Minimap has no waypoint world open")
             else open(WaypointShareScreen(parent, mine.first, mine.second))
         }.also { it.setActive(Waypoints.available() && !busy) }
+    }
+
+    /** "Ping here": flashes a beam on this block for everyone you trust who is online. */
+    private fun pingOption(index: Int, target: IRightClickableElement, x: Int, z: Int, dimension: String): RightClickOption {
+        val to = PlayerPings.trustedOnline()
+        val tooltip = listOf(
+            Component.literal("Ping this spot"),
+            Component.literal(
+                if (to.isEmpty()) "§7Nobody you trust is online. Trust someone from the player list or with /mapexposer trust."
+                else "§7A flashing beam here for ${to.joinToString()}. Sent by private message."
+            ),
+        )
+        return MenuTooltips.Option("Ping here", index, target, tooltip) { say(PlayerPings.send(dimension, x, z)) }
+            .also { it.setActive(to.isNotEmpty()) }
     }
 
     /**

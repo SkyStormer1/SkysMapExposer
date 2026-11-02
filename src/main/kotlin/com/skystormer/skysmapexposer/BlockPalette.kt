@@ -47,6 +47,24 @@ object BlockPalette {
     )
 
     /**
+     * A block that is a candidate only in [biomes], matched like the rest by Xaero's colour of it.
+     */
+    class Local(val id: String, val biomes: Set<String>)
+
+    /**
+     * Poplar leaves, 26.3's orange, red and yellow canopy of the dappled forest. Anywhere else those
+     * colours are terracotta or red sand, and a badlands of leaves would read as nonsense. They are
+     * allowed in the other forests too, for a dappled forest your map has not recorded and the
+     * biome guide has taken for its neighbour.
+     */
+    val LOCALS: List<Local> = listOf("orange", "red", "yellow").map {
+        Local("minecraft:${it}_poplar_leaves", setOf(
+            "minecraft:dappled_forest", "minecraft:forest", "minecraft:flower_forest", "minecraft:birch_forest",
+            "minecraft:old_growth_birch_forest", "minecraft:dark_forest",
+        ))
+    }
+
+    /**
      * A block BlueMap draws quite unlike Xaero, so matching Xaero's colour of it to BlueMap's
      * picture would never find it: it is matched by [blueMapColour], BlueMap's colour of it, and
      * only in [biomes], where it grows.

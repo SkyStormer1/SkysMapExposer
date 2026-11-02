@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
 import xaero.map.WorldMapSession
 import xaero.map.region.MapRegion
@@ -30,8 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * The map screen and the settings show how far it has got ([status]); `/mapexposer download
  * cancel` or the settings' button stops it after the region it is on.
  *
- * A map someone shared in chat ([ChatShare]) is written the same way, region by region with a
- * backup of each first ([startShared]); only where the pixels come from differs.
+ * A terrain file someone sent you ([TerrainFiles]) is written the same way, region by region with
+ * a backup of each first ([startShared]); only where the pixels come from differs.
  */
 object BlueMapDownload {
 
@@ -52,6 +53,8 @@ object BlueMapDownload {
         var next = 0
         val since = System.currentTimeMillis()
         var retried = false
+        /** Whether its file has been copied aside, which comes before anything is written to it. */
+        var backedUp = false
     }
 
     private class Job(
@@ -76,6 +79,8 @@ object BlueMapDownload {
         val layer: Int = XaeroWriter.SURFACE,
         /** Says what is said at the end, for a job that is not a download ([MapClear]); null for the usual. */
         val summary: ((XaeroWriter.Tally) -> String)? = null,
+        /** Added to the end of what is said at the end, e.g. how many regions of a file could not be read. */
+        val afterword: () -> String = { "" },
     ) {
         // Its own client: the session's is closed and replaced whenever the settings are saved.
         val blueMap = session?.let { BlueMap(it.server.url) }
@@ -91,7 +96,7 @@ object BlueMapDownload {
         val later = ArrayDeque<Active>()
         var ticks = 0
         val tally = XaeroWriter.Tally()
-        var skipped = 0
+        val skipped = SkippedRegions()
         var active: Active? = null
         val saving = ArrayList<Pair<MapRegion, Long>>()
         var palette: XaeroPalette? = null
@@ -101,6 +106,9 @@ object BlueMapDownload {
         val guide: BiomeGuide? by lazy { if (Config.guessBiomes) BiomeGuide.forDimension(dimensionId) else null }
         /** Season dates: a chunk mapped before the season began is written over like one never mapped. */
         val age: MapAge? = MapAge.of(dimensionId, folder)
+        /** Where its copies come from and go back to, and the name of their folder. */
+        val origin = MapBackup.Origin(dimensionId, layer, folder, MapBackup.server())
+        val label = MapBackup.label(name, layer)
     }
 
     @Volatile
@@ -125,11 +133,14 @@ object BlueMapDownload {
         val mapId = session.server.markersFor(dimensionId)
             ?: return "No BlueMap map is set for the ${MapMenus.dimensionName(dimensionId)}; add one in the settings"
         val multiworld = dimension.currentMultiworld ?: return "Xaero has not chosen a map folder for this dimension yet"
-        val folder = dimension.mainFolderPath?.resolve(multiworld) ?: return "Xaero has not chosen a map folder for this dimension yet"
+        val base = dimension.mainFolderPath?.resolve(multiworld) ?: return "Xaero has not chosen a map folder for this dimension yet"
+        // In the Nether, a map of the roof into Xaero's roof layer and one of the inside into its cave layer, never the other way.
+        val (into, note) = MapLayers.downloadLayer(processor.currentCaveLayer, XaeroWriter.hasCeiling(dimensionId), XaeroWriter.viewOf(mapId))
+        val layer = into ?: return note!!
         val player = Minecraft.getInstance().player
         val started = Job(
-            session, dimension, dimensionId, mapId, folder, area, unexploredOnly,
-            player?.blockX ?: 0, player?.blockZ ?: 0,
+            session, dimension, dimensionId, mapId, XaeroWriter.layerFolder(base, layer), area, unexploredOnly,
+            player?.blockX ?: 0, player?.blockZ ?: 0, layer = layer,
         )
         // Each download backs up into a folder of its own, so it can be put back in one go.
         MapBackup.forget()
@@ -140,7 +151,7 @@ object BlueMapDownload {
             area?.let { "blocks ${it.minX}, ${it.minZ} to ${it.maxX}, ${it.maxZ}" } ?: "everything BlueMap has",
             if (unexploredOnly) " (unexplored chunks only)" else "",
         )
-        return "Downloading from BlueMap…"
+        return "Downloading from BlueMap…" + (note?.let { " ($it)" } ?: "")
     }
 
     /**
@@ -148,8 +159,11 @@ object BlueMapDownload {
      * turn comes — into [dimensionId], which the world map has to be showing; with
      * [unexploredOnly], only into chunks you have never mapped. Returns what to tell the player.
      */
-    fun startShared(regions: List<Triple<Int, Int, () -> XaeroWriter.Pixels?>>, dimensionId: String, layer: Int, from: String, unexploredOnly: Boolean): String =
-        startLocal(regions, dimensionId, layer, unexploredOnly, "Adding $from's map", "Adding $from's map", "$from's map", null)
+    fun startShared(
+        regions: List<Triple<Int, Int, () -> XaeroWriter.Pixels?>>, dimensionId: String, layer: Int, from: String, unexploredOnly: Boolean,
+        afterword: () -> String = { "" },
+    ): String =
+        startLocal(regions, dimensionId, layer, unexploredOnly, "Adding $from's map", "Adding $from's map", "$from's map", afterword, null)
             ?.let { "Adding $from's map…" }
             ?: lastRefusal
 
@@ -170,6 +184,7 @@ object BlueMapDownload {
         title: String,
         doing: String,
         source: String,
+        afterword: () -> String = { "" },
         summary: ((XaeroWriter.Tally) -> String)?,
     ): String? {
         fun no(why: String): String? = null.also { lastRefusal = why }
@@ -183,7 +198,7 @@ object BlueMapDownload {
             null, shown.dimension, dimensionId, null, XaeroWriter.layerFolder(shown.base, layer), null, unexploredOnly,
             player?.blockX ?: 0, player?.blockZ ?: 0,
             title = title, doing = doing, source = source, capacity = Int.MAX_VALUE,
-            layer = layer, summary = summary,
+            layer = layer, summary = summary, afterword = afterword,
         )
         for ((rx, rz, pixels) in regions) started.ready.add(Pending(rx, rz) { pixels() })
         started.total = regions.size
@@ -192,8 +207,11 @@ object BlueMapDownload {
         MapBackup.forget()
         job = started
         Log.info("{} in the {} (cave layer {}): {} regions{}", title, name, layer, regions.size, if (unexploredOnly) " (unexplored chunks only)" else "")
-        return MapBackup.label(started.name, layer)
+        return started.label
     }
+
+    /** The regions the last job skipped, a line each, for `/mapexposer skipped`. */
+    fun skippedList(): List<String> = job?.skipped?.all().orEmpty()
 
     /** Stops after the region being written, which is finished rather than left half done. */
     fun cancel(): Boolean {
@@ -237,16 +255,10 @@ object BlueMapDownload {
                 finest.addAll(BlueMapPicture.tilesOver(a.minX, a.minZ, a.maxX, a.maxZ, size))
             } else {
                 // The coarsest level is a few tiles for a whole world, and says where the finest
-                // ones have anything. ±COARSE_REACH tiles covers any world border in use.
-                val lod = layout.lodCount
-                val blocksPerPixel = layout.blocksPerPixel(lod)
-                for (tx in -COARSE_REACH until COARSE_REACH) {
-                    for (tz in -COARSE_REACH until COARSE_REACH) {
-                        if (job.cancelled) return
-                        val bytes = blueMap.tile(mapId, lod, tx, tz) ?: continue
-                        BlueMapPicture.finestTilesIn(BlueMapPicture.decode(tx, tz, size, bytes), blocksPerPixel, size, finest)
-                    }
-                }
+                // ones have anything, out to wherever the world ends.
+                val scan = CoarseScan.scan(layout, 0, 0, { job.cancelled }) { tx, tz -> blueMap.tile(mapId, layout.lodCount, tx, tz) } ?: return
+                Log.info("Download: BlueMap map '{}': {}", mapId, scan)
+                finest.addAll(scan.finest)
                 val found = HashSet<Pair<Int, Int>>()
                 for ((tx, tz) in finest) found.addAll(BlueMapPicture.regionsOver(tx * size, tz * size, tx * size + size - 1, tz * size + size - 1))
                 regions = found.toList()
@@ -313,10 +325,25 @@ object BlueMapDownload {
 
     // ---- the client thread ----
 
-    /** Each client tick: writes a little, and keeps an eye on what Xaero is saving. */
+    /**
+     * Each client tick: writes a little, and keeps an eye on what Xaero is saving. This reaches
+     * deep into Xaero, so an error stops the job rather than the game: what was written and saved
+     * before stays, and the end message offers the copies to put it all back.
+     */
     fun tick() {
         val job = job ?: return
         if (job.phase != Phase.WRITING && job.phase != Phase.FINISHING) return
+        TickGuard.run(job.title, { why -> crashed(job, why) }) { tick(job) }
+    }
+
+    private fun crashed(job: Job, why: String) {
+        job.error = why
+        job.cancelled = true
+        job.active = null
+        end(job)
+    }
+
+    private fun tick(job: Job) {
         val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return
         val now = System.currentTimeMillis()
 
@@ -332,19 +359,29 @@ object BlueMapDownload {
             job.message = "${job.title} paused: switch the world map back to the ${job.name} to carry on"
             return
         }
+        // On a server with several worlds behind a proxy, Xaero can switch map folders (its
+        // multiworld) within the same dimension; the job's regions are in the folder it started in.
+        val multiworld = job.dimension.currentMultiworld
+        val base = multiworld?.let { job.dimension.mainFolderPath?.resolve(it) }
+        if (base == null || !job.folder.startsWith(base)) {
+            job.message = "${job.title} paused: Xaero is showing another map folder of the ${job.name}; switch back to the one it started in to carry on"
+            return
+        }
 
         val active = job.active ?: run {
             if (job.cancelled || job.saving.size >= MAX_SAVING) null
             else job.ready.poll()?.let { pending -> begin(job, pending) }
                 ?: if (job.scanFinished) job.later.removeFirstOrNull()?.also { job.active = it } else null
         }
-        if (active != null) write(job, processor, active, now)
+        if (active != null && backUp(job, active)) write(job, processor, active, now)
 
         val finished = job.scanFinished && job.ready.isEmpty() && job.later.isEmpty() && job.active == null
         if (finished || (job.cancelled && job.active == null)) {
             job.phase = Phase.FINISHING
             if (job.saving.isEmpty()) end(job)
             else job.message = "${job.title}: waiting for Xaero to save the last ${job.saving.size} region(s)…"
+        } else if (job.active?.backedUp == false) {
+            job.message = "${job.doing}: having Xaero save region ${job.done.get() + 1} of ${job.total} before copying it aside…"
         } else {
             job.message = "${job.doing}: region ${job.done.get() + 1} of ${job.total} " +
                 "(${job.tally.newChunks + job.tally.replacedChunks} chunks so far)"
@@ -353,15 +390,26 @@ object BlueMapDownload {
         if (++job.ticks % 40 == 0 && Minecraft.getInstance().gui.screen() == null) MapMenus.say(job.message)
     }
 
-    /** Copies the region aside before anything is written to it; without that copy, it is skipped. */
-    private fun begin(job: Job, pending: Pending): Active? {
-        if (!MapBackup.keep(job.folder, MapBackup.label(job.name, job.layer), pending.regionX, pending.regionZ)) {
-            job.skipped++
-            job.done.incrementAndGet()
-            Log.warn("Download: skipped region {}_{} because it could not be backed up first", pending.regionX, pending.regionZ)
-            return null
+    private fun begin(job: Job, pending: Pending): Active = Active(pending).also { job.active = it }
+
+    /**
+     * Copies the region aside before anything is written to it, once Xaero has saved what it holds
+     * of it; without that copy, it is skipped. True once it may be written.
+     */
+    private fun backUp(job: Job, active: Active): Boolean {
+        if (active.backedUp) return true
+        val pending = active.pending
+        return when (val kept = MapBackup.keep(job.origin, job.label, pending.regionX, pending.regionZ)) {
+            MapBackup.Kept.Yes -> true.also { active.backedUp = true }
+            MapBackup.Kept.Wait -> false
+            is MapBackup.Kept.No -> {
+                job.skipped.add(pending.regionX, pending.regionZ, SkippedRegions.notBackedUp(kept.why))
+                job.done.incrementAndGet()
+                job.active = null
+                Log.warn("Download: skipped region {}_{} because it could not be backed up first", pending.regionX, pending.regionZ)
+                false
+            }
         }
-        return Active(pending).also { job.active = it }
     }
 
     private fun write(job: Job, processor: MapProcessor, active: Active, now: Long) {
@@ -371,12 +419,12 @@ object BlueMapDownload {
             if (now - active.since > LOAD_WAIT) {
                 if (!active.retried) {
                     // Once more at the end, when Xaero is less busy.
-                    job.later.addLast(Active(pending).also { it.retried = true })
+                    job.later.addLast(Active(pending).also { it.retried = true; it.backedUp = active.backedUp })
                     job.active = null
                     Log.info("Download: Xaero has not loaded region {}_{} yet; trying it again at the end", pending.regionX, pending.regionZ)
                     return
                 }
-                job.skipped++
+                job.skipped.add(pending.regionX, pending.regionZ, "${SkippedRegions.NOT_LOADED} in ${LOAD_WAIT / 1000} s")
                 job.done.incrementAndGet()
                 job.active = null
                 Log.warn("Download: Xaero did not load region {}_{} within {} s; skipped it", pending.regionX, pending.regionZ, LOAD_WAIT / 1000)
@@ -430,21 +478,39 @@ object BlueMapDownload {
         val chunks = t.newChunks + t.replacedChunks
         val took = duration(job.endedAt - job.startedAt)
         val head = if (job.cancelled) "${job.title} stopped after $took" else if (job.session == null) "${job.title}: done in $took" else "Downloaded from BlueMap in $took"
+        val skipped = job.skipped.size
+        val skippedNote = if (skipped > 0) ", $skipped region${if (skipped == 1) "" else "s"} skipped (see chat)" else ""
         job.message = when {
             job.error != null -> "${job.error} Written before it stopped: $chunks chunks."
-            job.summary != null -> (if (job.cancelled) "$head: " else "") + job.summary.invoke(t) +
-                (if (job.skipped > 0) ", ${job.skipped} regions skipped — see the log" else "")
-            chunks == 0 && !job.cancelled -> "${job.source} had nothing new there: your map already matches it"
-            else -> "$head: $chunks chunks (${t.newChunks} new, ${t.replacedChunks} updated)" +
-                (if (job.skipped > 0) ", ${job.skipped} regions skipped — see the log" else "")
-        }
+            job.summary != null -> (if (job.cancelled) "$head: " else "") + job.summary.invoke(t) + skippedNote
+            chunks == 0 && !job.cancelled -> "${job.source} had nothing new there: your map already matches it" + skippedNote
+            else -> "$head: $chunks chunks (${t.newChunks} new, ${t.replacedChunks} updated)$skippedNote"
+        } + job.afterword()
         Log.info(
             "{} finished{} in {}: {} new chunks, {} updated, {} pixels written, {} of yours kept as they matched, " +
-                "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped",
+                "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped{}",
             job.title, if (job.cancelled) " (cancelled)" else "", took, t.newChunks, t.replacedChunks, t.written, t.kept, t.partialSkipped,
-            t.cleared, job.skipped,
+            t.cleared, skipped, if (skipped > 0) ": " + job.skipped.all().joinToString("; ") else "",
         )
         MapMenus.say(job.message)
+        // The action bar is gone in seconds: what was skipped, and the copies to undo it with, go to chat.
+        val batch = MapBackup.batchName(job.label)?.takeIf { chunks > 0 || t.cleared > 0 || job.error != null }
+        // A clear offers its own [Restore] in its summary.
+        val restore = batch?.takeIf { job.summary == null || job.error != null }
+        if (skipped > 0 || restore != null || job.error != null) {
+            val line = Component.literal(if (job.error != null) job.message else head).append("  ")
+            if (skipped > 0) {
+                line.append("\n" + job.skipped.summary() + "  ")
+                if (skipped > SkippedRegions.SHOWN) {
+                    line.append(ChatButton.of("[List all $skipped]", "/mapexposer skipped", job.skipped.all().take(40).joinToString("\n")))
+                    line.append("  ")
+                }
+            }
+            if (restore != null) {
+                line.append(ChatButton.of("[Restore]", "/mapexposer restore $restore", "Puts back your map as it was before this: /mapexposer restore $restore"))
+            }
+            Minecraft.getInstance().player?.sendSystemMessage(line)
+        }
     }
 
     private fun duration(millis: Long): String {
@@ -456,7 +522,6 @@ object BlueMapDownload {
         }
     }
 
-    private const val COARSE_REACH = 4
     private const val TILE_CHUNKS = 64
     private const val TILE_CHUNKS_PER_TICK = 8
     /** Time spent writing into your map per tick, so the game keeps its frame rate. */

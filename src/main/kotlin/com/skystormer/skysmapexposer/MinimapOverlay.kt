@@ -43,7 +43,29 @@ object MinimapOverlay {
         mapRenderType: RenderType,
         finalizer: Consumer<GpuTextureView>?,
     ) {
-        Backfill.nextFrame()
+        if (HookErrors.isOff(HookErrors.MINIMAP)) return
+        try {
+            drawFrame(mapProcessor, pose, originX, originZ, minViewX, minViewZ, maxViewX, maxViewZ, overlayBuffer, rendererProvider, mapRenderType, finalizer)
+        } catch (e: Throwable) {
+            HookErrors.failed(HookErrors.MINIMAP, e)
+        }
+    }
+
+    private fun drawFrame(
+        mapProcessor: MapProcessor,
+        pose: PoseStack,
+        originX: Int,
+        originZ: Int,
+        minViewX: Int,
+        minViewZ: Int,
+        maxViewX: Int,
+        maxViewZ: Int,
+        overlayBuffer: VertexConsumer,
+        rendererProvider: MultiTextureRenderTypeRendererProvider,
+        mapRenderType: RenderType,
+        finalizer: Consumer<GpuTextureView>?,
+    ) {
+        FramePacer.game.frame()
         if (!hookRan) {
             hookRan = true
         }
@@ -73,36 +95,40 @@ object MinimapOverlay {
         val target = Backfill.target(mapProcessor, ::standDown) ?: return
         val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
 
-        val plan = Backfill.plan(target, mapProcessor, originX.toDouble(), originZ.toDouble(), minX, maxX, minZ, maxZ, factor, Backfill.Budget(uploads = 4, masks = 4))
+        val plan = Backfill.plan(target, mapProcessor, originX.toDouble(), originZ.toDouble(), minX, maxX, minZ, maxZ, factor, Backfill.Budget(uploads = minOf(4, FramePacer.game.uploads), masks = 4))
             ?: return standDown("too-far", "The minimap covers too much to backfill")
 
         var renderer: MultiTextureRenderTypeRenderer? = null
-        for (piece in plan.pieces) {
-            val batch = renderer ?: rendererProvider.getRenderer(finalizer, mapRenderType).also { renderer = it }
-            val size = piece.tileSize.toFloat()
-            val r = piece.mask.rectangles
-            val buffer = batch.begin(piece.texture)
-            for (i in 0 until piece.mask.count) {
-                val x1 = r[i * 4]
-                val z1 = r[i * 4 + 1]
-                val x2 = r[i * 4 + 2]
-                val z2 = r[i * 4 + 3]
-                val u1 = (x1 - piece.originX) / size
-                val v1 = (z1 - piece.originZ) / size
-                val u2 = (x2 - piece.originX) / size
-                val v2 = (z2 - piece.originZ) / size
-                val left = x1 - originX
-                val top = z1 - originZ
-                val right = x2 - originX
-                val bottom = z2 - originZ
-                // Same corner order and texture orientation as the minimap's own terrain.
-                buffer.addVertex(matrix, left, bottom, 0f).setUv(u1, v2)
-                buffer.addVertex(matrix, right, bottom, 0f).setUv(u2, v2)
-                buffer.addVertex(matrix, right, top, 0f).setUv(u2, v1)
-                buffer.addVertex(matrix, left, top, 0f).setUv(u1, v1)
+        // Handed back to Xaero even if a piece fails, so its renderer is never left half used.
+        try {
+            for (piece in plan.pieces) {
+                val batch = renderer ?: rendererProvider.getRenderer(finalizer, mapRenderType).also { renderer = it }
+                val size = piece.tileSize.toFloat()
+                val r = piece.mask.rectangles
+                val buffer = batch.begin(piece.texture)
+                for (i in 0 until piece.mask.count) {
+                    val x1 = r[i * 4]
+                    val z1 = r[i * 4 + 1]
+                    val x2 = r[i * 4 + 2]
+                    val z2 = r[i * 4 + 3]
+                    val u1 = (x1 - piece.originX) / size
+                    val v1 = (z1 - piece.originZ) / size
+                    val u2 = (x2 - piece.originX) / size
+                    val v2 = (z2 - piece.originZ) / size
+                    val left = x1 - originX
+                    val top = z1 - originZ
+                    val right = x2 - originX
+                    val bottom = z2 - originZ
+                    // Same corner order and texture orientation as the minimap's own terrain.
+                    buffer.addVertex(matrix, left, bottom, 0f).setUv(u1, v2)
+                    buffer.addVertex(matrix, right, bottom, 0f).setUv(u2, v2)
+                    buffer.addVertex(matrix, right, top, 0f).setUv(u2, v1)
+                    buffer.addVertex(matrix, left, top, 0f).setUv(u1, v1)
+                }
             }
+        } finally {
+            renderer?.let(rendererProvider::draw)
         }
-        renderer?.let(rendererProvider::draw)
         lastSummary = plan.summary
     }
 

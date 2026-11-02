@@ -24,6 +24,12 @@ object Overlay {
     var hookRan = false
         private set
 
+    /** Set by `/mapexposer debug regions`: the next frame writes what Xaero has of each region in view to the log. */
+    @Volatile
+    var debugRegions = false
+
+    private var regionsWatchedAt = 0L
+
     /** One line on what the last frame did, for `/mapexposer` and the settings screen. */
     var lastSummary = "The world map has not been opened yet."
         private set
@@ -38,7 +44,24 @@ object Overlay {
         cameraZ: Double,
         rendererProvider: MultiTextureRenderTypeRendererProvider,
     ) {
-        Backfill.nextFrame()
+        if (HookErrors.isOff(HookErrors.WORLD_MAP)) return
+        try {
+            drawFrame(mapProcessor, matrix, flooredCameraX, flooredCameraZ, cameraX, cameraZ, rendererProvider)
+        } catch (e: Throwable) {
+            HookErrors.failed(HookErrors.WORLD_MAP, e)
+        }
+    }
+
+    private fun drawFrame(
+        mapProcessor: MapProcessor,
+        matrix: Matrix4f,
+        flooredCameraX: Int,
+        flooredCameraZ: Int,
+        cameraX: Double,
+        cameraZ: Double,
+        rendererProvider: MultiTextureRenderTypeRendererProvider,
+    ) {
+        FramePacer.game.frame()
         if (!hookRan) {
             hookRan = true
         }
@@ -52,37 +75,53 @@ object Overlay {
         drawOutlines(mapProcessor, matrix, flooredCameraX, flooredCameraZ, blocksPerUnit, minX, maxX, minZ, maxZ)
 
         val target = Backfill.target(mapProcessor, ::standDown) ?: return
+        val now = System.currentTimeMillis()
+        if (debugRegions || now - regionsWatchedAt >= 1000L) {
+            regionsWatchedAt = now
+            val debug = debugRegions
+            debugRegions = false
+            // Close up, Xaero always loads the regions it shows, so one it has not is one it cannot.
+            Backfill.watchRegions(target, mapProcessor, minX, maxX, minZ, maxZ, closeUp = blocksPerUnit <= 1f, debug = debug)
+            if (debug) Minecraft.getInstance().player?.sendSystemMessage(net.minecraft.network.chat.Component.literal("§7Wrote what Xaero has of each region in view to the log"))
+        }
         val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
-        val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget())
+        val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget(), seaFloor = true)
             ?: return standDown("too-far", "Zoomed out too far to cover with BlueMap")
 
         var renderer: MultiTextureRenderTypeRenderer? = null
-        for (piece in plan.pieces) {
-            val batch = renderer ?: rendererProvider.getRenderer(CustomRenderTypes.MAP).also { renderer = it }
-            val size = piece.tileSize.toFloat()
-            val r = piece.mask.rectangles
-            for (i in 0 until piece.mask.count) {
-                val rMinX = r[i * 4]
-                val rMinZ = r[i * 4 + 1]
-                val rMaxX = r[i * 4 + 2]
-                val rMaxZ = r[i * 4 + 3]
-                GuiMap.renderTexturedModalSubRectWithLighting(
-                    matrix,
-                    rMinX - flooredCameraX, rMinZ - flooredCameraZ,
-                    (rMinX - piece.originX) / size, (rMinZ - piece.originZ) / size,
-                    (rMaxX - piece.originX) / size, (rMaxZ - piece.originZ) / size,
-                    rMaxX - rMinX, rMaxZ - rMinZ,
-                    piece.texture, false, batch,
-                )
+        // Handed back to Xaero even if a piece fails, so its renderer is never left half used.
+        try {
+            for (piece in plan.pieces) {
+                val batch = renderer ?: rendererProvider.getRenderer(CustomRenderTypes.MAP).also { renderer = it }
+                val size = piece.tileSize.toFloat()
+                val r = piece.mask.rectangles
+                for (i in 0 until piece.mask.count) {
+                    val rMinX = r[i * 4]
+                    val rMinZ = r[i * 4 + 1]
+                    val rMaxX = r[i * 4 + 2]
+                    val rMaxZ = r[i * 4 + 3]
+                    GuiMap.renderTexturedModalSubRectWithLighting(
+                        matrix,
+                        rMinX - flooredCameraX, rMinZ - flooredCameraZ,
+                        (rMinX - piece.originX) / size, (rMinZ - piece.originZ) / size,
+                        (rMaxX - piece.originX) / size, (rMaxZ - piece.originZ) / size,
+                        rMaxX - rMinX, rMaxZ - rMinZ,
+                        piece.texture, false, batch,
+                    )
+                }
             }
+        } finally {
+            renderer?.let(rendererProvider::draw)
         }
-        renderer?.let(rendererProvider::draw)
         if (plan.loading.isNotEmpty()) {
             val buffer = XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY)
             Spinner.draw(buffer, matrix, plan.loading, target.layout.tileSize, flooredCameraX, flooredCameraZ, cameraX, cameraZ, blocksPerUnit)
         }
 
-        lastSummary = plan.summary + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
+        val floor = target.session.seaFloor
+        val floorSaid = if (!Config.seaFloorHires) "" else
+            "; sea floor: ${floor.downloaded.get()} 3D tiles downloaded (${floor.downloadedBytes.get() / 1024} KB), ${floor.waiting} waiting"
+        lastSummary = plan.summary + floorSaid + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
     }
 
     /**

@@ -13,6 +13,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import javax.imageio.ImageIO
+import kotlin.math.roundToInt
 
 /**
  * Talking to a BlueMap web server.
@@ -79,6 +80,19 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         return layout
     }
 
+    /** Where BlueMap's web viewer opens [map] (`startPos`, in blocks), or null if it does not say. Blocking. */
+    @Throws(IOException::class)
+    fun startPosition(map: String): Pair<Int, Int>? {
+        val response = getText("maps/${checkMapId(map)}/settings.json")
+        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
+        val start = JsonParser.parseString(response.body()).asJsonObject.getAsJsonArray("startPos") ?: return null
+        if (start.size() < 2) return null
+        val x = start[0].asDouble
+        val z = start[1].asDouble
+        if (!x.isFinite() || !z.isFinite() || Math.abs(x) > 30_000_000 || Math.abs(z) > 30_000_000) return null
+        return x.toInt() to z.toInt()
+    }
+
     /**
      * The maps this BlueMap has, as id to display name, from `settings.json` and each map's own
      * settings. Blocking; call it off the client thread.
@@ -107,11 +121,41 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      * @return the PNG, or null if BlueMap has never rendered anything there (it answers 204).
      */
     @Throws(IOException::class)
-    fun tile(map: String, lod: Int, tileX: Int, tileZ: Int): ByteArray? {
-        val response = getBytes(tilePath(map, lod, tileX, tileZ))
+    fun tile(map: String, lod: Int, tileX: Int, tileZ: Int): ByteArray? =
+        (fetchTile(map, lod, tileX, tileZ) as? TileReply.Image)?.bytes
+
+    /** What BlueMap said about one tile. */
+    sealed interface TileReply {
+        /** The picture, with what the server said to ask about it next time by, if anything. */
+        class Image(val bytes: ByteArray, val etag: String? = null, val lastModified: String? = null) : TileReply
+        /** 304: unchanged since the [Image] whose `etag` or `lastModified` was sent. */
+        object NotModified : TileReply
+        /** 204: BlueMap has rendered nothing there. */
+        object Empty : TileReply
+        /**
+         * 404: nothing there too, as BlueMap's own server says it, but also what a wrong address,
+         * a proxy's error page or a restarting BlueMap answers for every tile. Only believed while
+         * the map's settings still load.
+         */
+        object NotFound : TileReply
+    }
+
+    /**
+     * Fetches one lowres tile, telling BlueMap's "nothing here" apart from "not found". Given the
+     * [etag] or [lastModified] of the copy already held, only asks whether it changed. Blocking.
+     */
+    @Throws(IOException::class)
+    fun fetchTile(map: String, lod: Int, tileX: Int, tileZ: Int, etag: String? = null, lastModified: String? = null): TileReply {
+        val headers = buildList {
+            if (etag != null) add("If-None-Match" to etag)
+            if (lastModified != null) add("If-Modified-Since" to lastModified)
+        }
+        val response = getBytes(tilePath(map, lod, tileX, tileZ), headers)
         return when (response.statusCode()) {
-            200 -> response.body()
-            204, 404 -> null
+            200 -> TileReply.Image(response.body(), response.header("ETag"), response.header("Last-Modified"))
+            304 -> if (headers.isEmpty()) throw IOException("HTTP 304 unasked for tile $map/$lod/$tileX,$tileZ") else TileReply.NotModified
+            204 -> TileReply.Empty
+            404 -> TileReply.NotFound
             else -> throw IOException("HTTP ${response.statusCode()} for tile $map/$lod/$tileX,$tileZ")
         }
     }
@@ -148,11 +192,24 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      * @return the file, or null if BlueMap has never rendered anything there.
      */
     @Throws(IOException::class)
-    fun hiresTile(map: String, tileX: Int, tileZ: Int): ByteArray? {
-        val response = getBytes("maps/${checkMapId(map)}/tiles/0/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.prbm")
+    fun hiresTile(map: String, tileX: Int, tileZ: Int): ByteArray? =
+        (fetchHires(map, tileX, tileZ) as? TileReply.Image)?.bytes
+
+    /**
+     * [hiresTile], telling "nothing there" (204 or 404, as [TileReply.Empty]) from a picture; given
+     * the [etag] or [lastModified] of the copy already held, only asks whether it changed. Blocking.
+     */
+    @Throws(IOException::class)
+    fun fetchHires(map: String, tileX: Int, tileZ: Int, etag: String? = null, lastModified: String? = null): TileReply {
+        val headers = buildList {
+            if (etag != null) add("If-None-Match" to etag)
+            if (lastModified != null) add("If-Modified-Since" to lastModified)
+        }
+        val response = getBytes("maps/${checkMapId(map)}/tiles/0/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.prbm", headers)
         return when (response.statusCode()) {
-            200 -> response.body()
-            204, 404 -> null
+            200 -> TileReply.Image(response.body(), response.header("ETag"), response.header("Last-Modified"))
+            304 -> if (headers.isEmpty()) throw IOException("HTTP 304 unasked for hires tile $map/$tileX,$tileZ") else TileReply.NotModified
+            204, 404 -> TileReply.Empty
             else -> throw IOException("HTTP ${response.statusCode()} for hires tile $map/$tileX,$tileZ")
         }
     }
@@ -168,6 +225,24 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         val text = String(gunzipIfNeeded(response.body(), MAX_BODY), Charsets.UTF_8)
         return JsonParser.parseString(text).asJsonArray.map { entry ->
             entry.asJsonObject.get("resourcePath")?.asString ?: ""
+        }
+    }
+
+    /**
+     * [textures] with each one's average colour as BlueMap gives it, 0xAARRGGBB (the alpha is how
+     * see-through the texture is on average). Blocking.
+     */
+    @Throws(IOException::class)
+    fun textureColours(map: String): List<Pair<String, Int>> {
+        val response = getBytes("maps/${checkMapId(map)}/textures.json")
+        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map textures")
+        val text = String(gunzipIfNeeded(response.body(), MAX_BODY), Charsets.UTF_8)
+        return JsonParser.parseString(text).asJsonArray.map { entry ->
+            val texture = entry.asJsonObject
+            val colour = texture.getAsJsonArray("color")
+            fun channel(i: Int): Int = ((colour?.get(i)?.asFloat ?: 0f) * 255f).roundToInt().coerceIn(0, 255)
+            (texture.get("resourcePath")?.asString ?: "") to
+                (if (colour == null || colour.size() < 4) 0 else (channel(3) shl 24) or (channel(0) shl 16) or (channel(1) shl 8) or channel(2))
         }
     }
 
@@ -203,14 +278,17 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     }
 
     /** A reply, read whole on the calling thread, but never more than [MAX_BODY] bytes of it. */
-    private class Reply<T>(private val status: Int, private val content: T) {
+    private class Reply<T>(private val status: Int, private val content: T, private val headers: java.net.http.HttpHeaders? = null) {
         fun statusCode() = status
         fun body() = content
+
+        /** A header the server sent, if it is short enough to be one worth keeping. */
+        fun header(name: String): String? = headers?.firstValue(name)?.orElse(null)?.takeIf { it.isNotBlank() && it.length <= 200 }
     }
 
-    private fun getBytes(path: String): Reply<ByteArray> {
-        val response = get(path, HttpResponse.BodyHandlers.ofInputStream())
-        return Reply(response.statusCode(), readCapped(response.body()))
+    private fun getBytes(path: String, headers: List<Pair<String, String>> = emptyList()): Reply<ByteArray> {
+        val response = get(path, HttpResponse.BodyHandlers.ofInputStream(), headers)
+        return Reply(response.statusCode(), readCapped(response.body()), response.headers())
     }
 
     private fun getText(path: String): Reply<String> {
@@ -218,7 +296,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         return Reply(reply.statusCode(), String(reply.body(), Charsets.UTF_8))
     }
 
-    private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
+    private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>, headers: List<Pair<String, String>> = emptyList()): HttpResponse<T> {
         val uri = try {
             URI.create(base + path)
         } catch (e: IllegalArgumentException) {
@@ -227,6 +305,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         val request = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(20))
             .header("User-Agent", "SkysMapExposer (Minecraft mod)")
+            .apply { for ((name, value) in headers) header(name, value) }
             .GET()
             .build()
         try {

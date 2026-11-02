@@ -2,11 +2,16 @@ package com.skystormer.skysmapexposer
 
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import net.fabricmc.loader.api.FabricLoader
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 /**
  * `config/skysmapexposer.json`: which servers have a BlueMap, where, and when your own map counts as
@@ -121,26 +126,44 @@ object Config {
     /** The biggest the map panels may be made, before the letters look too blocky. */
     var panelMaxScale: Float = 2f
 
-    /**
-     * Experimental: whether sharing a map in chat carries on, slower, after the server warns about
-     * spam once, instead of stopping at the first warning.
-     */
-    var shareThroughWarnings: Boolean = false
-
     /** Experimental: the mods ("Bobby", "Voxy", "Distant Horizons") the terrain fill is switched off for. */
     val fillOff: MutableSet<String> = HashSet()
+
+    /**
+     * Experimental: the world map's sea floor from BlueMap's 3D tiles close up ([SeaFloor]), rather
+     * than from its flat pictures alone, which have none. Downloads far more.
+     */
+    var seaFloorHires: Boolean = false
 
     /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
     var minimapBiomes: Boolean = true
 
-    /** How often a tile on screen is checked for changes on the server. */
-    var tileRefreshSeconds: Int = 60
+    /** Whether pings from trusted players are shown ([PlayerPings]). */
+    var pings: Boolean = true
+
+    /** The players whose pings you take and who get yours, by server address as [normalise] writes it. */
+    val trusted: MutableMap<String, MutableSet<UUID>> = HashMap()
+
+    /**
+     * How often a tile on screen is asked about on the server ("has it changed?", which costs
+     * nothing when the server can say "not modified"), and how often it is downloaded whole anyway
+     * (in hours, 4 to a week, or 0 for never; each tile a little later than that, so they spread out).
+     */
+    var tileCheckMinutes: Int = 15
+    var fullDownloadHours: Int = 72
+
+    /** What the settings offer for [fullDownloadHours]; 0 is off. */
+    val FULL_DOWNLOAD_CHOICES = listOf(4, 8, 12, 24, 48, 72, 120, 168, 0)
 
     /** How often BlueMap's markers are read again. */
     var markerRefreshSeconds: Int = 30
 
-    /** How many BlueMap tiles to keep in memory. */
-    var maxLoadedTiles: Int = 64
+    /** Video memory the BlueMap tiles may hold, in MB; tiles on screen are drawn coarser rather than dropped when over it. */
+    var textureBudgetMb: Int = 256
+
+    /** Whether every tile BlueMap has is downloaded and made ready in the background after joining ([MapPrep]), and how many a second at most. */
+    var prepareMap: Boolean = true
+    var prepareTilesPerSecond: Int = 4
 
     var servers: List<Server> = defaultServers()
 
@@ -189,68 +212,148 @@ object Config {
     // No server is set up until the player adds one in the settings screen.
     private fun defaultServers() = emptyList<Server>()
 
-    fun load() {
-        val path = file
-        try {
-            if (Files.notExists(path)) {
-                save()
-                return
-            }
-            val json = JsonParser.parseString(Files.readString(path)).asJsonObject
-            json.get("enabled")?.let { enabled = it.asBoolean }
-            json.get("showMarkers")?.let { showMarkers = it.asBoolean }
-            json.get("showOutlines")?.let { showOutlines = it.asBoolean }
-            json.get("showPlayers")?.let { showPlayers = it.asBoolean }
-            json.get("matchWaypointsToDimension")?.let { matchWaypointsToDimension = it.asBoolean }
-            json.get("guessBiomes")?.let { guessBiomes = it.asBoolean }
-            json.get("otherDimensionCoords")?.let { otherDimensionCoords = it.asBoolean }
-            json.get("barOpen")?.let { barOpen = it.asBoolean }
-            json.get("barLeft")?.let { barLeft = it.asInt }
-            json.get("barTop")?.let { barTop = it.asInt }
-            json.get("barRows")?.let { barRows = it.asInt.coerceIn(1, 40) }
-            json.get("minimapBiomes")?.let { minimapBiomes = it.asBoolean }
-            json.get("shareThroughWarnings")?.let { shareThroughWarnings = it.asBoolean }
-            json.getAsJsonArray("fillOff")?.let { list -> fillOff.clear(); list.forEach { fillOff.add(it.asString) } }
-            json.get("barScale")?.let { barScale = it.asFloat.coerceIn(0.5f, 4f) }
-            json.get("barExtra")?.let { barExtra = it.asInt.coerceIn(0, 1000) }
-            json.get("barUnder")?.let { barUnder = it.asString }
-            json.get("panelMaxScale")?.let { panelMaxScale = it.asFloat.coerceIn(1f, 4f) }
-            json.get("minimapPlayers")?.let { element ->
-                minimapPlayers = MinimapPlayers.entries.firstOrNull { it.name == element.asString } ?: minimapPlayers
-            }
-            json.get("staleDays")?.let { staleDays = it.asDouble }
-            json.get("worldMapMarkerScale")?.let { worldMapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
-            json.get("playerHeadScale")?.let { playerHeadScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
-            // Before it had its own setting, the minimap used the world map's.
-            minimapHeadScale = (json.get("minimapHeadScale") ?: json.get("playerHeadScale"))?.asFloat?.coerceIn(MIN_SCALE, MAX_SCALE) ?: 1f
-            json.get("minimapMarkerScale")?.let { minimapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
-            json.get("minimapShrinkChunks")?.let { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
-            json.get("tileRefreshSeconds")?.let { tileRefreshSeconds = it.asInt.coerceAtLeast(10) }
-            json.get("markerRefreshSeconds")?.let { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
-            json.get("maxLoadedTiles")?.let { maxLoadedTiles = it.asInt.coerceIn(8, 1024) }
-            json.getAsJsonArray("servers")?.let { array ->
-                servers = array.map { element ->
-                    val entry = element.asJsonObject
-                    Server(
-                        addresses = entry.getAsJsonArray("addresses")?.map { it.asString }
-                            ?: listOfNotNull(entry.get("address")?.asString),
-                        url = entry.get("url").asString,
-                        maps = entry.getAsJsonObject("maps")?.entrySet()
-                            ?.associate { (dimension, map) -> dimension to map.asString }
-                            ?: emptyMap(),
-                        off = entry.getAsJsonArray("off")?.map { it.asString }?.toSet() ?: emptySet(),
-                        coverBefore = entry.getAsJsonObject("coverBefore")?.entrySet()
-                            ?.associate { (dimension, time) -> dimension to time.asLong }
-                            ?: emptyMap(),
-                    )
+    /**
+     * What [load] could not read, said once in chat on the next join ([takeLoadProblem]); null when
+     * everything was read.
+     */
+    private var loadProblem: String? = null
+
+    /**
+     * Set when part of the file could not be read and it could not be copied aside either: saving
+     * would then lose what was not read, so nothing is saved this game.
+     */
+    private var saveBlocked = false
+
+    /**
+     * Reads the file one setting at a time, and each server on its own, so that a typo costs only
+     * the setting or server it is in (logged) and never the rest. If anything could not be read,
+     * the file is copied aside as `skysmapexposer.json.broken-<time>` before anything can save over
+     * it, and the player is told on joining a world.
+     */
+    fun load() = load(file)
+
+    internal fun load(path: Path) {
+        if (Files.notExists(path)) {
+            save()
+            return
+        }
+        val json = try {
+            JsonParser.parseString(Files.readString(path)).asJsonObject
+        } catch (e: Exception) {
+            Log.error("Could not read $path", e)
+            null
+        }
+        val skipped = ArrayList<String>()
+        if (json != null) {
+            fun read(key: String, apply: (JsonElement) -> Unit) {
+                val value = json.get(key) ?: return
+                try {
+                    apply(value)
+                } catch (e: Exception) {
+                    Log.warn("Could not read \"{}\" in {} ({}); it is left as it was", key, path, e.toString())
+                    skipped.add(key)
                 }
             }
+            read("enabled") { enabled = it.asBoolean }
+            read("showMarkers") { showMarkers = it.asBoolean }
+            read("showOutlines") { showOutlines = it.asBoolean }
+            read("showPlayers") { showPlayers = it.asBoolean }
+            read("matchWaypointsToDimension") { matchWaypointsToDimension = it.asBoolean }
+            read("guessBiomes") { guessBiomes = it.asBoolean }
+            read("otherDimensionCoords") { otherDimensionCoords = it.asBoolean }
+            read("barOpen") { barOpen = it.asBoolean }
+            read("barLeft") { barLeft = it.asInt }
+            read("barTop") { barTop = it.asInt }
+            read("barRows") { barRows = it.asInt.coerceIn(1, 40) }
+            read("minimapBiomes") { minimapBiomes = it.asBoolean }
+            read("pings") { pings = it.asBoolean }
+            read("trusted") { element ->
+                val read = element.asJsonObject.entrySet().associate { (server, players) ->
+                    server to players.asJsonArray.mapTo(LinkedHashSet()) { UUID.fromString(it.asString) }
+                }
+                trusted.clear()
+                trusted.putAll(read)
+            }
+            read("fillOff") { element ->
+                val names = element.asJsonArray.map { it.asString }
+                fillOff.clear()
+                fillOff.addAll(names)
+            }
+            read("barScale") { barScale = it.asFloat.coerceIn(0.5f, 4f) }
+            read("barExtra") { barExtra = it.asInt.coerceIn(0, 1000) }
+            read("barUnder") { barUnder = it.asString }
+            read("panelMaxScale") { panelMaxScale = it.asFloat.coerceIn(1f, 4f) }
+            read("minimapPlayers") { element ->
+                val name = element.asString
+                minimapPlayers = MinimapPlayers.entries.first { it.name == name }
+            }
+            read("staleDays") { staleDays = it.asDouble }
+            read("worldMapMarkerScale") { worldMapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
+            read("playerHeadScale") { playerHeadScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
+            // Before it had its own setting, the minimap used the world map's.
+            read(if (json.has("minimapHeadScale")) "minimapHeadScale" else "playerHeadScale") {
+                minimapHeadScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE)
+            }
+            read("minimapMarkerScale") { minimapMarkerScale = it.asFloat.coerceIn(MIN_SCALE, MAX_SCALE) }
+            read("minimapShrinkChunks") { minimapShrinkChunks = it.asInt.coerceIn(MIN_SHRINK_CHUNKS, MAX_SHRINK_CHUNKS) }
+            // The old "tileRefreshSeconds" is ignored: its 60 seconds asked far too often.
+            read("tileCheckMinutes") { tileCheckMinutes = it.asInt.coerceIn(1, 24 * 60) }
+            // The old "tileHardRefreshHours" is ignored: its 4 hours downloaded the whole map again most days.
+            read("fullDownloadHours") { fullDownloadHours = it.asInt.let { hours -> if (hours <= 0) 0 else hours.coerceIn(4, 24 * 7) } }
+            read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
+            read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
+            read("prepareMap") { prepareMap = it.asBoolean }
+            read("seaFloorHires") { seaFloorHires = it.asBoolean }
+            read("prepareTilesPerSecond") { prepareTilesPerSecond = it.asInt.coerceIn(1, 50) }
+            read("servers") { element ->
+                val list = ArrayList<Server>()
+                element.asJsonArray.forEachIndexed { index, entry ->
+                    try {
+                        list.add(server(entry.asJsonObject))
+                    } catch (e: Exception) {
+                        Log.warn("Could not read server {} in {} ({}); it is left out: {}", index + 1, path, e.toString(), entry)
+                        skipped.add("server ${index + 1}")
+                    }
+                }
+                servers = list
+            }
+        }
+        if (json == null) keepAside(path, "its settings")
+        else if (skipped.isNotEmpty()) keepAside(path, "part of its settings (${skipped.joinToString()})")
+    }
+
+    private fun server(entry: JsonObject) = Server(
+        addresses = entry.getAsJsonArray("addresses")?.map { it.asString }
+            ?: listOfNotNull(entry.get("address")?.asString),
+        url = entry.get("url").asString,
+        maps = entry.getAsJsonObject("maps")?.entrySet()
+            ?.associate { (dimension, map) -> dimension to map.asString }
+            ?: emptyMap(),
+        off = entry.getAsJsonArray("off")?.map { it.asString }?.toSet() ?: emptySet(),
+        coverBefore = entry.getAsJsonObject("coverBefore")?.entrySet()
+            ?.associate { (dimension, time) -> dimension to time.asLong }
+            ?: emptyMap(),
+    )
+
+    /** Copies a file that could not be fully read beside itself, before anything saves over it. */
+    private fun keepAside(path: Path, what: String) {
+        val copy = path.resolveSibling("${path.fileName}.broken-${LocalDateTime.now().format(STAMP)}")
+        loadProblem = try {
+            Files.copy(path, copy, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+            Log.warn("Kept the settings file as it was in {}", copy)
+            "Sky's Map Exposer couldn't read $what; the original was kept as ${copy.fileName}"
         } catch (e: Exception) {
-            Log.error("Could not read $path; keeping the settings already in memory", e)
+            Log.error("Could not copy $path aside; settings will not be saved this game", e)
+            saveBlocked = true
+            "Sky's Map Exposer couldn't read $what, nor copy the file aside, so settings won't be saved this game. The log says why."
         }
     }
 
+    /** The message about a settings file that could not be fully read, once; null after that or if there was none. */
+    fun takeLoadProblem(): String? = loadProblem.also { loadProblem = null }
+
     fun save() {
+        if (saveBlocked) return
         val json = JsonObject()
         json.addProperty("enabled", enabled)
         json.addProperty("showMarkers", showMarkers)
@@ -265,7 +368,12 @@ object Config {
         json.addProperty("barTop", barTop)
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
-        json.addProperty("shareThroughWarnings", shareThroughWarnings)
+        json.addProperty("pings", pings)
+        json.add("trusted", JsonObject().also { servers ->
+            trusted.forEach { (server, players) ->
+                servers.add(server, JsonArray().also { list -> players.forEach { list.add(it.toString()) } })
+            }
+        })
         json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
         json.addProperty("barScale", barScale)
         json.addProperty("barExtra", barExtra)
@@ -277,9 +385,13 @@ object Config {
         json.addProperty("minimapHeadScale", minimapHeadScale)
         json.addProperty("minimapMarkerScale", minimapMarkerScale)
         json.addProperty("minimapShrinkChunks", minimapShrinkChunks)
-        json.addProperty("tileRefreshSeconds", tileRefreshSeconds)
+        json.addProperty("tileCheckMinutes", tileCheckMinutes)
+        json.addProperty("fullDownloadHours", fullDownloadHours)
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
-        json.addProperty("maxLoadedTiles", maxLoadedTiles)
+        json.addProperty("textureBudgetMb", textureBudgetMb)
+        json.addProperty("prepareMap", prepareMap)
+        json.addProperty("seaFloorHires", seaFloorHires)
+        json.addProperty("prepareTilesPerSecond", prepareTilesPerSecond)
         val array = JsonArray()
         for (server in servers) {
             val entry = JsonObject()
@@ -305,6 +417,8 @@ object Config {
             Log.error("Could not write $file", e)
         }
     }
+
+    private val STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
 
     const val MIN_SCALE = 0.25f
     const val MAX_SCALE = 3f

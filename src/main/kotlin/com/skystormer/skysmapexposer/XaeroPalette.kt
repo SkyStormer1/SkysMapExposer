@@ -60,10 +60,10 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
     private val placeholder = placeholderFor(dimensionId, water = false)
     private val waterPlaceholder = placeholderFor(dimensionId, water = true)
 
-    private val candidates: List<Candidate> = BlockPalette.CANDIDATES.mapNotNull { id ->
-        val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(id))
-        if (block == Blocks.AIR) null else block.defaultBlockState().let { Candidate(it, baseColour(it), tintOf(it)) }
-    }
+    private val candidates: List<Candidate> = BlockPalette.CANDIDATES.mapNotNull(::candidate)
+
+    private val locals: List<Pair<BlockPalette.Local, Candidate>> =
+        BlockPalette.LOCALS.mapNotNull { local -> candidate(local.id)?.let { local to it } }
 
     private val lookalikes: List<Pair<BlockPalette.Lookalike, BlockState>> = BlockPalette.LOOKALIKES.mapNotNull { look ->
         val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(look.id))
@@ -74,6 +74,12 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
     private val stateColours = HashMap<BlockState, Pair<Int, Tint>>()
     private val keys = HashMap<String, ResourceKey<Biome>?>()
     private val biomes = HashMap<ResourceKey<Biome>, Biome?>()
+
+    /** Block [id] coloured as Xaero colours it, or null if this game has no such block. */
+    private fun candidate(id: String): Candidate? {
+        val block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(id))
+        return if (block == Blocks.AIR) null else block.defaultBlockState().let { Candidate(it, baseColour(it), tintOf(it)) }
+    }
 
     /**
      * What a download writes for BlueMap's [colour] at [height], into [into]: water or land, the
@@ -110,9 +116,10 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
         val here = choices.getOrPut(biome) {
             val id = biome.identifier().toString()
             val looks = lookalikes.filter { id in it.first.biomes }
+            val here = candidates + locals.filter { id in it.first.biomes }.map { it.second }
             Choices(
-                candidates.map { it.state } + looks.map { it.second },
-                candidates.map { BlockPalette.toLab(tinted(it.base, it.tint, biome)) } + looks.map { BlockPalette.toLab(it.first.blueMapColour) },
+                here.map { it.state } + looks.map { it.second },
+                here.map { BlockPalette.toLab(tinted(it.base, it.tint, biome)) } + looks.map { BlockPalette.toLab(it.first.blueMapColour) },
             )
         }
         here.answers[rgb]?.let { return it }

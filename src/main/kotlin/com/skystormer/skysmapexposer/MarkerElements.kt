@@ -37,7 +37,7 @@ object MarkerElements {
 
     /** What the world map's pins need between [ElementRenderer.preRender] and `postRender`. */
     class Context(
-        /** Players' heads or BlueMap's markers: the two are separate renderers, so the heads can go on top. */
+        /** Players' and pings' heads, or BlueMap's markers: the two are separate renderers, so the heads can go on top. */
         val players: Boolean,
     ) {
         var pins: List<Markers.Pin> = emptyList()
@@ -56,23 +56,45 @@ object MarkerElements {
      */
     fun pinsForWorldMap(): List<Markers.Pin> = pinsFor(worldMapDimension())
 
-    /** The markers and players BlueMap has for [dimension], in that dimension's own coordinates. */
+    /**
+     * The markers and players BlueMap has for [dimension], in that dimension's own coordinates.
+     *
+     * Asked for every frame, so the list is kept and only rebuilt when what it is made from
+     * changes. Markers and players are each replaced by a new list when read again, so comparing
+     * them by identity is enough; another dimension or a switch turned off gives another list or none.
+     */
     fun pinsFor(dimension: String?): List<Markers.Pin> {
-        val session = Session.current ?: return emptyList()
         if (dimension == null) return emptyList()
-        val map = session.server.markersFor(dimension) ?: return emptyList()
-        val pins = ArrayList<Markers.Pin>()
-        if (Config.showMarkers) session.markers.of(map)?.let { pins.addAll(it.points) }
-        if (Config.showPlayers) {
-            val me = Minecraft.getInstance().player?.uuid
-            session.markers.players(map).filterTo(pins) { it.uuid != me }
-        }
-        return pins
+        val session = Session.current
+        // Pings need no BlueMap, so a server without one still gets them.
+        val map = session?.server?.markersFor(dimension)
+        val snapshot = if (map != null && Config.showMarkers) session.markers.of(map) else null
+        val players = if (map != null && Config.showPlayers) session.markers.players(map) else null
+        val pings = PlayerPings.pinsIn(dimension)
+        val me = Minecraft.getInstance().player?.uuid
+        if (snapshot === pinsSnapshot && players === pinsPlayers && pings === pinsPings && me == pinsMe) return pins
+        val built = ArrayList<Markers.Pin>()
+        snapshot?.let { built.addAll(it.points) }
+        players?.filterTo(built) { it.uuid != me }
+        built.addAll(pings)
+        pins = built
+        pinsSnapshot = snapshot
+        pinsPlayers = players
+        pinsPings = pings
+        pinsMe = me
+        return built
     }
+
+    // What [pinsFor] last built [pins] from.
+    private var pins: List<Markers.Pin> = emptyList()
+    private var pinsSnapshot: Markers.Snapshot? = null
+    private var pinsPlayers: List<Markers.Player>? = null
+    private var pinsPings: List<Markers.Ping>? = null
+    private var pinsMe: java.util.UUID? = null
 
     class Provider : ElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: ElementRenderLocation, context: Context) {
-            context.pins = if (location == ElementRenderLocation.WORLD_MAP) pinsForWorldMap().filter { (it is Markers.Player) == context.players } else emptyList()
+            context.pins = if (location == ElementRenderLocation.WORLD_MAP) pinsForWorldMap().filter { (it !is Markers.Point) == context.players } else emptyList()
             context.next = 0
         }
 
@@ -100,7 +122,9 @@ object MarkerElements {
         override fun getInteractionBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin)
         override fun getRenderBoxLeft(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin) - 1
         override fun getRenderBoxRight(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin) + 1
-        override fun getRenderBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int = -halfOf(pin) - 1
+        // A ping's beam rises out of its box, and has to stay drawn with its top in the box's reach.
+        override fun getRenderBoxTop(pin: Markers.Pin, context: Context, partialTicks: Float): Int =
+            -halfOf(pin) - 1 - if (pin is Markers.Ping) BEAM_HEIGHT else 0
         override fun getRenderBoxBottom(pin: Markers.Pin, context: Context, partialTicks: Float): Int = halfOf(pin) + 1
         override fun getLeftSideLength(pin: Markers.Pin, minecraft: Minecraft): Int = minecraft.font.width(pin.label) + 9
         override fun getMenuName(pin: Markers.Pin): String = pin.label
@@ -124,6 +148,12 @@ object MarkerElements {
                     MapMenus.option(if (locked) "Unlock ${pin.label}" else "Lock on to ${pin.label}", options.size, target) {
                         LockedPlayers.toggle(pin)
                     }.setActive(locks != null)
+                )
+                val trusted = PlayerPings.isTrusted(pin.uuid)
+                options.add(
+                    MapMenus.option(if (trusted) "Stop trusting" else "Trust for pings", options.size, target) {
+                        PlayerPings.setTrusted(pin.uuid, !trusted)
+                    }
                 )
             }
             options.add(
@@ -171,7 +201,7 @@ object MarkerElements {
 
         // Xaero renders elements in two passes, shadows first ("pre"); both go through here.
         override fun shouldRender(location: ElementRenderLocation, pre: Boolean): Boolean =
-            location == ElementRenderLocation.WORLD_MAP && (Config.showMarkers || Config.showPlayers)
+            location == ElementRenderLocation.WORLD_MAP && (Config.showMarkers || Config.showPlayers || PlayerPings.showing)
 
         /**
          * Xaero divides an element's position by the dimension scale, because its own waypoints are
@@ -219,6 +249,7 @@ object MarkerElements {
             val icon = iconFor(pin)
             // Drawn first and a little bigger than the face, which is batched and lands on top.
             if (pin is Markers.Player && pin.uuid == MapView.highlighted) rainbowOutline(graphics, half)
+            if (pin is Markers.Ping) PinDrawing.beam(pin, half, BEAM_HEIGHT) { x1, y1, x2, y2, colour -> graphics.fill(x1, y1, x2, y2, colour) }
             val renderer = context.iconRenderer
             if (icon != null && renderer != null) {
                 PinDrawing.quad(renderer.begin(icon.view), pose.last().pose(), icon, sizeOf(pin))
@@ -287,6 +318,10 @@ object MarkerElements {
                     if (LockedPlayers.isLocked(pin.uuid)) "\nLocked on: right-click to unlock" else "\nRight-click to lock on"
             ).withStyle { it.withColor(0xAAAAAA) }
         )
+        is Markers.Ping -> Component.literal(pin.label).append(
+            Component.literal("\nPing · ${pin.x.toInt()}, ${pin.y.toInt()}, ${pin.z.toInt()}\nRight-click to save as a waypoint")
+                .withStyle { it.withColor(0xAAAAAA) }
+        )
     }
 
     /** A pin's picture: the BlueMap icon for a marker, the face from the skin for a player. */
@@ -295,10 +330,11 @@ object MarkerElements {
             PinDrawing.Icon(view, 0f, 0f, 1f, 1f, width, height)
         }
         is Markers.Player -> PinDrawing.face(pin.uuid)
+        is Markers.Ping -> PinDrawing.face(pin.uuid)
     }
 
     fun dotColour(pin: Markers.Pin): Int = when (pin) {
-        is Markers.Player -> 0xFFFFFFFF.toInt()
+        is Markers.Player, is Markers.Ping -> 0xFFFFFFFF.toInt()
         is Markers.Point -> 0xFF55FFFF.toInt()
     }
 
@@ -307,11 +343,13 @@ object MarkerElements {
      * markers at 12, each times its own size setting.
      */
     fun sizeOf(pin: Markers.Pin): Float =
-        if (pin is Markers.Player) 20f * Config.playerHeadScale else 12f * Config.worldMapMarkerScale
+        if (pin is Markers.Point) 12f * Config.worldMapMarkerScale else 20f * Config.playerHeadScale
 
     fun halfOf(pin: Markers.Pin): Int = (sizeOf(pin) / 2).toInt().coerceAtLeast(2)
 
     const val HALF = 6
+    /** How far a ping's beam rises above its head on the world map, in the element's units. */
+    private const val BEAM_HEIGHT = 72
     private const val OUTLINE = 2
     private const val OUTLINE_EDGE = 0xFF000000.toInt()
     private const val OUTLINE_SATURATION = 0.8f
@@ -325,6 +363,25 @@ object PinDrawing {
 
     /** A picture inside a texture: [u1]..[u2], [v1]..[v2], drawn at up to [width]×[height] units. */
     class Icon(val view: GpuTextureView, val u1: Float, val v1: Float, val u2: Float, val v2: Float, val width: Int, val height: Int)
+
+    /** A ping's beam colour at [brightness], 0 to 1: a beacon's pale blue. */
+    fun beamColour(brightness: Float): Int = ((brightness * 255).toInt().coerceIn(0, 255) shl 24) or 0x7FE8FF
+
+    /**
+     * [ping]'s beam on a map: a column rising [height] units above [from], the top of its head,
+     * flashing with it and paler towards the top. Each map's graphics has its own [fill].
+     */
+    inline fun beam(ping: Markers.Ping, from: Int, height: Int, fill: (Int, Int, Int, Int, Int) -> Unit) {
+        val lit = PlayerPings.brightness(ping)
+        val step = height / BEAM_STEPS
+        for (i in 0 until BEAM_STEPS) {
+            val bottom = -from - i * step
+            fill(-BEAM_HALF, bottom - step, BEAM_HALF, bottom, beamColour(lit * (BEAM_STEPS * 2 - i) / (BEAM_STEPS * 2)))
+        }
+    }
+
+    const val BEAM_STEPS = 8
+    const val BEAM_HALF = 3
 
     /** Draws [icon] centred on the pose's origin, [size] units along its longer side. */
     fun quad(buffer: BufferBuilder, matrix: Matrix4f, icon: Icon, size: Float) {

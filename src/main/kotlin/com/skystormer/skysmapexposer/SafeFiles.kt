@@ -18,12 +18,18 @@ object SafeFiles {
 
     fun write(path: Path, bytes: ByteArray) {
         Files.createDirectories(path.parent)
-        val temporary = path.resolveSibling(path.fileName.toString() + ".tmp")
-        Files.write(temporary, bytes)
+        // A temporary file of its own for every write, so two writes of the same file at once
+        // (a tile loaded twice) never write into each other's.
+        val temporary = Files.createTempFile(path.parent, path.fileName.toString() + ".", ".tmp")
         try {
-            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        } catch (e: AtomicMoveNotSupportedException) {
-            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING)
+            Files.write(temporary, bytes)
+            try {
+                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(temporary)
         }
     }
 

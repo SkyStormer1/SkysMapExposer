@@ -28,8 +28,23 @@ import java.util.concurrent.ExecutorService
  * which is correct as far as anything here can tell: it is at least as new as any map you made
  * before installing the mod. When a later fetch brings different contents, the date moves on.
  *
- * Tiles on screen are checked again every [Config.tileRefreshSeconds], so the map follows the
- * server's BlueMap as it re-renders; an unchanged tile costs a download and nothing else.
+ * Tiles are kept on disk ready to draw ([TileFile]): shaded and shrunk to every zoom factor once,
+ * when they arrive, so loading one is a read and an inflate. Older caches of BlueMap's own PNGs are
+ * converted the first time each tile loads, without downloading it again.
+ *
+ * Tiles on screen are asked about every [Config.tileCheckMinutes] ("has it changed?", which costs
+ * nothing when the server can answer "not modified") and downloaded whole every
+ * [Config.fullDownloadHours] whatever the checks said, each tile up to half as long again later
+ * ([Schedule.spread]) so they do not all come due together; empty tiles too, so newly rendered
+ * areas appear. Zoomed far out nothing is asked about: there are thousands of tiles on screen, and they
+ * still load from the cache.
+ *
+ * Nothing is kept that does not decode: a reply is decoded before it is saved, and a saved tile
+ * that no longer reads is deleted and fetched again. A tile is only taken as gone from BlueMap on
+ * its word ([BlueMap.TileReply]), and one that had a picture only after two checks say so.
+ *
+ * Tiles stay in memory while either map has drawn them in the last few minutes, within a budget
+ * of video memory ([Eviction]), so closing and reopening the world map finds them still there.
  */
 class TileStore(
     private val blueMap: BlueMap,
@@ -56,6 +71,7 @@ class TileStore(
         var imageSize: Int = 0
 
         /** Which image pixels BlueMap has anything at. */
+        @Volatile
         var present: BitSet? = null
 
         /** For an index tile: per finest tile inside it, 0 unknown, 1 nothing there, 2 something. */
@@ -77,9 +93,14 @@ class TileStore(
         @Volatile
         var checkedAt: Long = 0
 
+        /** When it was last downloaded whole, rather than only asked about. */
+        @Volatile
+        var hardAt: Long = 0
+
         @Volatile
         var refreshing: Boolean = false
 
+        @Volatile
         var failedAt: Long = 0
 
         /** The drawing plan for this tile; rebuilt by [Backfill] from time to time. */
@@ -89,54 +110,114 @@ class TileStore(
         var standIn: Backfill.Mask? = null
         var standInLod: Int = 0
 
-        var lastUsedFrame: Long = 0
+        /**
+         * The sea floor from BlueMap's 3D tiles ([SeaFloor]), `tileSize` square: drawn over the
+         * picture wherever it is not 0. Null with the setting off or nothing in yet.
+         */
+        @Volatile
+        var floor: IntArray? = null
+
+        /** When either map last drew it (epoch milliseconds). */
+        var lastUsed: Long = 0
+
+        /** Video memory its [textures] take. */
+        var bytes: Long = 0
 
         fun hasDataAt(pixelX: Int, pixelZ: Int): Boolean =
             present?.get(pixelZ * imageSize + pixelX) ?: false
     }
 
-    private val tiles = LinkedHashMap<Key, Tile>(256, 0.75f, true)
+    private val tiles = HashMap<Key, Tile>(256)
 
-    /** Anything fetched before this is fetched again, whatever its age. Set by `/mapexposer refresh`. */
+    /** The keys of [tiles], for [prepare] on another thread: tiles the maps hold check themselves. */
+    private val inMemory: MutableSet<Key> = ConcurrentHashMap.newKeySet()
+
+    /** Loads and checks under way for the maps, which background preparation waits for. */
+    val busy = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * Anything downloaded before this is downloaded again as it is drawn, whatever its age. Set by
+     * `/mapexposer refresh` and the map bar's refresh button.
+     */
     @Volatile
     var refetchBefore: Long = 0
+
+    /**
+     * Told when a finest tile's picture is replaced by a different one, with both pictures at a
+     * block a pixel (`tileSize` square), so what depends on it can find what changed ([SeaFloor]).
+     * Called on a worker thread.
+     */
+    @Volatile
+    var pictureChanged: ((key: Key, tileSize: Int, before: IntArray, after: IntArray) -> Unit)? = null
 
     val size: Int get() = tiles.size
 
     fun countIn(state: State): Int = tiles.values.count { it.state == state }
 
-    /** The tile, starting its load if it is not in memory. Client thread only. */
-    fun get(key: Key, blocksPerPixel: Int, tileSize: Int, frame: Long): Tile {
+    /** Video memory all the textures take, for the settings screen. */
+    var heldBytes: Long = 0
+        private set
+
+    /** How many zoom factors coarser than asked tiles are drawn, while those on screen are over the budget. */
+    var coarser: Int = 0
+        private set
+
+    /** Tiles whose failure has been logged, so each is logged once. */
+    private val logged: MutableSet<Key> = ConcurrentHashMap.newKeySet()
+
+    private fun warnOnce(key: Key, message: String, error: Throwable) {
+        if (logged.add(key)) Log.warn("{} {}: {} (said once per tile)", message, key, error.toString())
+    }
+
+    /**
+     * The tile, starting its load if it is not in memory. Unless [mayCheck] is false (zoomed far
+     * out), a tile due for a check is asked about too; BlueMap's coarser tiles always are, being
+     * few. Client thread only.
+     */
+    fun get(key: Key, blocksPerPixel: Int, tileSize: Int, mayCheck: Boolean = true): Tile {
         var tile = tiles[key]
-        if (tile == null || (tile.state == State.FAILED && System.currentTimeMillis() - tile.failedAt > 60_000L)) {
+        val now = System.currentTimeMillis()
+        if (tile == null || (tile.state == State.FAILED && now - tile.failedAt > RETRY_MS)) {
             tile?.let(::release)
             tile = Tile(key, blocksPerPixel, tileSize)
             tiles[key] = tile
+            inMemory.add(key)
             val loading = tile
-            workers.execute { load(loading) }
-        } else if (tile.state == State.READY && !tile.refreshing &&
-            System.currentTimeMillis() - tile.checkedAt > Config.tileRefreshSeconds * 1000L
+            busy.incrementAndGet()
+            workers.execute { try { load(loading) } finally { busy.decrementAndGet() } }
+        } else if ((tile.state == State.READY || tile.state == State.EMPTY) && !tile.refreshing &&
+            (mayCheck || key.lod > 1) && Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now, Schedule.spread(key)) != Schedule.Due.NO
         ) {
             tile.refreshing = true
             val refreshing = tile
-            workers.execute { refresh(refreshing) }
+            busy.incrementAndGet()
+            workers.execute { try { refresh(refreshing) } finally { busy.decrementAndGet() } }
+        } else if (tile.state != State.READY && tile.textures.isNotEmpty()) {
+            // Gone from BlueMap, or no longer readable: its old picture goes too.
+            release(tile)
         }
-        tile.lastUsedFrame = frame
+        tile.lastUsed = now
         return tile
     }
 
     /**
      * Asks for the tile's texture at [factor] blocks per pixel. Whatever texture it already has
-     * keeps being drawn until the new one is ready, so zooming never leaves a hole.
+     * keeps being drawn until the new one is ready, so zooming never leaves a hole. A picture that
+     * cannot be read back marks the tile failed, to be loaded afresh in a minute, rather than being
+     * asked for again every frame.
      */
     fun requestFactor(tile: Tile, factor: Int) {
         if (tile.state != State.READY || !tile.requested.add(factor)) return
         workers.execute {
             try {
-                tile.pending[factor] = shrink(decodeColours(tile, Files.readAllBytes(imageFile(tile.key))), tile, factor)
+                val floor = tile.floor
+                tile.pending[factor] = (if (floor == null) TileFile.pixels(tileFile(tile.key), factor) else withFloor(tile, floor, factor))
+                    ?: throw IOException("the tile file has no 1:$factor picture")
             } catch (e: Exception) {
-                Log.warn("Could not read BlueMap tile {} back from disk: {}", tile.key, e.toString())
+                warnOnce(tile.key, "Could not read BlueMap tile back from disk; loading it again in a minute", e)
                 tile.requested.remove(factor)
+                tile.failedAt = System.currentTimeMillis()
+                tile.state = State.FAILED
             }
         }
     }
@@ -152,14 +233,17 @@ class TileStore(
             val side = tile.tileSize / factor
             val image = NativeImage(side, side, false)
             for (z in 0 until side) {
-                for (x in 0 until side) image.setPixel(x, z, pixels[z * side + x] or OPAQUE)
+                for (x in 0 until side) image.setPixel(x, z, pixels[z * side + x] or TilePixels.OPAQUE)
             }
-            tile.textures.remove(factor)?.close()
+            close(tile, factor)
             tile.textures[factor] = DynamicTexture({ "skysmapexposer ${tile.key} at 1:$factor" }, image)
-            // Three sizes at most: the minimap's, the world map's, and the one it is zooming to.
-            if (tile.textures.size > 3) {
-                tile.textures.keys.filter { it != factor && it != 1 }.take(tile.textures.size - 3).forEach { old ->
-                    tile.textures.remove(old)?.close()
+            account(tile, textureBytes(side))
+            // Three sizes at most: the minimap's, the world map's, and the one it is zooming to;
+            // and over the memory budget, only this one.
+            val most = if (coarser > 0) 1 else 3
+            if (tile.textures.size > most) {
+                tile.textures.keys.filter { it != factor && (coarser > 0 || it != 1) }.take(tile.textures.size - most).forEach { old ->
+                    close(tile, old)
                     tile.requested.remove(old)
                 }
             }
@@ -168,210 +252,322 @@ class TileStore(
         return (tile.textures[factor] ?: tile.textures.values.firstOrNull())?.textureView
     }
 
+    /** [tile]'s picture at a block a pixel, `tileSize` square, as it is drawn; null if it has none. Blocking. */
+    fun picture(tile: Tile): IntArray? = TileFile.pixels(tileFile(tile.key), 1)
+
+    /** The picture at [factor] with the sea floor [floor] in, where the picture has anything. */
+    private fun withFloor(tile: Tile, floor: IntArray, factor: Int): IntArray? {
+        val pixels = picture(tile) ?: return null
+        for (i in pixels.indices) if (floor[i] != 0 && pixels[i] != 0) pixels[i] = floor[i]
+        return if (factor == 1) pixels else TilePixels.shrink(pixels, tile.tileSize, tile.tileSize, factor)
+    }
+
     /** Whether [tile] has a texture of [factor] waiting to be uploaded. */
     fun hasUploadWaiting(tile: Tile, factor: Int): Boolean = tile.pending.containsKey(factor)
 
-    /** Drops the least recently drawn tiles beyond [keep], never one drawn in [frame]. */
-    fun trim(keep: Int, frame: Long) {
-        if (tiles.size <= keep) return
-        val iterator = tiles.values.iterator()
-        while (tiles.size > keep && iterator.hasNext()) {
-            val tile = iterator.next()
-            if (tile.lastUsedFrame == frame) break // access order: everything after this is newer
-            release(tile)
-            iterator.remove()
+    private var trimmedAt = 0L
+
+    /**
+     * Drops tiles neither map has drawn for a while, and the least recently drawn ones while their
+     * textures are over [budget] bytes; never one on screen or on its way ([Eviction]). Runs at
+     * most once a second, however often it is called.
+     */
+    fun trim(budget: Long, now: Long = System.currentTimeMillis()) {
+        if (now - trimmedAt < 1000L) return
+        trimmedAt = now
+        val result = Eviction.choose(
+            tiles.values.map { Eviction.Entry(it.key, it.bytes, it.lastUsed, it.state == State.LOADING || it.refreshing) }, now, budget,
+        )
+        for (key in result.drop) {
+            tiles.remove(key)?.let(::release)
+            inMemory.remove(key)
         }
+        coarser = Eviction.coarser(coarser, result.inViewOverBudget, result.kept, budget)
     }
 
     fun clear() {
         tiles.values.forEach(::release)
         tiles.clear()
+        inMemory.clear()
     }
 
     private fun release(tile: Tile) {
-        tile.textures.values.forEach(DynamicTexture::close)
-        tile.textures.clear()
+        for (factor in tile.textures.keys.toList()) close(tile, factor)
         tile.pending.clear()
         tile.requested.clear()
     }
 
+    private fun close(tile: Tile, factor: Int) {
+        val texture = tile.textures.remove(factor) ?: return
+        texture.close()
+        account(tile, -textureBytes(tile.tileSize / factor))
+    }
+
+    private fun account(tile: Tile, bytes: Long) {
+        tile.bytes += bytes
+        heldBytes += bytes
+    }
+
     // The map id came from the server and becomes a folder name, so only ever a safe one.
-    private fun imageFile(key: Key): Path = folder.resolve("${if (BlueMap.isMapId(key.map)) key.map else "_"}/${key.lod}/${key.x}_${key.z}.png")
+    private fun base(key: Key): Path = folder.resolve("${if (BlueMap.isMapId(key.map)) key.map else "_"}/${key.lod}")
+
+    private fun tileFile(key: Key): Path = base(key).resolve("${key.x}_${key.z}.smet")
+
+    /** BlueMap's own picture, as caches before the tile files kept it; converted when found. */
+    private fun oldPicture(key: Key): Path = base(key).resolve("${key.x}_${key.z}.png")
+
+    private fun metaOf(key: Key): Path = base(key).resolve("${key.x}_${key.z}.meta")
 
     // ---- worker threads from here on ----
 
+    /** When each map's settings last loaded, to believe a 404 by. */
+    private val settingsLoadedAt = ConcurrentHashMap<String, Long>()
+
+    /**
+     * BlueMap's answer for [key], only asking whether it changed when [etag] or [lastModified] is
+     * given. A 404 counts as "nothing there" only while the map's settings still load: otherwise
+     * the address or the server is wrong, and it is an error.
+     */
+    private fun fetch(key: Key, etag: String? = null, lastModified: String? = null): BlueMap.TileReply {
+        val reply = blueMap.fetchTile(key.map, key.lod, key.x, key.z, etag, lastModified)
+        if (reply != BlueMap.TileReply.NotFound) return reply
+        val now = System.currentTimeMillis()
+        if (now - (settingsLoadedAt[key.map] ?: 0L) > SETTINGS_TRUST_MS) {
+            try {
+                blueMap.layout(key.map)
+            } catch (e: IOException) {
+                throw IOException("BlueMap answers 404 and its settings for '${key.map}' do not load either (${e.message})", e)
+            }
+            settingsLoadedAt[key.map] = now
+        }
+        return BlueMap.TileReply.Empty
+    }
+
     private fun load(tile: Tile) {
         val key = tile.key
-        val image = imageFile(key)
-        val metaFile = image.resolveSibling("${key.x}_${key.z}.meta")
         try {
-            val meta = readMeta(metaFile)
+            val meta = readMeta(metaOf(key))
             val fetchedAt = meta.getProperty("fetched")?.toLongOrNull() ?: 0L
-            val fresh = fetchedAt > refetchBefore && System.currentTimeMillis() - fetchedAt < Config.tileRefreshSeconds * 1000L
-            var bytes: ByteArray? = null
-            var contentMinute = meta.getProperty("since")?.toIntOrNull() ?: 0
+            // Caches from before checks were cheap were downloaded whole every time.
+            val hardAt = meta.getProperty("hard")?.toLongOrNull() ?: fetchedAt
+            val contentMinute = meta.getProperty("since")?.toIntOrNull() ?: 0
 
-            if (fresh && meta.getProperty("empty") == "true") {
+            // What is on disk is shown at once rather than waiting on the server, and asked about
+            // once it is due ([get]).
+            if (meta.getProperty("empty") == "true") {
+                tile.checkedAt = fetchedAt
+                tile.hardAt = hardAt
                 tile.state = State.EMPTY
                 return
             }
-            if (Files.exists(image) && meta.getProperty("empty") != "true") {
-                // An old picture is shown at once rather than waiting on the server: dated by when
-                // it was fetched, it is asked about again as soon as it is drawn ([get]), and
-                // replaced only if BlueMap's has changed.
-                bytes = Files.readAllBytes(image)
-                tile.checkedAt = if (fresh) fetchedAt else 0L
+            if (fromDisk(tile, meta, contentMinute)) {
+                tile.checkedAt = fetchedAt
+                tile.hardAt = hardAt
+                return
             }
-
-            if (bytes == null) {
-                val fetched = try {
-                    blueMap.tile(key.map, key.lod, key.x, key.z)
-                } catch (e: IOException) {
-                    // Offline or the server is down: an old picture beats none, and is not marked
-                    // as fetched, so the next load tries the server again.
-                    if (!Files.exists(image)) throw e
-                    finish(tile, Files.readAllBytes(image), contentMinute)
-                    return
-                }
-                if (fetched == null) {
-                    meta.setProperty("empty", "true")
-                    meta.setProperty("fetched", System.currentTimeMillis().toString())
-                    writeMeta(metaFile, meta)
-                    tile.state = State.EMPTY
-                    return
-                }
-                bytes = fetched
-                tile.checkedAt = System.currentTimeMillis()
-                val hash = sha1(fetched)
-                if (hash != meta.getProperty("hash") || contentMinute == 0) {
-                    contentMinute = Clock.nowMinutes()
-                }
-                SafeFiles.write(image, fetched)
-                meta.remove("empty")
-                meta.setProperty("hash", hash)
-                meta.setProperty("since", contentMinute.toString())
-                meta.setProperty("fetched", System.currentTimeMillis().toString())
-                writeMeta(metaFile, meta)
-            }
-            finish(tile, bytes, contentMinute)
+            download(tile, meta, System.currentTimeMillis())
         } catch (e: Exception) {
             tile.failedAt = System.currentTimeMillis()
             tile.state = State.FAILED
-            Log.warn("Could not load BlueMap tile {}: {}", key, e.toString())
+            warnOnce(key, "Could not load BlueMap tile; trying again in a minute", e)
         }
     }
 
     /**
-     * Asks the server whether a tile on screen has changed. If it has, the new picture replaces the
-     * old one and is dated now; if not, nothing changes.
+     * Readies [tile] from its file on disk, converting an old PNG cache first. False if there is
+     * nothing usable on disk; anything that does not read is deleted, to be downloaded again.
+     */
+    private fun fromDisk(tile: Tile, meta: Properties, contentMinute: Int): Boolean {
+        val key = tile.key
+        val file = tileFile(key)
+        if (Files.exists(file)) {
+            try {
+                val (header, present) = TileFile.presence(file)
+                val hash = meta.getProperty("hash")
+                if (header.tileSize != tile.tileSize) throw IOException("made for ${header.tileSize}-block tiles, not ${tile.tileSize}")
+                if (hash != null && header.hash != hash) throw IOException("made from another picture than the one last downloaded")
+                tile.imageSize = header.imageSize
+                ready(tile, present, contentMinute)
+                return true
+            } catch (e: Exception) {
+                warnOnce(key, "A saved BlueMap tile does not read; fetching it again", e)
+                Files.deleteIfExists(file)
+            }
+        }
+        val old = oldPicture(key)
+        if (Files.exists(old)) {
+            try {
+                val bytes = Files.readAllBytes(old)
+                build(tile, bytes, meta.getProperty("hash") ?: sha1(bytes), contentMinute)
+                return true
+            } catch (e: Exception) {
+                warnOnce(key, "A saved BlueMap tile does not read; fetching it again", e)
+            } finally {
+                Files.deleteIfExists(old)
+            }
+        }
+        return false
+    }
+
+    /**
+     * Decodes BlueMap's picture, writes the tile file for it, and readies [tile]. Decoded before
+     * anything is saved: a junk reply (a proxy's page, a cut-off file) fails here, and nothing of
+     * it is kept.
+     */
+    private fun build(tile: Tile, bytes: ByteArray, hash: String, contentMinute: Int) {
+        val colours = TilePixels.decode(bytes, tile.tileSize, tile.blocksPerPixel)
+        val imageSize = tile.tileSize + 1
+        SafeFiles.write(tileFile(tile.key), TileFile.encode(hash, colours, imageSize, tile.tileSize, TilePixels.factorsFor(tile.tileSize)))
+        tile.imageSize = imageSize
+        ready(tile, TilePixels.presence(colours), contentMinute)
+    }
+
+    /** A whole download, as for a tile not on disk. */
+    private fun download(tile: Tile, meta: Properties, now: Long) {
+        when (val reply = fetch(tile.key)) {
+            is BlueMap.TileReply.Image -> changed(tile, meta, reply, now)
+            is BlueMap.TileReply.NotModified -> throw IOException("BlueMap answered 304 to a plain request")
+            else -> markEmpty(tile, meta, now)
+        }
+        tile.checkedAt = now
+        tile.hardAt = now
+    }
+
+    /**
+     * Takes BlueMap's new picture for [tile] if it differs from the last one, dating it now. An
+     * unchanged picture changes nothing but the dates.
+     */
+    private fun changed(tile: Tile, meta: Properties, reply: BlueMap.TileReply.Image, now: Long) {
+        val hash = sha1(reply.bytes)
+        var minute = meta.getProperty("since")?.toIntOrNull() ?: 0
+        val same = hash == meta.getProperty("hash") && tile.state == State.READY
+        if (!same) {
+            if (hash != meta.getProperty("hash") || minute == 0) minute = Clock.nowMinutes()
+            val listener = pictureChanged?.takeIf { tile.key.lod == 1 && tile.state == State.READY }
+            val before = listener?.let { picture(tile) }
+            build(tile, reply.bytes, hash, minute)
+            // Every size of the old picture is out of date; they are remade as they are drawn.
+            tile.requested.clear()
+            if (listener != null && before != null) picture(tile)?.let { after -> listener(tile.key, tile.tileSize, before, after) }
+        }
+        meta.remove("empty")
+        meta.remove("emptyAt")
+        meta.setProperty("hash", hash)
+        meta.setProperty("since", minute.toString())
+        meta.setProperty("fetched", now.toString())
+        meta.setProperty("hard", now.toString())
+        if (reply.etag != null) meta.setProperty("etag", reply.etag) else meta.remove("etag")
+        if (reply.lastModified != null) meta.setProperty("modified", reply.lastModified) else meta.remove("modified")
+        writeMeta(metaOf(tile.key), meta)
+    }
+
+    /**
+     * Asks the server whether a tile has changed: only asks, when the server gave something to ask
+     * by and no whole download is due; otherwise downloads it and compares. A change replaces the
+     * picture at once. A tile BlueMap now has nothing for loses its picture on the second check
+     * that says so; an empty tile that has something now gets it. Every way out counts as checked.
      */
     private fun refresh(tile: Tile) {
         val key = tile.key
-        val image = imageFile(key)
-        val metaFile = image.resolveSibling("${key.x}_${key.z}.meta")
+        val now = System.currentTimeMillis()
+        val hard = Schedule.due(tile.checkedAt, tile.hardAt, refetchBefore, now, Schedule.spread(key)) == Schedule.Due.DOWNLOAD
         try {
-            val fetched = blueMap.tile(key.map, key.lod, key.x, key.z) ?: return
-            tile.checkedAt = System.currentTimeMillis()
-            val meta = readMeta(metaFile)
-            val hash = sha1(fetched)
-            meta.setProperty("fetched", tile.checkedAt.toString())
-            if (hash == meta.getProperty("hash")) {
-                writeMeta(metaFile, meta)
-                return
+            val meta = readMeta(metaOf(key))
+            val reply = if (hard || tile.state != State.READY) fetch(key)
+            else fetch(key, meta.getProperty("etag"), meta.getProperty("modified"))
+            when (reply) {
+                is BlueMap.TileReply.Image -> changed(tile, meta, reply, now)
+                is BlueMap.TileReply.NotModified -> {
+                    meta.setProperty("fetched", now.toString())
+                    meta.remove("emptyAt")
+                    writeMeta(metaOf(key), meta)
+                }
+                else -> {
+                    if (tile.state != State.READY) {
+                        meta.setProperty("fetched", now.toString())
+                        meta.setProperty("hard", now.toString())
+                        writeMeta(metaOf(key), meta)
+                        return
+                    }
+                    val firstSaid = meta.getProperty("emptyAt")?.toLongOrNull()
+                    if (firstSaid == null || firstSaid >= now) {
+                        // Once could be BlueMap re-rendering; the picture stays until the next check.
+                        meta.setProperty("emptyAt", now.toString())
+                        meta.setProperty("fetched", now.toString())
+                        writeMeta(metaOf(key), meta)
+                        return
+                    }
+                    markEmpty(tile, meta, now)
+                }
             }
-            val now = Clock.nowMinutes()
-            SafeFiles.write(image, fetched)
-            meta.setProperty("hash", hash)
-            meta.setProperty("since", now.toString())
-            writeMeta(metaFile, meta)
-            finish(tile, fetched, now)
-            // Every size of the old picture is out of date; they are remade as they are drawn.
-            tile.requested.clear()
         } catch (e: Exception) {
-            tile.checkedAt = System.currentTimeMillis()
+            warnOnce(key, "Could not check BlueMap tile for changes", e)
         } finally {
+            tile.checkedAt = now
+            // Asked for a whole download and got one, or BlueMap's word that there is nothing.
+            if (hard) tile.hardAt = now
             tile.refreshing = false
         }
     }
 
-    private fun finish(tile: Tile, bytes: ByteArray, contentMinute: Int) {
-        val colours = decodeColours(tile, bytes)
-        val present = BitSet(colours.size)
-        for (i in colours.indices) if (colours[i] != 0) present.set(i)
+    /**
+     * For background preparation ([MapPrep]): makes sure [key] is on disk, ready to draw and within
+     * its schedule, without keeping it in memory. A tile on disk is only asked about when a whole
+     * download is due, or a check is and the server can answer it without one. True if the server
+     * was asked. Blocking.
+     */
+    fun prepare(key: Key, blocksPerPixel: Int, tileSize: Int): Boolean {
+        if (key in inMemory) return false
+        val tile = Tile(key, blocksPerPixel, tileSize)
+        return try {
+            val meta = readMeta(metaOf(key))
+            val fetchedAt = meta.getProperty("fetched")?.toLongOrNull() ?: 0L
+            val hardAt = meta.getProperty("hard")?.toLongOrNull() ?: fetchedAt
+            val empty = meta.getProperty("empty") == "true"
+            val onDisk = empty || fromDisk(tile, meta, meta.getProperty("since")?.toIntOrNull() ?: 0)
+            val now = System.currentTimeMillis()
+            if (!onDisk) {
+                download(tile, meta, now)
+                return true
+            }
+            val cheap = meta.getProperty("etag") != null || meta.getProperty("modified") != null
+            when (Schedule.due(fetchedAt, hardAt, refetchBefore, now, Schedule.spread(key))) {
+                Schedule.Due.NO -> return false
+                Schedule.Due.CHECK -> if (!cheap) return false
+                Schedule.Due.DOWNLOAD -> {}
+            }
+            if (empty) tile.state = State.EMPTY
+            tile.checkedAt = fetchedAt
+            tile.hardAt = hardAt
+            refresh(tile)
+            true
+        } catch (e: Exception) {
+            warnOnce(key, "Could not prepare BlueMap tile", e)
+            true
+        }
+    }
+
+    /** Records that BlueMap has nothing for a tile, and deletes its picture. */
+    private fun markEmpty(tile: Tile, meta: Properties, now: Long) {
+        Files.deleteIfExists(tileFile(tile.key))
+        Files.deleteIfExists(oldPicture(tile.key))
+        meta.setProperty("empty", "true")
+        meta.setProperty("fetched", now.toString())
+        meta.setProperty("hard", now.toString())
+        meta.remove("emptyAt")
+        meta.remove("hash")
+        meta.remove("etag")
+        meta.remove("modified")
+        writeMeta(metaOf(tile.key), meta)
+        tile.present = null
+        tile.state = State.EMPTY
+    }
+
+    private fun ready(tile: Tile, present: BitSet, contentMinute: Int) {
         tile.present = present
         tile.contentMinute = contentMinute
         tile.state = State.READY
     }
-
-    /**
-     * Turns BlueMap's colour and height halves into one shaded picture, `imageSize` square, 0
-     * wherever BlueMap has nothing.
-     *
-     * BlueMap's colours are flat; its web viewer shades them in a shader from the height half. Here
-     * each pixel is lightened where the ground rises towards the north-west and darkened where it
-     * falls, so hills read the way they do on the rest of the map.
-     */
-    private fun decodeColours(tile: Tile, bytes: ByteArray): IntArray {
-        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
-        val width = image.width
-        val half = image.height / 2
-        require(width == half) { "unexpected tile shape ${width}x${image.height}" }
-        val source = image.getRGB(0, 0, width, image.height, null, 0, width)
-        val blocksPerPixel = tile.blocksPerPixel.toFloat()
-
-        fun height(x: Int, z: Int): Int = source[(half + z) * width + x].toShort().toInt()
-
-        val pixels = IntArray(width * half)
-        for (z in 0 until half) {
-            for (x in 0 until width) {
-                val colour = source[z * width + x]
-                if (colour ushr 24 == 0) continue
-                val here = height(x, z)
-                val rise = (here - height(x, maxOf(z - 1, 0))) + (here - height(maxOf(x - 1, 0), z))
-                val shade = 1f + (rise / blocksPerPixel).coerceIn(-6f, 6f) * 0.05f
-                pixels[z * width + x] = OPAQUE or
-                    (channel(colour shr 16, shade) shl 16) or
-                    (channel(colour shr 8, shade) shl 8) or
-                    channel(colour, shade)
-            }
-        }
-        tile.imageSize = width
-        return pixels
-    }
-
-    /**
-     * Averages each [factor]×[factor] square of the tile (leaving out BlueMap's overlap column and
-     * row) into one pixel, ignoring pixels BlueMap has nothing at.
-     */
-    private fun shrink(colours: IntArray, tile: Tile, factor: Int): IntArray {
-        val width = tile.imageSize
-        val side = tile.tileSize / factor
-        val out = IntArray(side * side)
-        for (outZ in 0 until side) {
-            for (outX in 0 until side) {
-                var red = 0
-                var green = 0
-                var blue = 0
-                var count = 0
-                for (z in outZ * factor until (outZ + 1) * factor) {
-                    for (x in outX * factor until (outX + 1) * factor) {
-                        val colour = colours[z * width + x]
-                        if (colour == 0) continue
-                        red += (colour shr 16) and 0xFF
-                        green += (colour shr 8) and 0xFF
-                        blue += colour and 0xFF
-                        count++
-                    }
-                }
-                if (count > 0) {
-                    out[outZ * side + outX] = OPAQUE or ((red / count) shl 16) or ((green / count) shl 8) or (blue / count)
-                }
-            }
-        }
-        return out
-    }
-
-    private fun channel(value: Int, shade: Float): Int = ((value and 0xFF) * shade).toInt().coerceIn(0, 255)
 
     private fun readMeta(file: Path): Properties {
         val meta = Properties()
@@ -387,7 +583,43 @@ class TileStore(
     private fun sha1(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
 
-    private companion object {
-        const val OPAQUE = 0xFF shl 24
+    /** When a tile is next asked about, and whether that is a whole download. */
+    object Schedule {
+        enum class Due { NO, CHECK, DOWNLOAD }
+
+        /** How much later than [Config.fullDownloadHours] a tile's whole download may fall, as a share of it. */
+        const val SPREAD = 0.5
+
+        /**
+         * [spread] (0 to 1) puts the tile's whole download that far into [SPREAD] past the interval,
+         * so tiles downloaded together come due over a stretch of time instead of all at once.
+         */
+        fun due(checkedAt: Long, hardAt: Long, refetchBefore: Long, now: Long, spread: Double = 0.0): Due {
+            val hours = Config.fullDownloadHours
+            return when {
+                hardAt < refetchBefore || hours > 0 && now - hardAt >= (hours * 3_600_000L * (1 + SPREAD * spread)).toLong() -> Due.DOWNLOAD
+                now - checkedAt >= Config.tileCheckMinutes * 60_000L -> Due.CHECK
+                else -> Due.NO
+            }
+        }
+
+        /** 0 to 1, the same for [key] every time and scattered between neighbours. */
+        fun spread(key: Key): Double {
+            var h = (key.map.hashCode().toLong() shl 32) xor (key.lod.toLong() * 0x9E3779B97F4A7C15uL.toLong()) xor
+                (key.x.toLong() shl 16) xor key.z.toLong()
+            h = (h xor (h ushr 33)) * -0xae502812aa7333L
+            h = (h xor (h ushr 33)) * -0x3b314601e57a13adL
+            h = h xor (h ushr 33)
+            return (h ushr 11).toDouble() / (1L shl 53)
+        }
+    }
+
+    companion object {
+        private const val RETRY_MS = 60_000L
+        /** A map's settings loading is taken as true for this long before a 404 is believed again. */
+        private const val SETTINGS_TRUST_MS = 60_000L
+
+        /** Video memory of a [side]-pixel square texture. */
+        fun textureBytes(side: Int): Long = side.toLong() * side * 4
     }
 }

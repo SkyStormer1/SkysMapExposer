@@ -4,10 +4,13 @@ import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.BlueMapDownload
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.MapPrep
+import com.skystormer.skysmapexposer.TileCache
 import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Overlay
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.SettingsCheck
 import com.skystormer.skysmapexposer.terrain.FillTarget
 import com.skystormer.skysmapexposer.terrain.TerrainFill
 import net.minecraft.client.Minecraft
@@ -17,8 +20,9 @@ import net.minecraft.client.gui.components.CycleButton
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
-import net.minecraft.client.gui.components.Tooltip
+import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 import java.time.Instant
 import java.time.LocalDateTime
@@ -27,8 +31,9 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /**
- * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on three
- * tabs: Map (what is shown, and how big), Server (where BlueMap is, and downloading from it) and
+ * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on four
+ * tabs: Map (what is shown, and how big), Server (where BlueMap is, and downloading from it), Tiles
+ * (preparing the map in the background, and the tile cache) and
  * Experimental (settings that may get you in trouble, off unless you turn them on).
  *
  * The Server tab opens on the server you are connected to: its BlueMap address, which BlueMap map to use for each
@@ -64,7 +69,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         )
     }.toMutableList()
 
-    private enum class Page(val title: String) { MAP("Map"), SERVER("Server"), EXPERIMENTAL("Experimental") }
+    private enum class Page(val title: String) { MAP("Map"), SERVER("Server"), TILES("Tiles"), EXPERIMENTAL("Experimental") }
 
     private var page = Page.MAP
     private var enabled = Config.enabled
@@ -80,11 +85,31 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapMarkerScale = Config.minimapMarkerScale
     private var otherDimensionCoords = Config.otherDimensionCoords
     private var minimapBiomes = Config.minimapBiomes
+    private var pings = Config.pings
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
-    private var shareThroughWarnings = Config.shareThroughWarnings
-    private var message: Component = Component.literal(Overlay.lastSummary)
+    private var prepareMap = Config.prepareMap
+    private var fullDownloadHours = Config.fullDownloadHours
+    private var seaFloorHires = Config.seaFloorHires
+    private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
+
+    /** Everything as it was on opening, to tell whether Cancel throws anything away. */
+    private val initial = state()
+
+    /** Switched live by the Experimental tab, so put back by Cancel. */
+    private val fillOffBefore = Config.fillOff.toSet()
+
+    /** The connected server's settings on opening: the session starts again only if they change. */
+    private val serverBefore = connectedAddress?.let(Config::serverFor)?.let(::describeServer)
+
+    /** What Done or Escape found wrong, shown until fixed: where it is, and which box. */
+    private class Problem(val page: Page, val server: Int, val field: String)
+
+    private var problem: Problem? = null
+    private var problemText: String? = null
+
+    override val cancellable = true
 
     // Only the boxes of the tab showing exist; the other tab's are null.
     private var staleBox: EditBox? = null
@@ -130,14 +155,14 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         minimapMarkerScale = 1f
         otherDimensionCoords = true
         minimapBiomes = true
+        pings = true
         matchWaypoints = true
         guessBiomes = true
-        shareThroughWarnings = false
         staleDays = formatDays(7.0)
     }
 
     override fun content(top: Int) {
-        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null; fillWidget = null
+        staleBox = null; coverBox = null; addressBox = null; urlBox = null; messageWidget = null; fillWidget = null; prepareWidget = null; cacheWidget = null
         mapBoxes.clear()
         val left = width / 2 - WIDTH / 2
         var y = top
@@ -153,10 +178,30 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
         y += ROW + GAP * 3
 
+        // Why Done did not save, above whichever tab it is on.
+        problemText?.let { text ->
+            val line = Component.literal(text).withColor(PROBLEM_COLOUR)
+            addRenderableWidget(MultiLineTextWidget(left, y, line, font).setMaxWidth(WIDTH))
+            y += font.lineHeight * font.split(line, WIDTH).size + GAP * 3
+        }
+
         when (page) {
             Page.MAP -> mapPage(left, y)
             Page.SERVER -> serverPage(left, y)
+            Page.TILES -> tilesPage(left, y)
             Page.EXPERIMENTAL -> experimentalPage(left, y)
+        }
+        // The box with the problem stands out, with the cursor in it.
+        problem?.takeIf { it.page == page && (it.page != Page.SERVER || it.server == selected) }?.let { p ->
+            val box = when (p.field) {
+                "stale" -> staleBox
+                "address" -> addressBox
+                "url" -> urlBox
+                "cover" -> coverBox
+                else -> null
+            } ?: return@let
+            box.setTextColor(PROBLEM_COLOUR)
+            focused = box
         }
     }
 
@@ -167,9 +212,17 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "These may get you warned, muted or kicked on some servers. Use them where you know the rules."
         ), font).setMaxWidth(WIDTH))
         y += font.lineHeight * 2 + GAP * 2
-        addRenderableWidget(toggle(left, y, WIDTH, "Share through spam warnings", shareThroughWarnings,
-            "Off: sharing a map in chat stops as soon as the server warns about spam. On: it waits 30 s, " +
-                "sends the last messages again and carries on at half speed, stopping only at a second warning.") { shareThroughWarnings = it })
+        val floor = CycleButton.builder<Boolean>({ Component.literal(if (it) "High res" else "Low res") }, seaFloorHires)
+            .withValues(false, true)
+            .create(left, y, WIDTH, ROW, Component.literal("Sea floor")) { _, value -> seaFloorHires = value }
+        floor.setTooltip(SafeTooltip.of(
+            "Low res: the sea from BlueMap's flat pictures, which are one blue all over and quick to download. " +
+                "High res: close up on the world map, the sea floor under the water from BlueMap's 3D tiles, shaded the way " +
+                "Xaero shades water. Those are about 90 KB for each 32 blocks square of sea, downloaded two at a time and " +
+                "kept on disk, downloaded again where BlueMap's map changes. The sea on screen is downloaded at any zoom, " +
+                "nearest the middle first, so zooming in later finds it ready; the first time, a stretch of sea takes a " +
+                "minute or so. Needs Terrain on."))
+        addRenderableWidget(floor)
         y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
@@ -210,24 +263,25 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val size = CycleButton.builder<Int>({ Component.literal("$it blocks") }, TerrainFill.radius)
             .withValues(TerrainFill.RADII)
             .create(left, y, half, ROW, Component.literal("Around you")) { _, value -> TerrainFill.radius = value }
-        size.setTooltip(Tooltip.create(Component.literal(
+        size.setTooltip(SafeTooltip.of(
             "How far from where you stand to fill, in every direction. Bigger takes longer: BlueMap's 3D tiles are " +
-                "downloaded a couple at a time so the server is not slowed down.")))
+                "downloaded a couple at a time so the server is not slowed down."))
         size.active = chosen.isNotEmpty() && !TerrainFill.running
         addRenderableWidget(size)
         val button = if (TerrainFill.running) {
             Button.builder(Component.literal("Stop filling")) { TerrainFill.cancel(); rebuildWidgets() }
         } else {
-            Button.builder(Component.literal("Fill from BlueMap")) {
-                fillStatus = TerrainFill.start()
-                com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
-                rebuildWidgets()
-            }.tooltip(Tooltip.create(Component.literal(
+            // Known not to work here (no 3D tiles): greyed out, saying why.
+            val problem = TerrainFill.knownProblem()
+            Button.builder(Component.literal("Fill from BlueMap")) { askToFill() }.tooltip(SafeTooltip.of(problem ?: (
                 "Rebuilds the chunks around you from BlueMap's 3D map and hands them to " +
                     (chosen.joinToString(" and ").ifEmpty { "the mods switched on above" }) +
-                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one.")))
+                    ". Only chunks a mod has nothing for are filled, and a chunk you load for real later replaces the filled one. " +
+                    "You are shown how much it downloads before it starts.")))
         }
-        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = TerrainFill.running || chosen.isNotEmpty() })
+        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also {
+            it.active = TerrainFill.running || (chosen.isNotEmpty() && TerrainFill.knownProblem() == null && !checkingFill)
+        })
         y += ROW + GAP
         fillWidget = MultiLineTextWidget(left, y + 1, Component.literal(TerrainFill.status() ?: fillStatus), font)
             .setMaxWidth(WIDTH).setMaxRows(3).also { addRenderableWidget(it) }
@@ -235,16 +289,154 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private var fillStatus = ""
     private var fillWidget: MultiLineTextWidget? = null
+    private var checkingFill = false
+
+    /**
+     * "Fill from BlueMap": checks first that BlueMap has 3D tiles here, then shows how much it would
+     * download and that it cannot be undone, and starts only on **Start**.
+     */
+    private fun askToFill() {
+        checkingFill = true
+        fillStatus = "Checking BlueMap's 3D tiles around you…"
+        rebuildWidgets()
+        TerrainFill.check { problem, estimate ->
+            checkingFill = false
+            if (problem != null || estimate == null) {
+                fillStatus = problem ?: ""
+                if (minecraft.gui.screen() === this) rebuildWidgets()
+                return@check
+            }
+            if (minecraft.gui.screen() !== this) return@check
+            minecraft.gui.setScreen(ConfirmScreen(
+                { start ->
+                    if (start) {
+                        fillStatus = TerrainFill.start()
+                        com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
+                    } else {
+                        fillStatus = "Not started; nothing was downloaded."
+                    }
+                    minecraft.gui.setScreen(this)
+                },
+                Component.literal("Fill from BlueMap?"),
+                Component.literal(estimate.text),
+                Component.literal("Start"),
+                CommonComponents.GUI_CANCEL,
+            ))
+        }
+    }
     private var fillWasRunning = TerrainFill.running
+
+    private var prepareWidget: MultiLineTextWidget? = null
+    private var prepareWasRunning = MapPrep.running
+    private var prepareSaid = ""
+    private var cacheWidget: MultiLineTextWidget? = null
+    private var cacheLine = "Tile cache: counting…"
+    private var cacheCounted = false
 
     override fun tick() {
         super.tick()
         fillWidget?.setMessage(Component.literal(TerrainFill.status() ?: fillStatus))
-        // The button turns back from Stop when the fill ends.
+        prepareWidget?.setMessage(Component.literal(prepareLine()))
+        cacheWidget?.setMessage(Component.literal(cacheLine))
+        // The buttons turn back from Stop when the fill or the preparation ends.
         if (fillWasRunning != TerrainFill.running) {
             fillWasRunning = TerrainFill.running
             if (page == Page.EXPERIMENTAL) rebuildWidgets()
         }
+        if (prepareWasRunning != MapPrep.running) {
+            prepareWasRunning = MapPrep.running
+            if (page == Page.TILES) rebuildWidgets()
+        }
+    }
+
+    private fun prepareLine(): String = MapPrep.status() ?: prepareSaid.ifEmpty {
+        if (Session.current == null) "Not on a server with BlueMap." else "Not preparing the map now."
+    }
+
+    /** "Every 3 days" for 72 hours; "Off" for 0. */
+    private fun everyLabel(hours: Int): String = when {
+        hours == 0 -> "Off"
+        hours % 168 == 0 -> if (hours == 168) "Every week" else "Every ${hours / 168} weeks"
+        hours % 24 == 0 -> if (hours == 24) "Every day" else "Every ${hours / 24} days"
+        else -> "Every $hours hours"
+    }
+
+    /** Preparing the whole map in the background, how often tiles are downloaded whole, the video memory tiles hold, and the tile cache on disk. */
+    private fun tilesPage(left: Int, top: Int) {
+        var y = top
+        val half = (WIDTH - GAP) / 2
+        val session = Session.current
+        addRenderableWidget(toggle(left, y, half, "Prepare map", prepareMap,
+            "After you join, download every tile BlueMap has, a few a second, and make it ready to draw, so the map is ready " +
+                "before you open it. Tiles you are looking at always come first.") { prepareMap = it })
+        val button = if (MapPrep.running) {
+            Button.builder(Component.literal("Stop preparing")) { MapPrep.cancel(); prepareSaid = "Stopped; what is done stays."; rebuildWidgets() }
+        } else {
+            Button.builder(Component.literal("Prepare now")) {
+                prepareSaid = session?.let { MapPrep.start(it, MarkerElements.worldMapDimension()) } ?: ""
+                rebuildWidgets()
+            }.tooltip(SafeTooltip.of("Go over the whole map now: tiles already on disk and up to date are skipped."))
+        }
+        addRenderableWidget(button.bounds(left + half + GAP, y, WIDTH - half - GAP, ROW).build().also { it.active = session != null })
+        y += ROW + GAP
+        prepareWidget = MultiLineTextWidget(left, y + 1, Component.literal(prepareLine()), font)
+            .setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
+        y += font.lineHeight * 2 + GAP * 2
+
+        val choices = (Config.FULL_DOWNLOAD_CHOICES + fullDownloadHours).distinct().sortedBy { if (it == 0) Int.MAX_VALUE else it }
+        val full = CycleButton.builder<Int>({ Component.literal(everyLabel(it)) }, fullDownloadHours)
+            .withValues(choices)
+            .create(left, y, WIDTH, ROW, Component.literal("Full download")) { _, value -> fullDownloadHours = value }
+        full.setTooltip(SafeTooltip.of(
+            "Every ${Config.tileCheckMinutes} minutes a tile on screen is only asked \"has it changed?\", and downloaded " +
+                "only if it has. This is how often each tile is downloaded whole anyway, in case a change was missed. " +
+                "Each tile comes due a little later than this, up to half as long again, so they do not all download at once " +
+                "when you join. Off: only what the checks find changed is downloaded."))
+        addRenderableWidget(full)
+        y += ROW + GAP * 3
+
+        val memory = session?.let { MapExposerClient.textureMemory(it) } ?: "Texture memory: not on a server with BlueMap"
+        addRenderableWidget(MultiLineTextWidget(left, y + 1, Component.literal(memory), font).setMaxWidth(WIDTH).setMaxRows(2))
+        y += font.lineHeight * 2 + GAP * 3
+
+        if (!cacheCounted) {
+            cacheCounted = true
+            countCache()
+        }
+        cacheWidget = MultiLineTextWidget(left, y + 1, Component.literal(cacheLine), font)
+            .setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
+        y += font.lineHeight * 2 + GAP
+        addRenderableWidget(
+            Button.builder(Component.literal("Clear tile cache")) {
+                val here = session ?: return@builder
+                cacheLine = "Clearing the tile cache…"
+                here.clearTiles { said ->
+                    cacheLine = said
+                    countCache()
+                }
+            }
+                .bounds(left, y, WIDTH, ROW)
+                .tooltip(SafeTooltip.of(
+                    "Deletes BlueMap's tiles kept on disk for this server, and the ones in memory; they are downloaded again as " +
+                        "they are needed. Preparing the map stops first, and starts over afterwards. Your own map is not touched."))
+                .build()
+                .also { it.active = session != null })
+    }
+
+    /** Counts the tile cache on another thread, so a big cache does not freeze the screen. */
+    private fun countCache() {
+        val session = Session.current
+        val root = minecraft.gameDirectory.toPath().resolve("skysmapexposer")
+        Thread({
+            val line = try {
+                val all = TileCache.measureAll(root)
+                if (session == null) "Tile cache, all servers: $all"
+                else "Tile cache: ${TileCache.measure(session.folder.resolve("tiles"))} here; $all for all servers"
+            } catch (e: Exception) {
+                "Tile cache: could not count it (${e.message ?: e.javaClass.simpleName})"
+            }
+            minecraft.execute { cacheLine = line }
+        }, "SkysMapExposer cache size").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
     }
 
     /** What is shown on the maps, how big, and the players. */
@@ -262,8 +454,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(toggle(left, y, half, "Other dimension XZ", otherDimensionCoords,
             "On the world map, under the coordinates of the block under the mouse: the same block in the other dimension. " +
                 "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth).") { otherDimensionCoords = it })
-        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP, "Biomes on minimap", minimapBiomes,
+        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP * 2 - PINGS_WIDTH, "Minimap tint", minimapBiomes,
             "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map.") { minimapBiomes = it })
+        addRenderableWidget(toggle(left + WIDTH - PINGS_WIDTH, y, PINGS_WIDTH, "Pings", pings,
+            "Show the spots players you trust ping, as a flashing beam. Trust someone in the player list.") { pings = it })
         y += ROW + GAP
 
         addRenderableWidget(toggle(left, y, half, "Waypoints follow map", matchWaypoints,
@@ -273,11 +467,11 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             .withValues(Config.MinimapPlayers.entries.toList())
             .displayOnlyValue()
             .create(left + half + GAP, y, WIDTH - half - GAP, ROW, Component.literal("Minimap players")) { _, value -> minimapPlayers = value }
-        minimapChoice.setTooltip(Tooltip.create(Component.literal(
+        minimapChoice.setTooltip(SafeTooltip.of(
             "Which players the minimap shows. BlueMap knows where everyone is, so a zoomed out minimap can keep them " +
                 "on screen after they leave your render distance. Out of range leaves the ones near you to Xaero's own " +
                 "radar, so nobody is drawn twice; choose All players if you have that radar switched off."
-        )))
+        ))
         addRenderableWidget(minimapChoice)
         y += ROW + GAP * 3
 
@@ -286,16 +480,16 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val staleBoxWidth = 28
         label(left, y, staleLabel, "Replace after")
         staleBox = field(left + staleLabel, y, staleBoxWidth, staleDays, "7").also {
-            it.setTooltip(Tooltip.create(Component.literal(
+            it.setTooltip(SafeTooltip.of(
                 "Days before your own map counts as out of date. After that, BlueMap's picture replaces it wherever BlueMap has changed since you were last there."
-            )))
+            ))
         }
         label(left + staleLabel + staleBoxWidth + 4, y, 26, "days")
         val sliderLeft = left + staleLabel + staleBoxWidth + 32
         val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, shrinkChunks) { shrinkChunks = it }
-        slider.setTooltip(Tooltip.create(Component.literal(
+        slider.setTooltip(SafeTooltip.of(
             "BlueMap markers show on the minimap only within this distance, smaller the further away they are. The world map still shows them all."
-        )))
+        ))
         addRenderableWidget(slider)
         y += ROW + GAP
 
@@ -315,7 +509,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(
             Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
                 .bounds(left, y, WIDTH, ROW)
-                .tooltip(Tooltip.create(Component.literal("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates.")))
+                .tooltip(SafeTooltip.of("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates."))
                 .build()
         )
     }
@@ -340,41 +534,41 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val draft = drafts[selected]
         label(left, y, labelWidth, "Server address")
         addressBox = field(fieldLeft, y, fieldWidth, draft.addresses, "play.example.com, 1.2.3.4").also {
-            it.setTooltip(Tooltip.create(Component.literal(
+            it.setTooltip(SafeTooltip.of(
                 "Every name you join this server by, as typed in your server list, separated by commas."
-            )))
+            ))
         }
         y += ROW + GAP
         label(left, y, labelWidth, "BlueMap address")
         urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/").also {
-            it.setTooltip(Tooltip.create(Component.literal(
+            it.setTooltip(SafeTooltip.of(
                 "The web address of the server's BlueMap: the page you open in a browser to see the map."
-            )))
+            ))
         }
         y += ROW + GAP
 
         for ((dimension, name) in DIMENSIONS) {
             label(left, y, labelWidth, "$name map")
             val box = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.maps[dimension] ?: "", "blank = none")
-            box.setTooltip(Tooltip.create(Component.literal(
+            box.setTooltip(SafeTooltip.of(
                 "Which BlueMap map shows the $name. Find maps lists them. Its border, markers and players show even with its terrain off."
-            )))
+            ))
             mapBoxes[dimension] = box
             val terrain = CycleButton.onOffBuilder(dimension !in draft.off)
                 .displayOnlyValue()
                 .create(left + WIDTH - switchWidth, y, switchWidth, ROW, Component.literal("$name terrain")) { _, on ->
                     if (on) draft.off.remove(dimension) else draft.off.add(dimension)
                 }
-            terrain.setTooltip(Tooltip.create(Component.literal("Fill in the $name with this map's terrain.")))
+            terrain.setTooltip(SafeTooltip.of("Fill in the $name with this map's terrain."))
             addRenderableWidget(terrain)
             y += ROW + GAP
         }
 
         label(left, y, labelWidth, "Cover map before")
         val cover = field(fieldLeft, y, fieldWidth - switchWidth - GAP, draft.coverOverworld, "blank = never")
-        cover.setTooltip(Tooltip.create(Component.literal(
+        cover.setTooltip(SafeTooltip.of(
             "Your overworld map from before this date and time (yyyy-MM-dd HH:mm) is covered by BlueMap however recent it is. For a map left over from a previous season."
-        )))
+        ))
         coverBox = cover
         addRenderableWidget(
             Button.builder(Component.literal("Now")) { cover.value = formatTime(System.currentTimeMillis()) }
@@ -410,16 +604,16 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 rebuildWidgets()
             }
                 .bounds(x, y, width, ROW)
-                .tooltip(Tooltip.create(Component.literal(BlueMapDownload.status() ?: "A download from BlueMap is running.")))
+                .tooltip(SafeTooltip.of(BlueMapDownload.status() ?: "A download from BlueMap is running."))
                 .build()
         }
         val button = Button.builder(Component.literal("Download…")) { confirmDownload() }
             .bounds(x, y, width, ROW)
-            .tooltip(Tooltip.create(Component.literal(
+            .tooltip(SafeTooltip.of(
                 "Download from BlueMap into your own Xaero map, for the dimension the world map is showing: " +
                     "only the chunks you have never explored, or everything. Each region of your map is backed up " +
                     "just before it is changed."
-            )))
+            ))
             .build()
         button.active = Session.current != null
         return button
@@ -468,7 +662,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
         init {
             updateMessage()
-            setTooltip(Tooltip.create(Component.literal(explanation)))
+            setTooltip(SafeTooltip.of(explanation))
         }
 
         private val scale: Float
@@ -491,7 +685,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private fun toggle(x: Int, y: Int, width: Int, name: String, value: Boolean, explanation: String, onChange: (Boolean) -> Unit): CycleButton<Boolean> =
         CycleButton.onOffBuilder(value).create(x, y, width, ROW, Component.literal(name)) { _, on -> onChange(on) }
-            .also { it.setTooltip(Tooltip.create(Component.literal(explanation))) }
+            .also { it.setTooltip(SafeTooltip.of(explanation)) }
 
     private fun label(x: Int, y: Int, width: Int, text: String) {
         addRenderableWidget(StringWidget(x, y + 6, width, font.lineHeight, Component.literal(text), font))
@@ -533,7 +727,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         drafts.removeAt(selected)
         if (drafts.isEmpty()) drafts.add(newDraft(connectedAddress ?: ""))
         selected = selected.coerceAtMost(drafts.size - 1)
-        message = Component.literal("Removed. Press Done to save.")
+        message = Component.literal("Removed. Done saves that; Cancel keeps the server.")
         rebuildWidgets()
     }
 
@@ -565,8 +759,67 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         messageWidget?.setMessage(message)
     }
 
+    /**
+     * Everything this screen edits, as one string, to compare. Only what Done would save: the
+     * server list as it would be saved, so an untouched new entry is no change.
+     */
+    private fun state(): String = listOf(
+        enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
+        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, pings, matchWaypoints, guessBiomes,
+        prepareMap, fullDownloadHours, seaFloorHires, Config.fillOff.sorted(),
+        drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
+            listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
+        },
+    ).toString()
+
+    /** **Cancel**: asks first if anything was changed, then leaves without saving. */
+    override fun cancel() {
+        keepEdits()
+        if (state() == initial) return leave()
+        minecraft.gui.setScreen(ConfirmScreen(
+            { discard -> if (discard) leave() else minecraft.gui.setScreen(this) },
+            Component.literal("Discard changes?"),
+            Component.literal("Nothing changed here is saved."),
+            Component.literal("Discard"),
+            Component.literal("Keep editing"),
+        ))
+    }
+
+    private fun leave() {
+        Config.fillOff.clear()
+        Config.fillOff.addAll(fillOffBefore)
+        minecraft.setScreenAndShow(parent)
+    }
+
+    /**
+     * What stops saving, with where it is, or null when everything can be saved. A new server entry
+     * left completely empty is not a problem: it is simply not saved.
+     */
+    private fun check(): Pair<String, Problem>? {
+        val entries = drafts.map { SettingsCheck.Entry(splitAddresses(it.addresses), it.url, it.coverOverworld) }
+        val found = SettingsCheck.check(staleDays, entries, ::parseTime) ?: return null
+        val where = when (found.field) {
+            SettingsCheck.Field.STALE -> Problem(Page.MAP, selected, "stale")
+            SettingsCheck.Field.ADDRESS -> Problem(Page.SERVER, found.server, "address")
+            SettingsCheck.Field.URL -> Problem(Page.SERVER, found.server, "url")
+            SettingsCheck.Field.COVER -> Problem(Page.SERVER, found.server, "cover")
+        }
+        return found.message to where
+    }
+
+    /** Done and Escape: saves, unless something is wrong, which is shown instead. */
     override fun onClose() {
         keepEdits()
+        check()?.let { (said, where) ->
+            problem = where
+            problemText = "$said. Fix it, or Cancel to leave without saving."
+            page = where.page
+            selected = where.server
+            rebuildWidgets()
+            return
+        }
+        problem = null
+        problemText = null
         Config.enabled = enabled
         Config.showMarkers = showMarkers
         Config.showOutlines = showOutlines
@@ -579,9 +832,13 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.minimapMarkerScale = minimapMarkerScale
         Config.otherDimensionCoords = otherDimensionCoords
         Config.minimapBiomes = minimapBiomes
+        Config.pings = pings
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
-        Config.shareThroughWarnings = shareThroughWarnings
+        Config.prepareMap = prepareMap
+        Config.fullDownloadHours = fullDownloadHours
+        if (Config.seaFloorHires && !seaFloorHires) Session.current?.seaFloor?.clear()
+        Config.seaFloorHires = seaFloorHires
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
@@ -591,10 +848,23 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 Config.Server(splitAddresses(draft.addresses), draft.url.trim(), draft.maps.toMap(), draft.off.toSet(), cover)
             }
         Config.save()
-        // Start again with the new settings, as if just joined.
-        if (connectedAddress != null) Session.start(connectedAddress)
+        // Start again, as if just joined, only if this server's own settings changed: that drops
+        // every tile, marker and icon in memory. Everything else is read as it is drawn.
+        val serverAfter = connectedAddress?.let(Config::serverFor)?.let(::describeServer)
+        if (connectedAddress != null && serverAfter != serverBefore) {
+            Session.start(connectedAddress)
+        } else {
+            // Switching background preparation on or off takes effect at once.
+            val session = Session.current
+            if (session != null && Config.prepareMap && !prepareWasOn && !MapPrep.running) MapPrep.start(session, MarkerElements.worldMapDimension())
+            if (!Config.prepareMap && prepareWasOn) MapPrep.cancel()
+        }
         minecraft.setScreenAndShow(parent)
     }
+
+    private val prepareWasOn = Config.prepareMap
+
+    private fun describeServer(server: Config.Server): String = SettingsCheck.serverKey(server)
 
     private fun describe(draft: Draft): String =
         splitAddresses(draft.addresses).firstOrNull() ?: "(new server)"
@@ -617,9 +887,11 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private companion object {
         const val WIDTH = 300
+        private const val PINGS_WIDTH = 60
         const val ROW = 20
         const val GAP = 2
         const val NEW = -1
+        const val PROBLEM_COLOUR = 0xFFFF5555.toInt()
         /** How tall each tab is, to centre it; both fit in 278 scaled pixels, so they show at large GUI scales. */
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         val DIMENSIONS = listOf(Config.OVERWORLD to "Overworld", Config.NETHER to "Nether", Config.END to "End")

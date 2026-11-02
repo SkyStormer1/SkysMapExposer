@@ -7,6 +7,7 @@ import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.MapView
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
@@ -14,7 +15,6 @@ import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.CycleButton
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
-import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
@@ -23,7 +23,7 @@ import kotlin.math.hypot
 
 /**
  * Everyone BlueMap can see on this server, like Xaero's waypoint list: search by name, your
- * dimension or all of them, jump the world map to someone, and lock on to them.
+ * dimension or all of them, jump the world map to someone, trust them for pings, and lock on to them.
  *
  * Opened from the Players button on the world map, its right-click menu, the settings screen, or
  * `/mapexposer players`. The list refreshes itself while it is open, because people move; the
@@ -101,7 +101,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 MapMenus.say("Unlocked everyone")
                 refreshRows(force = true)
             }.bounds(left + (quarter + GAP) * 3, y, listWidth - (quarter + GAP) * 3, ROW)
-                .tooltip(Tooltip.create(Component.literal("Stop following every player you have locked on to.")))
+                .tooltip(SafeTooltip.of("Stop following every player you have locked on to."))
                 .build()
         )
         y += ROW + GAP
@@ -153,7 +153,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         val visible = players.drop(page * rows).take(rows)
         // Rebuilding every tick would flicker the tooltips, so it only happens on a real change.
         val signature = visible.joinToString("|") {
-            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}"
+            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}${PlayerPings.isTrusted(it.player.uuid)}"
         } + "/$pages/$page"
         if (!force && signature == shown) return
         shown = signature
@@ -180,7 +180,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         // Go to moves the open world map, or opens one; either way only for the dimension it shows.
         val mapDimension = MarkerElements.worldMapDimension() ?: myDimension()
         val buttonWidth = 44
-        val textWidth = listWidth - (buttonWidth + GAP) * 2
+        val textWidth = listWidth - (buttonWidth + GAP) * 3
 
         // The columns are as wide as the widest thing going in them, measured over every player the
         // list holds rather than just this page, so paging does not shuffle them sideways.
@@ -203,23 +203,38 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 if (locked) LOCKED else NAME,
                 columns,
             )
-            text.setTooltip(Tooltip.create(Component.literal(
+            text.setTooltip(SafeTooltip.of(
                 "${player.label}\n$coordinates in ${dimensionName(entry.dimension)}\n" +
                     if (locked) "Locked on: their head follows them in the world." else "Not locked on."
-            )))
+            ))
             row(text)
 
             var x = left + textWidth
             val go = Button.builder(Component.literal("Go to")) { goTo(entry) }
                 .bounds(x, y, buttonWidth, ROW)
-                .tooltip(Tooltip.create(Component.literal(
+                .tooltip(SafeTooltip.of(
                     (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
                     else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
                         "${player.label}. It switches back when you leave the map.") +
                         " Their head gets a rainbow outline until you leave the map."
-                )))
+                ))
                 .build()
             row(go)
+            x += buttonWidth + GAP
+
+            val trusted = PlayerPings.isTrusted(player.uuid)
+            row(
+                Button.builder(Component.literal(if (trusted) "Untrust" else "Trust")) {
+                    PlayerPings.setTrusted(player.uuid, !trusted)
+                    refreshRows(force = true)
+                }
+                    .bounds(x, y, buttonWidth, ROW)
+                    .tooltip(SafeTooltip.of(
+                        if (trusted) "Stop taking pings from ${player.label} and sending yours to them."
+                        else "Take pings from ${player.label} and send yours to them, by private message."
+                    ))
+                    .build()
+            )
             x += buttonWidth + GAP
 
             val lock = Button.builder(Component.literal(if (locked) "Unlock" else "Lock")) {
@@ -227,10 +242,10 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 refreshRows(force = true)
             }
                 .bounds(x, y, listWidth - (x - left), ROW)
-                .tooltip(Tooltip.create(Component.literal(
+                .tooltip(SafeTooltip.of(
                     if (locked) "Stop following ${player.label}."
                     else "Follow ${player.label}: their pin keeps up with them and their head shows over them in the world."
-                )))
+                ))
                 .build()
             lock.active = Session.current != null
             row(lock)

@@ -53,14 +53,14 @@ A client-side Fabric mod for Minecraft 26.2 that brings a server's <b>BlueMap</b
   distance and coordinates, a **Go to** that jumps the map to anyone, and **Lock**.
 - **Copies coordinates.** Right-click anywhere on the world map, or any marker or player, and
   choose **Copy coordinates**. The dimension comes with them.
-- **Keeps up live.** Terrain on screen is re-checked every minute, markers every 30 seconds,
+- **Keeps up live.** Terrain on screen is checked for changes every 15 minutes (and downloaded
+  whole every 3 days), markers every 30 seconds,
   players every 2 seconds.
 - **Downloads BlueMap into your own map, if you ask it to.** Write BlueMap's terrain into Xaero's
   map for good, so it stays after the mod is removed and shows everywhere Xaero's map does. See
   [Downloading into your own map](#downloading-into-your-own-map).
-- **Shares your map with friends.** Send another player who has the mod the biomes of part of your
-  map or some of your waypoints by private message, or save a piece of your map to a file they drop
-  onto their game. See [Sharing with other players](#sharing-with-other-players).
+- **Shares your map with friends.** Send another player who has the mod some of your waypoints by
+  private message, or save a piece of your map to a file they drop onto their game. See [Sharing with other players](#sharing-with-other-players).
 - **Fills far terrain for Bobby, Voxy and Distant Horizons.** One button rebuilds the land around
   you from BlueMap's 3D map and hands it to whichever of them you have, so the far view isn't
   patchy where you've never been. See [Far terrain from BlueMap](#far-terrain-from-bluemap).
@@ -77,7 +77,7 @@ You need:
 
 - Minecraft **26.2** with **Fabric Loader** 0.19.3 or newer
 - **Fabric API** and **Fabric Language Kotlin**
-- **Xaero's World Map** 1.44 or newer
+- **Xaero's World Map** 1.47 or newer
 - Recommended: **Xaero's Minimap** (for the minimap and for saving waypoints) and **Mod Menu**
   (for the settings screen)
 
@@ -122,7 +122,11 @@ Hover over any setting in the game for an explanation.
 | **Find maps** | Asks the BlueMap which maps it has. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
-| **Experimental** tab | **Share through spam warnings**: sharing in chat normally stops at the first spam warning from the server; with this on it waits, slows down and only stops at a second. Off as the mod comes, since it may get you warned on some servers. Also **Far terrain from BlueMap**; see below. |
+| **Prepare map** (Tiles tab) | After you join, downloads every tile BlueMap has, a few a second, and makes it ready to draw, so the map is ready before you open it. On as the mod comes. It starts from the middle of the map and works outwards, the dimension you are in first; tiles you are looking at always come first, and it pauses while the game is busy. **Stop preparing** / **Prepare now** stop it or go over the map again (`/mapexposer prepare` and `/mapexposer prepare cancel` too). How far it has got shows at the top of the world map. |
+| **Clear tile cache** (Tiles tab) | Deletes this server's BlueMap tiles kept on disk; they download again as needed. The tab also shows how much the cache takes, here and for all servers, and the video memory tiles hold. Your own map is not touched. |
+| **Full download** (Tiles tab) | How often each tile is downloaded whole, even if BlueMap says it has not changed: 4 hours to a week, or off. Every 3 days as the mod comes. |
+| **Experimental** tab | **Far terrain from BlueMap**; see below. **Sea floor**: **Low res** as the mod comes; **High res** draws the sea bed under the water from BlueMap's 3D tiles on the world map close up, shaded like Xaero's water. |
+| **Done** / **Cancel** | **Done** (or Escape) saves, once everything checks out: a server without a BlueMap address, a mistyped season date or a "Replace after" that is not a number is pointed out instead, and nothing is saved until it is fixed. **Cancel** leaves without saving, asking first if anything was changed. Only changing the server you are on starts the map over; everything else takes effect as it is. |
 
 **The nether:** many servers render their nether BlueMap from above the roof, which looks nothing
 like Xaero's nether map. So nether terrain starts **OFF**. Its world border, markers and players
@@ -135,6 +139,9 @@ A small see-through panel on the world map holds the mod's switches and the biom
 - **Terrain / Markers / Borders / Players** switch each part on or off, as the settings do.
   **Minimap** (only with Xaero's Minimap) chooses whether picked biomes are tinted there too.
   **List** opens the player list, and **Set** the settings.
+- **Refresh** downloads the BlueMap tiles in view again, to show changes made since they were last
+  checked (every 15 minutes on its own). Once every 30 seconds; zoomed far out, the tiles are
+  downloaded once you zoom in.
 - **The biome finder** lists the biomes of the dimension the map is showing. Type to search and
   click a biome to tint it; click again to stop, or **Clear** to stop them all. The tint shows
   wherever Xaero recorded that biome, so it covers the parts of the map Xaero has, not BlueMap's
@@ -247,16 +254,22 @@ may name a block that is not really there. Where BlueMap has nothing, nothing is
 anything of yours that already looks like BlueMap is left exactly as it was.
 
 **Backups.** Each region of your map is copied just before a download first changes it, into
-`skysmapexposer/<server>/backups/` in your game folder, one folder per download. To undo:
+`skysmapexposer/<server>/backups/` in your game folder, one folder per download. Each folder
+remembers which dimension, layer and map folder it came from, and goes back there whatever the
+world map is showing. Downloads, clears and map files end with a **[Restore]** button. To undo:
 
 - `/mapexposer backups` lists them, newest first;
-- `/mapexposer restore <name>` puts one back, with the world map showing the same dimension.
-  `/mapexposer restore` on its own puts back the newest, and pressing Tab after `restore ` lists
-  their names;
-- `/mapexposer backup` copies the whole dimension's map at any time, to go back to later.
+- `/mapexposer restore <name>` says what it would put back and where, with a **[Restore]** button
+  to go ahead. `/mapexposer restore` on its own does that for the newest, and pressing Tab after
+  `restore ` lists their names. Your map of those regions is copied aside first, so the end
+  message offers **[Undo restore]**;
+- `/mapexposer backup` copies the layer of the dimension the map is showing at any time, to go
+  back to later. Xaero is asked to save what it has explored first.
 
-Restored regions are read again as soon as you zoom in on them. The ones right around you, which
-Xaero is busy mapping, show as restored once you move a few regions away or after a restart.
+Copies made before 1.9.2 don't say where they came from: they are only put back by name, into the
+map on screen. Restored regions keep their file dates and are read again as soon as you zoom in on
+them. The ones right around you, which Xaero is busy mapping, show as restored once you move a few
+regions away or after a restart.
 
 ## Far terrain from BlueMap
 
@@ -283,6 +296,15 @@ says how far it has got and how many chunks each mod was given. **Stop filling**
   stays the same however far you fill, and waits whenever a mod falls behind. BlueMap's 3D tiles
   are downloaded two at a time, since BlueMap usually runs on the game server, and kept for a week,
   so filling the same place again needs no downloading.
+- **Asks first.** Before anything is downloaded it checks that BlueMap has 3D tiles where you are
+  (a map the server draws flat only, as many do for the Nether, has none; the button then says so
+  and stays greyed out for that map until you rejoin), then shows roughly how many tiles and
+  megabytes the fill would download, and that it can't be undone: the mods keep the filled terrain
+  until you visit those places yourself or clear their data for the server. **Start** or **Cancel**.
+- **Carries on.** A tile that can't be downloaded or read is skipped and counted in the last line;
+  only if every tile fails at the start does the fill stop. Going through a portal, it carries on
+  in the dimension it started in for the mods that still can (Voxy usually), and says which
+  dropped out (Bobby and Distant Horizons close a dimension's storage when you leave it).
 
 ## Sharing with other players
 
@@ -290,24 +312,38 @@ Right-click the world map for these. The ones that send by private message only 
 who also has the mod: they are asked first, with one readable line, and if they don't answer,
 nothing more is sent. Everything else travels hidden from both chats.
 
-- **Share biomes…**: drag over some chunks with the right mouse button, then pick a player. They get
-  which biome is where, at Minecraft's own 4×4-block detail, in a few messages even for a big area.
-  An **[Add biomes]** button keeps them. They are kept by the mod, not written into their map: picked
-  biomes in the biome finder are tinted there too, and the world map names the biome under the
-  mouse where their own map has none.
 - **Share waypoints…**: tick some waypoints of the dimension you are in, then pick a player. An
   **[Add waypoints]** button adds them to their selected waypoint set, leaving out any they already
   have. Needs Xaero's Minimap at both ends.
-- **Save terrain file**: drag over some chunks, then choose it. Every block of your map there,
+- **Save terrain file**: drag over some chunks with the right mouse button, then choose it. Every block of your map there,
   exactly as Xaero keeps it, is saved to a `.smemap` file in the `shared maps` folder of your game
   folder; a link in chat opens the folder. Send the file however you like. Whoever gets it drops it
   onto their game window, then chooses **[Add to unexplored only]** or **[Add all]**. Each of their
   regions is backed up first, the same as a download. In the Nether it saves and adds the cave layer
   the world map is showing, not the roof.
 
-Messages go out slowly, well under a vanilla server's spam limit, and at half speed on a server with
-a chat plugin. A spam warning from the server stops sharing; whatever arrived is kept.
+Messages go out slowly, well under a vanilla server's spam limit. Being muted, or a server without
+`/msg`, stops sharing.
 `/mapexposer share cancel` and `/mapexposer terrain cancel` stop a share or a save.
+
+### Pinging a spot
+
+Trust a player and you can show each other a spot, on this server only. Use **Trust** in the player
+list, right-click them on the map, or `/mapexposer trust <player>`; `/mapexposer untrust <player>`
+stops it. Both of you need to trust each other, and pings from anyone else are dropped unseen.
+
+To ping, right-click the world map and choose **Ping here**, press the ping key (unbound until you
+pick one in Controls) to ping the block you are looking at, or use `/mapexposer ping <x> <z>`. Your
+ping goes to everyone you trust who is online.
+
+A beam flashes five times over the spot and goes: on your screen, however far away it is, on the
+world map and on the minimap, with the sender's head. An Overworld ping shows at the matching spot
+when you are in the Nether, and the other way round. Chat keeps a line with an **[Add waypoint]**
+button. The **Pings** setting turns them off.
+
+Pings are plain private messages. A trusted player without the mod reads one as a line of
+coordinates, and server staff who can read private messages can read them too. With a lot of trusted
+players online the last gets it a few seconds after the first, to stay under the spam limit.
 
 ## Seasons and clearing your map
 
@@ -350,8 +386,10 @@ the map can be switched between dimensions, so coordinates without it can mean t
 
 Everything stays on your computer. The mod only downloads from the BlueMap address you enter, and
 sends nothing to the Minecraft server or anywhere else. The one exception is sharing: when you
-share biomes or waypoints with a player, they go to that player as private messages through the
-server. Its data is kept in `skysmapexposer/` in
+share waypoints with a player or ping a spot, it goes to that player as private messages through
+the server. Waypoints shared with you are only taken from a private message sent by the player they
+name; on servers whose chat plugin delivers `/msg` as a server message, the game cannot check who
+sent it, so the share is marked "(unverified)". Its data is kept in `skysmapexposer/` in
 your game folder, and its settings in `config/skysmapexposer.json`.
 
 ## Limits

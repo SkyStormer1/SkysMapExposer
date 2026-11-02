@@ -7,6 +7,7 @@ classes/
 # Loom
 .fabric/
 run/
+run2/
 remappedSrc/
 
 # IDE
@@ -25,7 +26,6 @@ Thumbs.db
 
 
 # Local only: working notes, logs, and anything a test run leaves behind
-CLAUDE.md
 logs/
 *.log
 *.hprof
