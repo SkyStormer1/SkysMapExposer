@@ -6,7 +6,8 @@
     "GuiMapMixin",
     "MapPixelAccess",
     "MinimapElementWrapperMixin",
-    "MouseHandlerMixin"
+    "MouseHandlerMixin",
+    "ScreenBaseAccess"
   ],
   "injectors": {
     "defaultRequire": 1

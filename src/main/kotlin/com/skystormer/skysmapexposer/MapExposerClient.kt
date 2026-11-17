@@ -390,10 +390,6 @@ object MapExposerClient : ClientModInitializer {
         source.sendFeedback(Component.literal("Xaero hook: $hook"))
         val off = HookErrors.switchedOff()
         if (off.isNotEmpty()) source.sendFeedback(Component.literal("§cOff after an error until you rejoin: ${off.joinToString()}§r (the log says why)"))
-        val missing = XaeroField.missing()
-        if (missing.isNotEmpty()) {
-            source.sendFeedback(Component.literal("§eNot in this Xaero version, so off: ${missing.joinToString()}"))
-        }
         if (!dropHookInstalled()) source.sendFeedback(Component.literal("§eDropping map files onto the game: §cmissing§r; /mapexposer terrain open opens them"))
         fun ran(hook: Boolean) = if (hook) "§aworking§r" else "§enot seen yet§r"
         source.sendFeedback(
