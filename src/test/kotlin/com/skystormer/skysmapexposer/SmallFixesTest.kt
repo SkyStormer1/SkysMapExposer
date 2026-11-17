@@ -20,7 +20,10 @@ class SmallFixesTest {
     @Test
     fun `no tooltip is made or placed outside the helpers`() {
         val helpers = setOf("SafeTooltip.kt", "DockPanel.kt", "WidgetTooltipHolderMixin.java")
-        val offenders = Files.walk(Path.of("src/main")).use { files ->
+        // Tests run in versions/<version>/, under the project's own src/main.
+        val sources = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .map { it.resolve("src/main") }.first { Files.isDirectory(it) }
+        val offenders = Files.walk(sources).use { files ->
             files.toList()
                 .filter { it.extension == "kt" || it.extension == "java" }
                 .filter { it.name !in helpers }

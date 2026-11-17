@@ -50,7 +50,7 @@ dependencies {
     modCompileOnly("maven.modrinth:bobby:${property("bobby_version")}")
     // A Voxy jar for this Minecraft version dropped in `.gradle/voxy/` (gitignored) is used until
     // that version is on Modrinth; Voxy is All Rights Reserved, so it is never committed.
-    val localVoxy = file(".gradle/voxy/voxy-${property("minecraft_version")}.jar")
+    val localVoxy = rootProject.file(".gradle/voxy/voxy-${property("minecraft_version")}.jar")
     if (localVoxy.exists()) modCompileOnly(files(localVoxy)) else modCompileOnly("maven.modrinth:voxy:${property("voxy_version")}")
     modCompileOnly("maven.modrinth:distanthorizons:${property("distanthorizons_version")}")
 
@@ -87,7 +87,7 @@ fun xaeroLibJar(): File {
     return target
 }
 
-// Minecraft 26.3 is built for Java 25, and the mixins here weave into its classes, so the mod has
+// Minecraft 26.x is built for Java 25, and the mixins here weave into its classes, so the mod has
 // to be compiled for the same release rather than an older one.
 val javaVersion = JavaVersion.VERSION_25
 
@@ -112,6 +112,7 @@ val resourceProperties = mapOf(
     "version" to version,
     "minecraft_version" to property("minecraft_version"),
     "loader_version" to property("loader_version"),
+    "xaero_worldmap_min" to property("xaero_worldmap_min"),
     "fabric_kotlin_version" to property("fabric_kotlin_version"),
     "java_version" to javaVersion.majorVersion,
 )
@@ -124,7 +125,7 @@ tasks.processResources {
 }
 
 tasks.jar {
-    from("LICENSE") { rename { "${it}_${base.archivesName.get()}" } }
+    from(rootProject.file("LICENSE")) { rename { "${it}_${base.archivesName.get()}" } }
 }
 
 // A development client drives itself through the steps in the file SME_AUTOTEST names (AutoTest).

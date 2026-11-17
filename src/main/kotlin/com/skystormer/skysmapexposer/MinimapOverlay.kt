@@ -1,6 +1,10 @@
 package com.skystormer.skysmapexposer
 
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import com.mojang.blaze3d.vertex.PoseStack
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.renderer.rendertype.RenderType

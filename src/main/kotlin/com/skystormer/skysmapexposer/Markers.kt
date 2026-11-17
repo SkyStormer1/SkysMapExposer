@@ -2,7 +2,11 @@ package com.skystormer.skysmapexposer
 
 import com.google.gson.JsonObject
 import com.mojang.blaze3d.platform.NativeImage
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import net.minecraft.client.renderer.texture.DynamicTexture
 import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap

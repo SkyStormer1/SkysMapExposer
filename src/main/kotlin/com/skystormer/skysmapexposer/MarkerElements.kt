@@ -1,6 +1,10 @@
 package com.skystormer.skysmapexposer
 
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import com.mojang.blaze3d.vertex.BufferBuilder
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft

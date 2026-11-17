@@ -42,7 +42,11 @@ object MapExposerClient : ClientModInitializer {
     /** Pings the block you are looking at. Unbound until you pick a key in Controls. */
     private val pingKey = KeyMapping(
         "key.skysmapexposer.ping",
+        //? if >=26.3 {
         InputConstants.Type.KEYBOARD,
+        //?} else {
+        /*InputConstants.Type.KEYSYM,
+        *///?}
         InputConstants.UNKNOWN.value,
         KeyMapping.Category.register(Identifier.fromNamespaceAndPath("skysmapexposer", "map_exposer")),
     )

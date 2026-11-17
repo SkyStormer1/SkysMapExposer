@@ -39,7 +39,7 @@
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
     "fabric-language-kotlin": ">=${fabric_kotlin_version}",
-    "xaeroworldmap": ">=1.47.0",
+    "xaeroworldmap": ">=${xaero_worldmap_min}",
     "minecraft": "${minecraft_version}",
     "java": ">=${java_version}"
   },

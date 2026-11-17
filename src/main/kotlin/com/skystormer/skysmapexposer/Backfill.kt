@@ -1,6 +1,10 @@
 package com.skystormer.skysmapexposer
 
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet
 import xaero.map.MapProcessor
 import xaero.map.world.MapDimension

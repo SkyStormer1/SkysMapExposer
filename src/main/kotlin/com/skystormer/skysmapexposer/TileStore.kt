@@ -1,7 +1,11 @@
 package com.skystormer.skysmapexposer
 
 import com.mojang.blaze3d.platform.NativeImage
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import net.minecraft.client.renderer.texture.DynamicTexture
 import java.io.IOException
 import java.nio.file.Files
