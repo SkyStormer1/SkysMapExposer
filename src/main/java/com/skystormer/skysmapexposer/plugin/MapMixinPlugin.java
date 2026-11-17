@@ -9,10 +9,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Applies a mixin into Xaero's code only when the Xaero mod that owns it is installed, so the game
- * still loads with JourneyMap or no map mod at all. Mixins into Minecraft itself always apply.
+ * Applies a mixin into a map mod's code only when that mod is installed, so the game still loads
+ * with either map mod, both, or none. Mixins into Minecraft itself always apply.
  */
-public final class XaeroMixinPlugin implements IMixinConfigPlugin {
+public final class MapMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
@@ -22,6 +22,7 @@ public final class XaeroMixinPlugin implements IMixinConfigPlugin {
         }
         // The world map's classes, and Xaero's Lib, which every hook into it is for.
         if (targetClassName.startsWith("xaero.")) return MapMods.INSTANCE.getXaeroWorldMap();
+        if (targetClassName.startsWith("journeymap.")) return MapMods.INSTANCE.getJourneyMap();
         return true;
     }
 

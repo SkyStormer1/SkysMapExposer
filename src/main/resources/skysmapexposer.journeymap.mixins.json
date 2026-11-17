@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "plugin": "com.skystormer.skysmapexposer.plugin.MapMixinPlugin",
+  "package": "com.skystormer.skysmapexposer.mixin.journeymap",
+  "compatibilityLevel": "JAVA_${java_version}",
+  "client": [
+    "MapStateMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

@@ -14,6 +14,7 @@ import journeymap.api.v2.client.display.ImageOverlay
 import journeymap.api.v2.client.model.MapImage
 import journeymap.api.v2.common.Context
 import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
@@ -47,7 +48,7 @@ internal object JourneyMapTerrain {
      * JourneyMap was last asked what it has there.
      */
     private class Shown(
-        val overlay: ImageOverlay, val image: NativeImage, val scale: Int,
+        val overlay: ImageOverlay, val texture: Identifier, val scale: Int,
         val wanted: BitSet, val contents: List<Int>, val floors: List<IntArray?>, var checkedAt: Long,
     )
 
@@ -70,10 +71,11 @@ internal object JourneyMapTerrain {
             session == null -> "this server has no BlueMap set up"
             !Config.enabled -> "switched off"
             state == null || !state.active -> "the full-screen map is closed"
-            state.mapType == Context.MapType.Underground -> "JourneyMap is showing caves"
+            state.mapType != Context.MapType.Day && state.mapType != Context.MapType.Underground -> "BlueMap shows on JourneyMap's day and cave maps"
             else -> null
         } ?: ""
-        if (session == null || !Config.enabled || state == null || !state.active || state.mapType == Context.MapType.Underground) {
+        if (session == null || !Config.enabled || state == null || !state.active ||
+            (state.mapType != Context.MapType.Day && state.mapType != Context.MapType.Underground)) {
             // Kept while the map is closed for a moment; let go once it has stayed closed.
             if (shown.isNotEmpty() && now - lastActive > KEEP_CLOSED_MS) clear(api)
             return
@@ -82,6 +84,13 @@ internal object JourneyMapTerrain {
         val dimension = state.dimension?.identifier()?.toString() ?: return run { note = "JourneyMap's map has no dimension" }
         val map = session.server.mapFor(dimension) ?: return clear(api).also { note = "BlueMap is not used for $dimension" }
         val layout = session.layout(map) ?: return run { note = "waiting for BlueMap's settings for '$map'" }
+        // Only on the layer BlueMap's picture belongs in, as on Xaero's map: the surface (JourneyMap's
+        // day map), or in the Nether whichever of the roof or the inside BlueMap's map shows.
+        if (!JourneyMapAdapter.blueMapLayerShown(session, dimension, map, state)) {
+            clear(api)
+            note = if (state.mapType == Context.MapType.Underground) "BlueMap only has the surface here" else "BlueMap's map here shows the inside; switch to the cave map"
+            return
+        }
         val bounds = state.blockBounds ?: return run { note = "JourneyMap has not said what is on screen" }
 
         val left = Math.floorDiv(bounds.minX.toInt(), REGION)
@@ -117,17 +126,25 @@ internal object JourneyMapTerrain {
             if (old != null && !changed && now - old.checkedAt < RECHECK_MS) continue
             if (old == null && shown.size * bytesAt(scale) >= budget()) break
             busy.add(region)
-            ask(api, session, region, tiles, scale, rebuild = changed)
+            ask(api, session, region, tiles, scale, rebuild = changed, state.mapType, state.chunkY)
             started++
         }
     }
 
     private var lastActive = 0L
 
-    /** Leaving a world: JourneyMap drops our overlays ([JourneyMapAdapter.leave]); this closes the pictures. */
+    private fun overlayOf(region: Region, northWest: BlockPos, southEast: BlockPos, image: MapImage): ImageOverlay {
+        val overlay = ImageOverlay(JourneyMapAdapter.MOD_ID, northWest, southEast, image)
+        overlay.setDimension(ResourceKey.create(Registries.DIMENSION, Identifier.parse(region.dimension)))
+        overlay.setDisplayOrder(TERRAIN_ORDER)
+        overlay.setActiveUIs(Context.UI.Fullscreen)
+        return overlay
+    }
+
+    /** Leaving a world: JourneyMap drops our overlays ([JourneyMapAdapter.leave]); this frees the pictures. */
     fun forget() {
         generation++
-        shown.values.forEach { it.image.close() }
+        shown.values.forEach { Minecraft.getInstance().textureManager.release(it.texture) }
         shown.clear()
         busy.clear()
     }
@@ -139,8 +156,8 @@ internal object JourneyMapTerrain {
     private fun remove(api: IClientAPI, region: Region) {
         val gone = shown.remove(region) ?: return
         api.remove(gone.overlay)
-        // JourneyMap reads the picture lazily, so it is only closed once the overlay is gone.
-        gone.image.close()
+        // Freed only once JourneyMap has let go of the overlay that draws it.
+        Minecraft.getInstance().textureManager.release(gone.texture)
     }
 
     /**
@@ -162,13 +179,17 @@ internal object JourneyMapTerrain {
     }
 
     /** Asks JourneyMap what it has of [region], then builds the picture from that. */
-    private fun ask(api: IClientAPI, session: Session, region: Region, tiles: List<TileStore.Tile>, scale: Int, rebuild: Boolean) {
+    private fun ask(
+        api: IClientAPI, session: Session, region: Region, tiles: List<TileStore.Tile>, scale: Int, rebuild: Boolean,
+        type: Context.MapType, chunkY: Int?,
+    ) {
         val generation = generation
         val key = ResourceKey.create(Registries.DIMENSION, Identifier.parse(region.dimension))
         val first = ChunkPos(region.x * CHUNKS, region.z * CHUNKS)
         val last = ChunkPos(region.x * CHUNKS + CHUNKS - 1, region.z * CHUNKS + CHUNKS - 1)
         try {
-            api.requestMapTile(JourneyMapAdapter.MOD_ID, key, Context.MapType.Day, first, last, null, 0, false) { image ->
+            // JourneyMap's own picture of the same map it is showing: day, or the cave slice on screen.
+            api.requestMapTile(JourneyMapAdapter.MOD_ID, key, type, first, last, chunkY, 0, false) { image ->
                 // Called back on the client thread.
                 val mapped = BitSet(CHUNKS * CHUNKS)
                 image?.use { readMapped(it, mapped) }
@@ -286,24 +307,28 @@ internal object JourneyMapTerrain {
         remove(api, region)
         val northWest = BlockPos(region.x * REGION, 0, region.z * REGION)
         val southEast = BlockPos(region.x * REGION + image.width * scale, 0, region.z * REGION + image.height * scale)
-        val overlay = ImageOverlay(JourneyMapAdapter.MOD_ID, northWest, southEast, MapImage(image))
-        overlay.setDimension(ResourceKey.create(Registries.DIMENSION, Identifier.parse(region.dimension)))
-        overlay.setDisplayOrder(TERRAIN_ORDER)
-        overlay.setActiveUIs(Context.UI.Fullscreen)
+        // Handed over as a texture of ours, by name, as marker icons are, rather than as the picture
+        // itself, which JourneyMap would keep a second copy of.
+        val texture = Identifier.fromNamespaceAndPath("skysmapexposer", "journeymap_terrain/${nextTexture++}")
+        Minecraft.getInstance().textureManager.register(texture, DynamicTexture({ "skysmapexposer terrain ${region.x},${region.z}" }, image))
+        val overlay = overlayOf(region, northWest, southEast, MapImage(texture, image.width, image.height))
         try {
             api.show(overlay)
-            shown[region] = Shown(overlay, image, scale, made.wanted, made.contents, made.floors, System.currentTimeMillis())
+            shown[region] = Shown(overlay, texture, scale, made.wanted, made.contents, made.floors, System.currentTimeMillis())
         } catch (e: Exception) {
-            image.close()
+            Minecraft.getInstance().textureManager.release(texture)
             Log.warn("JourneyMap would not show BlueMap's picture of region {}, {}: {}", region.x, region.z, e.toString())
         }
     }
+
+    /** Numbers the pictures' texture names; client thread only. */
+    private var nextTexture = 0
 
     /** Why nothing is being drawn just now, if anything stops it. */
     private var note = ""
 
     /** "6 regions of terrain" on JourneyMap now, and why not more if something is in the way, for `/mapexposer`. */
-    fun summary(): String = "${shown.size} region${if (shown.size == 1) "" else "s"} of terrain" + if (note.isEmpty()) "" else " ($note)"
+    fun summary(): String = shown.size.let { "$it region${if (it == 1) "" else "s"} of terrain" } + if (note.isEmpty()) "" else " ($note)"
 
     private fun budget(): Long = Config.textureBudgetMb.toLong() * 1024 * 1024
 

@@ -31,17 +31,47 @@ internal object JourneyMapMenus {
     /** The full-screen map, while it is open: JourneyMap hands it over with each event. */
     private var fullscreen: IFullscreen? = null
 
-    /** A Go to waiting for the full-screen map to open. */
+    /** A Go to waiting for the full-screen map to open, and the dimension it is for. */
     private var pending: Pair<Int, Int>? = null
+    private var pendingDimension: String? = null
+
+    /** Switches [map] to [dimension] if it is showing another ([JourneyMapDimension]). */
+    private fun showIfOther(map: IFullscreen, dimension: String) {
+        if (map.uiState?.dimension?.identifier()?.toString() == dimension) return
+        JourneyMapDimension.show(map, net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.Identifier.parse(dimension)))
+    }
 
     fun register() {
         FullscreenEventRegistry.FULLSCREEN_POPUP_MENU_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { menu(it) } }
         FullscreenEventRegistry.FULLSCREEN_RENDER_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { render(it) } }
+        FullscreenEventRegistry.ADDON_BUTTON_DISPLAY_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { event ->
+            guard {
+                // Xaero's map has a dimension button of its own; this is JourneyMap's.
+                event.themeButtonDisplay.addThemeButton("Dimension", DIMENSION_ICON) { event.fullscreen?.let(JourneyMapDimension::showNext) }
+                    .setTooltip("Dimension", "Shows the next of the Overworld, the Nether and the End; back to yours when you leave the map")
+            }
+        }
     }
 
     fun forget() {
         fullscreen = null
         pending = null
+        JourneyMapDimension.forget()
+    }
+
+    /**
+     * Client thread, every tick: once you leave the map, it goes back to your own dimension, as
+     * Xaero's does. The player list closes the map for a moment and counts as still on it.
+     */
+    fun tick(client: Minecraft) {
+        if (JourneyMapDimension.chosen == null) return
+        val screen = client.gui.screen()
+        val onTheMap = screen != null && (screen === fullscreen?.screen || screen is PlayerListScreen)
+        if (!onTheMap && pending == null) {
+            JourneyMapDimension.forget()
+            // Coming back to your own dimension goes to you, as on Xaero's map.
+            JourneyMapDimension.backToYou = true
+        }
     }
 
     /** Right-click on the map. Entries that can't do anything just now are left out: JourneyMap's menu can't grey them. */
@@ -62,8 +92,14 @@ internal object JourneyMapMenus {
     private fun render(event: FullscreenRenderEvent) {
         val map = event.fullscreen ?: return
         fullscreen = map
+        if (JourneyMapDimension.backToYou) {
+            JourneyMapDimension.backToYou = false
+            Minecraft.getInstance().player?.let { map.centerOn(it.x, it.z) }
+        }
         pending?.let { (x, z) ->
             pending = null
+            pendingDimension?.let { showIfOther(map, it) }
+            pendingDimension = null
             map.centerOn(x.toDouble(), z.toDouble())
         }
         val lines = listOfNotNull(
@@ -103,21 +139,16 @@ internal object JourneyMapMenus {
      */
     fun goTo(dimension: String, x: Int, z: Int, from: Screen?): Boolean {
         val map = fullscreen
-        val here = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()
-        val showing = map?.uiState?.dimension?.identifier()?.toString() ?: here
-        if (dimension != showing) {
-            // Showing another dimension on JourneyMap comes with the dimension toggle (plan S7).
-            Ui.say("JourneyMap can't show the ${Ui.dimensionName(dimension)} from here yet")
-            return true
-        }
         if (map != null && from != null && from === map.screen) {
             Ui.open(from)
+            showIfOther(map, dimension)
             map.centerOn(x.toDouble(), z.toDouble())
             return true
         }
         val mappings = Minecraft.getInstance().options.keyMappings
         val key = FULLSCREEN_KEYS.firstNotNullOfOrNull { name -> mappings.firstOrNull { it.name == name && !it.isUnbound } } ?: return false
         pending = x to z
+        pendingDimension = dimension
         Ui.open(null)
         KeyMapping.click(InputConstants.getKey(key.saveString()))
         return true
@@ -133,6 +164,9 @@ internal object JourneyMapMenus {
 
     /** JourneyMap's keys for its full-screen map, the one it binds (J) first. */
     private val FULLSCREEN_KEYS = listOf("key.journeymap.map_toggle_alt", "key.journeymap.map_toggle")
+
+    /** The dimension button's picture: an eye of ender, from the game's own items. */
+    private val DIMENSION_ICON = net.minecraft.resources.Identifier.withDefaultNamespace("textures/item/ender_eye.png")
 
     /** Under JourneyMap's own line of where you are, at the top of the map. */
     private const val LINES_TOP = 70

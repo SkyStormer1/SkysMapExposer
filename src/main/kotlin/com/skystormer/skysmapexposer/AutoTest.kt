@@ -39,7 +39,7 @@ import java.nio.file.Path
  * - `fillwait` waits for a terrain fill to finish, then logs how it went
  * - `mapzoom <scale>` zooms the open world map to that many pixels a block (Xaero eases to it)
  * - `refresh` presses the map bar's Refresh button
- * - `goto <x> <z>` sends the installed map's full-screen map there, as the player list's Go to does
+ * - `goto <x> <z> [dimension]` sends the installed map's full-screen map there, as the player list's Go to does
  * - `mouse <x> <y>` puts the mouse there, in window pixels, so maps see it move
  * - `close` closes whatever screen is open
  * - `join <world>` opens that singleplayer world, first making it (creative, peaceful) if needed
@@ -130,8 +130,9 @@ object AutoTest {
                 "mapzoom" -> (client.gui.screen() as? MapCamera)?.skysmapexposerSetZoom(rest.toDouble())
                 "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
                 "goto" -> {
-                    val (x, z) = rest.split(' ').map { it.toInt() }
-                    val dimension = client.level?.dimension()?.identifier()?.toString() ?: return
+                    val parts = rest.split(' ')
+                    val (x, z) = parts.take(2).map { it.toInt() }
+                    val dimension = parts.getOrNull(2) ?: client.level?.dimension()?.identifier()?.toString() ?: return
                     Log.info("AutoTest: go to: {}", MapMods.adapter?.goTo(dimension, x, z, client.gui.screen(), null))
                 }
                 "mouse" -> {

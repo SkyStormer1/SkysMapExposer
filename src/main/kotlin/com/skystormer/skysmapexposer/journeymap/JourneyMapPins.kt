@@ -33,10 +33,12 @@ import kotlin.math.floor
  * BlueMap's markers, outlines and players, and pings, as JourneyMap overlays: the same pins
  * [MapPins] gives Xaero's maps, by the same settings.
  *
- * Nothing is rebuilt per frame or per tick. Each overlay is kept under a key made from what it
- * shows, so a marker that comes back unchanged from BlueMap's next refresh is left alone, and a
- * player who moves keeps their overlay and only gets a new position. Overlays only change when
- * their data does; everything is dropped on leaving a world ([forget]).
+ * Nothing is rebuilt per frame or per tick. Each overlay is kept under a key made from its
+ * dimension and what it shows, so a marker that comes back unchanged from BlueMap's next refresh is
+ * left alone, and a player who moves keeps their overlay and only gets a new position. Switching
+ * the map to another dimension leaves this one's overlays where they are (JourneyMap only draws
+ * the dimension on screen; ones put back after a switch were drawn wrong), so coming back needs
+ * nothing rebuilt. Overlays only change when their data does; all go on leaving a world ([forget]).
  */
 internal object JourneyMapPins {
 
@@ -74,9 +76,9 @@ internal object JourneyMapPins {
         lastOutlines = null
     }
 
-    /** "12 markers, 1 outline, 3 players, 0 pings" shown on JourneyMap now, for `/mapexposer`. */
+    /** "12 markers, 1 outline, 3 players, 0 pings" on JourneyMap for the dimension it shows, for `/mapexposer`. */
     fun summary(): String {
-        val counts = shown.keys.groupingBy { it.substringBefore('|') }.eachCount()
+        val counts = shown.keys.filter { dimensionOf(it) == lastDimension }.groupingBy { it.substringBefore('|') }.eachCount()
         return listOf("point" to "marker", "outline" to "outline", "player" to "player", "ping" to "ping")
             .joinToString { (kind, name) -> (counts[kind] ?: 0).let { "$it $name" + if (it == 1) "" else "s" } }
     }
@@ -89,18 +91,18 @@ internal object JourneyMapPins {
     }
 
     private fun update(api: IClientAPI, dimension: String?, pins: List<Markers.Pin>, outlines: List<Markers.Outline>?) {
-        val key = dimension?.let { dimensionKey(it) }
+        dimension ?: return
+        val key = dimensionKey(dimension) ?: return
         val wanted = HashSet<String>()
-        if (key != null) {
-            outlines?.forEach { outline -> keep(api, wanted, outlineKey(outline)) { outlineOverlay(key, outline) } }
-            for (pin in pins) {
-                when (pin) {
-                    is Markers.Player -> player(api, wanted, key, pin)
-                    else -> keep(api, wanted, pinKey(pin)) { pinOverlay(key, pin) }
-                }
+        outlines?.forEach { outline -> keep(api, wanted, outlineKey(dimension, outline)) { outlineOverlay(key, outline) } }
+        for (pin in pins) {
+            when (pin) {
+                is Markers.Player -> player(api, wanted, dimension, key, pin)
+                else -> keep(api, wanted, pinKey(dimension, pin)) { pinOverlay(dimension, key, pin) }
             }
         }
-        val gone = shown.keys - wanted
+        // Only this dimension's: the others wait, hidden, for the map to come back to them.
+        val gone = shown.keys.filter { dimensionOf(it) == dimension } - wanted
         for (old in gone) {
             shown.remove(old)?.let { api.remove(it.overlay) }
             awaitingIcon.remove(old)
@@ -116,8 +118,8 @@ internal object JourneyMapPins {
     }
 
     /** A player keeps one overlay for as long as they are listed; it moves with them. */
-    private fun player(api: IClientAPI, wanted: MutableSet<String>, dimension: ResourceKey<Level>, player: Markers.Player) {
-        val key = "player|${player.uuid}"
+    private fun player(api: IClientAPI, wanted: MutableSet<String>, dimensionId: String, dimension: ResourceKey<Level>, player: Markers.Player) {
+        val key = "player|$dimensionId|${player.uuid}"
         wanted.add(key)
         val existing = shown[key]
         if (existing != null && existing.overlay.dimension == dimension) {
@@ -130,7 +132,7 @@ internal object JourneyMapPins {
             return
         }
         existing?.let { api.remove(it.overlay) }
-        val shownPlayer = Shown(playerOverlay(dimension, player), player)
+        val shownPlayer = Shown(playerOverlay(dimensionId, dimension, player), player)
         if (show(api, shownPlayer.overlay)) shown[key] = shownPlayer else shown.remove(key)
     }
 
@@ -144,9 +146,9 @@ internal object JourneyMapPins {
 
     // ---- making overlays ----
 
-    private fun pinOverlay(dimension: ResourceKey<Level>, pin: Markers.Pin): Overlay {
+    private fun pinOverlay(dimensionId: String, dimension: ResourceKey<Level>, pin: Markers.Pin): Overlay {
         val image = when (pin) {
-            is Markers.Point -> iconOf(pin) ?: dot(POINT_COLOUR).also { if (pin.icon != null) awaitingIcon[pinKey(pin)] = pin.icon }
+            is Markers.Point -> iconOf(pin) ?: dot(POINT_COLOUR).also { if (pin.icon != null) awaitingIcon[pinKey(dimensionId, pin)] = pin.icon }
             is Markers.Ping -> faceOf(pin.uuid)
             else -> dot(PLAYER_COLOUR)
         }
@@ -160,7 +162,7 @@ internal object JourneyMapPins {
         return overlay
     }
 
-    private fun playerOverlay(dimension: ResourceKey<Level>, player: Markers.Player): MarkerOverlay {
+    private fun playerOverlay(dimensionId: String, dimension: ResourceKey<Level>, player: Markers.Player): MarkerOverlay {
         val image = faceOf(player.uuid)
         val size = HEAD_SIZE * Config.playerHeadScale
         image.setDisplayWidth(size).setDisplayHeight(size).centerAnchors()
@@ -170,7 +172,7 @@ internal object JourneyMapPins {
         overlay.setLabel(if (LockedPlayers.isLocked(player.uuid)) player.label else "")
         overlay.setDisplayOrder(PLAYER_ORDER)
         overlay.setActiveUIs(*uisFor(player))
-        overlay.setOverlayListener(PlayerMenu(player.uuid))
+        overlay.setOverlayListener(PlayerMenu("player|$dimensionId|${player.uuid}", player.uuid))
         return overlay
     }
 
@@ -210,9 +212,9 @@ internal object JourneyMapPins {
     }
 
     /** Right-clicking a player: lock on or unlock, as on Xaero's map. */
-    private class PlayerMenu(private val uuid: java.util.UUID) : IOverlayListener {
+    private class PlayerMenu(private val key: String, private val uuid: java.util.UUID) : IOverlayListener {
         override fun onOverlayMenuPopup(state: UIState, mouse: Point2D.Double, block: BlockPos, menu: ModPopupMenu) {
-            val player = shown["player|$uuid"]?.player ?: return
+            val player = shown[key]?.player ?: return
             val locked = LockedPlayers.isLocked(uuid)
             menu.addMenuItem(if (locked) "Unlock ${player.label}" else "Lock on to ${player.label}") {
                 LockedPlayers.set(player, !locked)
@@ -264,14 +266,17 @@ internal object JourneyMapPins {
 
     // ---- keys and places ----
 
-    private fun pinKey(pin: Markers.Pin): String = when (pin) {
-        is Markers.Point -> "point|${pin.set}|${pin.label}|${pin.x}|${pin.y}|${pin.z}|${pin.icon}"
-        is Markers.Ping -> "ping|${pin.uuid}|${pin.startedAt}"
-        is Markers.Player -> "player|${pin.uuid}"
+    // Keys: kind, dimension, then what is shown.
+    private fun pinKey(dimension: String, pin: Markers.Pin): String = when (pin) {
+        is Markers.Point -> "point|$dimension|${pin.set}|${pin.label}|${pin.x}|${pin.y}|${pin.z}|${pin.icon}"
+        is Markers.Ping -> "ping|$dimension|${pin.uuid}|${pin.startedAt}"
+        is Markers.Player -> "player|$dimension|${pin.uuid}"
     }
 
-    private fun outlineKey(outline: Markers.Outline): String =
-        "outline|${outline.label}|${outline.colour}|${outline.width}|${outline.closed}|${outline.points.contentHashCode()}"
+    private fun outlineKey(dimension: String, outline: Markers.Outline): String =
+        "outline|$dimension|${outline.label}|${outline.colour}|${outline.width}|${outline.closed}|${outline.points.contentHashCode()}"
+
+    private fun dimensionOf(key: String): String = key.substringAfter('|').substringBefore('|')
 
     private fun blockOf(pin: Markers.Pin) = BlockPos(floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt())
 

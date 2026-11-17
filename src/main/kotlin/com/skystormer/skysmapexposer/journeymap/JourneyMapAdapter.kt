@@ -3,8 +3,11 @@ package com.skystormer.skysmapexposer.journeymap
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapAdapter
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
 import journeymap.api.v2.client.IClientAPI
+import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.minecraft.client.Minecraft
@@ -49,6 +52,7 @@ object JourneyMapAdapter : MapAdapter {
     override fun tick(client: Minecraft, session: Session?) {
         val api = api ?: return
         if (client.level == null) return
+        JourneyMapMenus.tick(client)
         JourneyMapPins.tick(api, shownDimension())
         JourneyMapTerrain.tick(api, session)
     }
@@ -58,6 +62,7 @@ object JourneyMapAdapter : MapAdapter {
     override fun status(say: (String) -> Unit) {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
         if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}")
+        say("JourneyMap dimension hook: " + if (JourneyMapDimension.hookRan) "§aworking" else "§enot seen yet (open the full-screen map)")
     }
 
     /** The full-screen map's dimension while it is open; otherwise yours, which it opens on. */
@@ -66,9 +71,21 @@ object JourneyMapAdapter : MapAdapter {
         return shown?.identifier()?.toString()
     }
 
+    /** The dimension shown, while JourneyMap shows a layer BlueMap's picture does not belong in. */
     override fun cavesShown(session: Session): String? {
         val state = fullscreen() ?: return null
-        return state.dimension?.identifier()?.toString()?.takeIf { state.mapType == Context.MapType.Underground }
+        val dimension = state.dimension?.identifier()?.toString() ?: return null
+        val map = session.server.mapFor(dimension) ?: return null
+        return dimension.takeIf { !blueMapLayerShown(session, dimension, map, state) }
+    }
+
+    /**
+     * Whether JourneyMap is showing the layer BlueMap's picture belongs in, by Xaero's rule
+     * ([MapLayers.blueMapLayer]): its day map is the surface and its cave map a cave layer.
+     */
+    fun blueMapLayerShown(session: Session, dimension: String, map: String, state: UIState): Boolean {
+        val shown = if (state.mapType == Context.MapType.Underground) state.chunkY ?: 0 else MapLayers.SURFACE
+        return MapLayers.blueMapLayer(shown, { SeaFloor.hasCeiling(dimension) }) { session.view(map) } != null
     }
 
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
