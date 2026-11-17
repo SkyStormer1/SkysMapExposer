@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.WaypointShare
 import com.mojang.blaze3d.platform.InputConstants
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
@@ -107,7 +106,7 @@ object AutoTest {
                     val (x, y, z) = parts.take(3).map { it.toInt() }
                     val name = parts.getOrElse(3) { "Test" }
                     val dimension = client.level?.dimension()?.identifier()?.toString() ?: return
-                    Log.info("AutoTest: {}", WaypointShare.add(dimension, "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
+                    Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(dimension, "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
                 }
                 "click" -> {
                     val command = buttonCommand(client, rest)

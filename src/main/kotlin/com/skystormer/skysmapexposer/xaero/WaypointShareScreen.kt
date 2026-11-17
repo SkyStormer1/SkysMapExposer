@@ -1,7 +1,9 @@
-package com.skystormer.skysmapexposer.gui
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.gui.SafeTooltip
+import com.skystormer.skysmapexposer.gui.ShareScreen
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.xaero.MapMenus
 import com.skystormer.skysmapexposer.xaero.WaypointShare
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
@@ -40,7 +42,7 @@ class WaypointShareScreen(
         val left = (this.width - width) / 2
         var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 110) / 2)
         val sets = entries.map { it.set }.distinct().size
-        val name = MapMenus.dimensionName(dimensionId) ?: dimensionId
+        val name = Ui.dimensionName(dimensionId) ?: dimensionId
 
         addRenderableWidget(StringWidget(left, y, width, font.lineHeight, title, font))
         y += font.lineHeight + GAP
@@ -119,13 +121,13 @@ class WaypointShareScreen(
     private fun next() {
         // In the order they are listed, not the order they were ticked.
         val chosen = entries.filter { it in picked }.map { it.shared() }
-        MapMenus.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent) { name ->
+        Ui.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent) { name ->
             ChatShare.shareWaypoints(name, dimensionId, chosen)
         })
     }
 
     override fun onClose() {
-        MapMenus.open(parent)
+        Ui.open(parent)
     }
 
     private companion object {

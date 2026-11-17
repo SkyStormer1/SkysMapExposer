@@ -1,15 +1,13 @@
 package com.skystormer.skysmapexposer.xaero
 
-import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapCamera
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
-import com.skystormer.skysmapexposer.TerrainFiles
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
-import com.skystormer.skysmapexposer.gui.WaypointShareScreen
+import com.skystormer.skysmapexposer.xaero.WaypointShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -54,7 +52,7 @@ object MapMenus {
             if (where != null) addCounterpartOption(options, target, x, z, where)
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
-                options.add(option("Players…", options.size, target) { parent -> open(PlayerListScreen(parent)) })
+                options.add(option("Players…", options.size, target) { parent -> Ui.open(PlayerListScreen(parent)) })
                 if (selection != null) options.add(downloadOption(options.size, target, selection))
                 options.add(clearOption(options.size, target, MapClear.Kind.OLD_SEASON, "Clear old season…",
                     "Takes your map from before the season began (/mapexposer season) off this dimension's map. Asks first; each region is copied aside."))
@@ -75,7 +73,7 @@ object MapMenus {
             Component.literal(if (busy) "§7Something is already being written into your map." else "§7$tip"),
         )
         return MenuTooltips.Option(name, index, target, tooltip) {
-            open(null)
+            Ui.open(null)
             MapClear.preview(kind)?.let { Minecraft.getInstance().player?.sendSystemMessage(Component.literal(it)) }
         }.also { it.setActive(!busy) }
     }
@@ -118,7 +116,7 @@ object MapMenus {
             ),
         )
         val area = BlueMapDownload.Area(selection.left * 16, selection.top * 16, selection.right * 16 + 15, selection.bottom * 16 + 15)
-        return MenuTooltips.Option("Download", index, target, tooltip) { say(BlueMapDownload.start(area)) }
+        return MenuTooltips.Option("Download", index, target, tooltip) { Ui.say(BlueMapDownload.start(area)) }
             .also { it.setActive(!busy) }
     }
 
@@ -140,7 +138,7 @@ object MapMenus {
             ),
         )
         return MenuTooltips.Option("Save terrain file", index, target, tooltip) {
-            say(TerrainFiles.save(selection.left, selection.top, selection.right, selection.bottom))
+            Ui.say(TerrainFiles.save(selection.left, selection.top, selection.right, selection.bottom))
         }.also { it.setActive(!busy) }
     }
 
@@ -159,8 +157,8 @@ object MapMenus {
         )
         return MenuTooltips.Option("Share waypoints…", index, target, tooltip) { parent ->
             val mine = WaypointShare.mine()
-            if (mine == null) say("Xaero's Minimap has no waypoint world open")
-            else open(WaypointShareScreen(parent, mine.first, mine.second))
+            if (mine == null) Ui.say("Xaero's Minimap has no waypoint world open")
+            else Ui.open(WaypointShareScreen(parent, mine.first, mine.second))
         }.also { it.setActive(Waypoints.available() && !busy) }
     }
 
@@ -174,7 +172,7 @@ object MapMenus {
                 else "§7A flashing beam here for ${to.joinToString()}. Sent by private message."
             ),
         )
-        return MenuTooltips.Option("Ping here", index, target, tooltip) { say(PlayerPings.sendFromMap(dimension, x, z, y)) }
+        return MenuTooltips.Option("Ping here", index, target, tooltip) { Ui.say(PlayerPings.sendFromMap(dimension, x, z, y)) }
             .also { it.setActive(to.isNotEmpty()) }
     }
 
@@ -190,25 +188,18 @@ object MapMenus {
 
     fun copy(x: Int, y: Int?, z: Int, dimension: String?) {
         val position = if (y == null) "$x $z" else "$x $y $z"
-        val name = dimensionName(dimension)
+        val name = Ui.dimensionName(dimension)
         val text = if (name == null) position else "$position ($name)"
         try {
             Minecraft.getInstance().keyboardHandler.setClipboard(text)
-            say("Copied $text")
+            Ui.say("Copied $text")
         } catch (e: Throwable) {
             Log.error("Could not copy $text to the clipboard", e)
-            say("Could not copy $text to the clipboard")
+            Ui.say("Could not copy $text to the clipboard")
         }
     }
 
     /** A dimension id as a person would write it: `minecraft:the_nether` is the Nether. */
-    fun dimensionName(dimension: String?): String? = when (dimension) {
-        null -> null
-        Config.OVERWORLD -> "Overworld"
-        Config.NETHER -> "Nether"
-        Config.END -> "End"
-        else -> dimension.removePrefix("minecraft:")
-    }
 
     /**
      * Moves Xaero's world map to ([x], [z]): the open map if [screen] is it, otherwise a new one,
@@ -232,7 +223,7 @@ object MapMenus {
             }
             camera.skysmapexposerCentreOn(x, z)
             camera.skysmapexposerZoomIn(MapView.GO_TO_ZOOM)
-            open(map)
+            Ui.open(map)
             true
         } catch (e: Throwable) {
             Log.error("Could not open the world map at $x, $z", e)
@@ -246,7 +237,7 @@ object MapMenus {
         val session = WorldMapSession.getCurrentSession()
         if (player == null || session == null) false
         else {
-            open(xaero.map.gui.GuiMap(null, null, session.mapProcessor, player))
+            Ui.open(xaero.map.gui.GuiMap(null, null, session.mapProcessor, player))
             true
         }
     } catch (e: Throwable) {
@@ -254,23 +245,7 @@ object MapMenus {
         false
     }
 
-    fun open(screen: Screen?) {
-        Minecraft.getInstance().gui.setScreen(screen)
-    }
 
-    /** True while [say] is showing a line, which passes through the same chat events as the server's. */
-    var saying = false
-        private set
-
-    /** A message on the action bar, which only this client sees. */
-    fun say(message: String) {
-        saying = true
-        try {
-            Minecraft.getInstance().player?.sendOverlayMessage(Component.literal(message))
-        } finally {
-            saying = false
-        }
-    }
 
     fun option(name: String, index: Int, target: IRightClickableElement, action: (Screen) -> Unit) =
         object : RightClickOption(name, index, target) {

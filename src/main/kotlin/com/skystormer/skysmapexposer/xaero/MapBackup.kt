@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapExposerClient
@@ -288,7 +289,7 @@ object MapBackup {
                 copied++
             }
             origin.write(taking.into)
-            taking.done("Copied $copied regions of the ${MapMenus.dimensionName(origin.dimensionId) ?: origin.dimensionId} as ${taking.name}" +
+            taking.done("Copied $copied regions of the ${Ui.dimensionName(origin.dimensionId) ?: origin.dimensionId} as ${taking.name}" +
                 if (origin.unsaved.isEmpty()) "" else "; ${origin.unsaved.size} without Xaero's newest exploring, which it did not save in time")
         } catch (e: Throwable) {
             snapshot = null

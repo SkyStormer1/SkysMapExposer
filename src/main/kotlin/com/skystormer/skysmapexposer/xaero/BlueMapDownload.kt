@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BiomeGuide
 import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.BlueMapPicture
@@ -8,7 +9,6 @@ import com.skystormer.skysmapexposer.CoarseScan
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.LowresSource
-import com.skystormer.skysmapexposer.MapAge
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.SkippedRegions
@@ -114,7 +114,7 @@ object BlueMapDownload {
         val saving = ArrayList<Pair<MapRegion, Long>>()
         var palette: XaeroPalette? = null
         var endedAt = 0L
-        val name: String = MapMenus.dimensionName(dimensionId) ?: dimensionId
+        val name: String = Ui.dimensionName(dimensionId) ?: dimensionId
         val startedAt = System.currentTimeMillis()
         val guide: BiomeGuide? by lazy { if (Config.guessBiomes) BiomeGuide.forDimension(dimensionId) else null }
         /** Season dates: a chunk mapped before the season began is written over like one never mapped. */
@@ -144,7 +144,7 @@ object BlueMapDownload {
         val dimension = processor.mapWorld?.currentDimension ?: return "Xaero has no dimension open"
         val dimensionId = dimension.dimId?.identifier()?.toString() ?: return "Xaero's dimension has no id"
         val mapId = session.server.markersFor(dimensionId)
-            ?: return "No BlueMap map is set for the ${MapMenus.dimensionName(dimensionId)}; add one in the settings"
+            ?: return "No BlueMap map is set for the ${Ui.dimensionName(dimensionId)}; add one in the settings"
         val multiworld = dimension.currentMultiworld ?: return "Xaero has not chosen a map folder for this dimension yet"
         val base = dimension.mainFolderPath?.resolve(multiworld) ?: return "Xaero has not chosen a map folder for this dimension yet"
         // In the Nether, a map of the roof into Xaero's roof layer and one of the inside into its cave layer, never the other way.
@@ -204,7 +204,7 @@ object BlueMapDownload {
         if (running) return no("Something is already being written into your map; try again when it has finished")
         val (shown, why) = XaeroWriter.shown()
         shown ?: return no(why!!)
-        val name = MapMenus.dimensionName(dimensionId) ?: dimensionId
+        val name = Ui.dimensionName(dimensionId) ?: dimensionId
         if (shown.dimensionId != dimensionId) return no("That map is of the $name; switch the world map to the $name and try again")
         val player = Minecraft.getInstance().player
         val started = Job(
@@ -400,7 +400,7 @@ object BlueMapDownload {
                 "(${job.tally.newChunks + job.tally.replacedChunks} chunks so far)"
         }
         // Away from the map, the action bar says how it is going.
-        if (++job.ticks % 40 == 0 && Minecraft.getInstance().gui.screen() == null) MapMenus.say(job.message)
+        if (++job.ticks % 40 == 0 && Minecraft.getInstance().gui.screen() == null) Ui.say(job.message)
     }
 
     private fun begin(job: Job, pending: Pending): Active = Active(pending).also { job.active = it }
@@ -505,7 +505,7 @@ object BlueMapDownload {
             job.title, if (job.cancelled) " (cancelled)" else "", took, t.newChunks, t.replacedChunks, t.written, t.kept, t.partialSkipped,
             t.cleared, skipped, if (skipped > 0) ": " + job.skipped.all().joinToString("; ") else "",
         )
-        MapMenus.say(job.message)
+        Ui.say(job.message)
         // The action bar is gone in seconds: what was skipped, and the copies to undo it with, go to chat.
         val batch = MapBackup.batchName(job.label)?.takeIf { chunks > 0 || t.cleared > 0 || job.error != null }
         // A clear offers its own [Restore] in its summary.

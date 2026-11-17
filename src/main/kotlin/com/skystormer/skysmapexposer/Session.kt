@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.MarkerElements
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet
 import net.minecraft.client.Minecraft
 import java.nio.file.Files
@@ -65,7 +64,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
                 if (current === this) {
                     tiles.clear()
                     seaFloor.clear()
-                    if (Config.prepareMap) MapPrep.start(this, MarkerElements.worldMapDimension())
+                    if (Config.prepareMap) MapPrep.start(this, MapMods.adapter?.shownDimension())
                 }
                 done(said)
             }

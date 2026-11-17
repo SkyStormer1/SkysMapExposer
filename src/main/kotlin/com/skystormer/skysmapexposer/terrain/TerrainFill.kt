@@ -1,8 +1,8 @@
 package com.skystormer.skysmapexposer.terrain
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.Log
-import com.skystormer.skysmapexposer.xaero.MapMenus
 import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.Minecraft
@@ -73,7 +73,7 @@ object TerrainFill {
         @Volatile var message = "Starting…"
         // Every target listed from the start, so one getting nothing shows as 0.
         val sent = LinkedHashMap<String, Int>().also { map -> targets.forEach { map[it.name] = 0 } }
-        val progress = FillProgress(targets, MapMenus.dimensionName(dimension) ?: dimension)
+        val progress = FillProgress(targets, Ui.dimensionName(dimension) ?: dimension)
         var endedAt = 0L
     }
 
@@ -160,7 +160,7 @@ object TerrainFill {
     private fun findTiles(session: Session, map: String, x: Int, z: Int): Checked {
         val noTerrain = Checked(
             "BlueMap map '$map' has no 3D terrain here, so it can't fill Bobby, Voxy or Distant Horizons. " +
-                "It can still be shown on and downloaded into Xaero's map.", 0,
+                "It can still be shown on your map.", 0,
         )
         return try {
             val layout = session.blueMap.hiresLayout(map)
@@ -247,7 +247,7 @@ object TerrainFill {
             val progress = job.progress
             // The fill keeps to the dimension it started in, wherever you go; the mods that can no
             // longer take its chunks drop out ([FillProgress.use]).
-            fun nowIn(): String? = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()?.let(MapMenus::dimensionName)
+            fun nowIn(): String? = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()?.let(Ui::dimensionName)
 
             // Small square pieces, nearest first.
             val c = job.centre
@@ -328,7 +328,7 @@ object TerrainFill {
             } else if (!job.cancelled && asked > 0 && found == 0 && progress.unreadable == 0) {
                 // Without 3D tiles there is nothing to build from: say so, rather than a quiet 0.
                 "Nothing to build: BlueMap map '${job.map}' has no 3D tiles here. This server draws it as a flat map only " +
-                    "(as many do for the Nether), so it can be shown on Xaero's map but not filled into ${job.targets.joinToString(", ") { it.name }}."
+                    "(as many do for the Nether), so it can be shown on your map but not filled into ${job.targets.joinToString(", ") { it.name }}."
             } else {
                 (if (job.cancelled) "Stopped. " else "Done. ") + summary(job) +
                     (if (empty > 0) " ($empty chunks BlueMap never drew)" else "") + progress.afterword()

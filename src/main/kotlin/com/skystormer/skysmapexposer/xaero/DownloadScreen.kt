@@ -1,5 +1,6 @@
-package com.skystormer.skysmapexposer.gui
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.gui.SafeTooltip
 import com.skystormer.skysmapexposer.xaero.BlueMapDownload
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.MultiLineTextWidget

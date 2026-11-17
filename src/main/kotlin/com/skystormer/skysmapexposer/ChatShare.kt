@@ -1,13 +1,10 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.MapMenus
-import com.skystormer.skysmapexposer.xaero.WaypointShare
-import com.skystormer.skysmapexposer.xaero.Waypoints
-import com.skystormer.skysmapexposer.ShareFormat.Step
 import com.skystormer.skysmapexposer.ShareInbox.Companion.ASK
+import com.skystormer.skysmapexposer.ShareInbox.Companion.MAX_MESSAGES
+import com.skystormer.skysmapexposer.ShareFormat.Step
 import com.skystormer.skysmapexposer.ShareInbox.Companion.ANSWER_WAIT
 import com.skystormer.skysmapexposer.ShareInbox.Companion.MARKER
-import com.skystormer.skysmapexposer.ShareInbox.Companion.MAX_MESSAGES
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientPacketListener
@@ -114,7 +111,7 @@ object ChatShare {
     /** Watches the server's own messages while sharing: being muted or the server having no /msg stops it. */
     private fun watch(text: String) {
         if (outgoing == null && pings.isEmpty()) return
-        if (MARKER in text || MapMenus.saying) return
+        if (MARKER in text || Ui.saying) return
         when {
             MUTED.containsMatchIn(text) -> stop("Sharing stopped: the server muted you (\"$text\")")
             NO_MSG.containsMatchIn(text) && "msg" in text.lowercase() -> stop("Sharing stopped: the server has no /msg to share through")
@@ -146,7 +143,7 @@ object ChatShare {
     private fun stop(message: String) {
         outgoing = null
         pings.clear()
-        MapMenus.say(message)
+        Ui.say(message)
         Log.info("Sharing: {}", message)
     }
 
@@ -188,7 +185,7 @@ object ChatShare {
                     "Sky's Map Exposer. You can ignore this."
                 whisper(out.to, body, connection)
                 out.askedAt = now
-                MapMenus.say("Checking that ${out.to} has Sky's Map Exposer…")
+                Ui.say("Checking that ${out.to} has Sky's Map Exposer…")
             } else if (out.askedAt != 0L && now - out.askedAt > ANSWER_WAIT) {
                 stop("${out.to} did not answer, so they probably do not have Sky's Map Exposer; nothing was sent")
             }
@@ -218,7 +215,7 @@ object ChatShare {
         out.sent++
         if (out.next < messages.size) {
             if (minecraft.gui.screen() == null || out.next % 4 == 0) {
-                MapMenus.say("Sharing ${source.label} with ${out.to}: message ${out.next} of ${messages.size}")
+                Ui.say("Sharing ${source.label} with ${out.to}: message ${out.next} of ${messages.size}")
             }
             return
         }
@@ -305,7 +302,7 @@ object ChatShare {
             "Received {} waypoints of the {} from {} ({}), share {}", waypoints.size, received.dimensionId, received.from,
             if (received.verified) "verified" else "unverified", received.shareId,
         )
-        val name = MapMenus.dimensionName(received.dimensionId) ?: received.dimensionId
+        val name = Ui.dimensionName(received.dimensionId) ?: received.dimensionId
         val list = waypoints.take(15).joinToString("\n") { "${it.name}  ${it.x}, ${if (it.yIncluded) "${it.y}, " else ""}${it.z}" } +
             if (waypoints.size > 15) "\n…and ${waypoints.size - 15} more" else ""
         val unverified = if (received.verified) "" else " §7(unverified)§r"
@@ -318,7 +315,6 @@ object ChatShare {
     /** Adds shared waypoints [id] to yours. Returns what to tell the player. */
     fun addWaypoints(id: Int): String {
         val shared = receivedWaypoints[id] ?: return "Those shared waypoints are no longer here"
-        if (!Waypoints.available()) return "Adding waypoints needs Xaero's Minimap"
-        return WaypointShare.add(shared.dimensionId, shared.from, shared.waypoints)
+        return MapMods.adapter?.addWaypoints(shared.dimensionId, shared.from, shared.waypoints) ?: "Adding waypoints needs a map mod"
     }
 }

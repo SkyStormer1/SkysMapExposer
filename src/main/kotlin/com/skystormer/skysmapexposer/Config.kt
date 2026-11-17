@@ -444,4 +444,7 @@ object Config {
     const val OVERWORLD = "minecraft:overworld"
     const val NETHER = "minecraft:the_nether"
     const val END = "minecraft:the_end"
+
+    /** Overworld blocks to one Nether block. */
+    const val NETHER_SCALE = 8
 }

@@ -1,11 +1,10 @@
 package com.skystormer.skysmapexposer.xaero
 
-import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
-import com.skystormer.skysmapexposer.MapAge
 import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.Markers
@@ -85,7 +84,7 @@ object MapClear {
         val (plan, why) = plan(kind, box)
         plan ?: return why!!
         if (previewed != null) {
-            mismatch(previewed.first, previewed.second, plan.dimensionId, plan.layer) { MapMenus.dimensionName(it) ?: it }?.let { return it }
+            mismatch(previewed.first, previewed.second, plan.dimensionId, plan.layer) { Ui.dimensionName(it) ?: it }?.let { return it }
         }
         if (plan.regions.isEmpty()) return plan.nothing
         val regions = plan.regions.map { (x, z) -> Triple(x, z) { Clearing(x, z, plan.clears) as XaeroWriter.Pixels? } }
@@ -332,7 +331,7 @@ object MapClear {
             ?: return "This server is not set up in Sky's Map Exposer's settings, so it has no season start"
         if (server.coverBefore.isEmpty()) return "No season start is set; /mapexposer season set <yyyy-MM-dd HH:mm> sets one for the dimension the map shows"
         return "Season start: " + server.coverBefore.entries.joinToString(", ") { (dimension, millis) ->
-            "${MapMenus.dimensionName(dimension) ?: dimension} ${format(Clock.minutesOf(millis))}"
+            "${Ui.dimensionName(dimension) ?: dimension} ${format(Clock.minutesOf(millis))}"
         }
     }
 
@@ -345,7 +344,7 @@ object MapClear {
         val address = MapExposerClient.addressOf(Minecraft.getInstance())
         val server = Config.serverFor(address) ?: return "This server is not set up in Sky's Map Exposer's settings; add it there first"
         val dimension = shownDimension() ?: return "Not in a world"
-        val name = MapMenus.dimensionName(dimension) ?: dimension
+        val name = Ui.dimensionName(dimension) ?: dimension
         val millis = text?.let { parse(it) ?: return "Write the time as yyyy-MM-dd HH:mm (or just the date, or now)" }
         val cover = LinkedHashMap(server.coverBefore)
         if (millis == null) cover.remove(dimension) else cover[dimension] = millis

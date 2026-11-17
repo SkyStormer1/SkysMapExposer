@@ -1,5 +1,8 @@
-package com.skystormer.skysmapexposer.gui
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.gui.ConfigScreen
+import com.skystormer.skysmapexposer.gui.DockPanel
+import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import com.skystormer.skysmapexposer.xaero.BiomeHighlight
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapRefresh

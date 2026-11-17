@@ -68,8 +68,8 @@ object Waypoints {
 
     /** Block ([x], [z]) of [dimension] in the other one, written as the waypoint will have it. */
     private fun counterpartCoordinates(x: Int, z: Int, dimension: String): String =
-        if (dimension == Config.OVERWORLD) "${Math.floorDiv(x, NETHER_SCALE)}, $NETHER_Y, ${Math.floorDiv(z, NETHER_SCALE)}"
-        else "${x * NETHER_SCALE}, ${z * NETHER_SCALE}"
+        if (dimension == Config.OVERWORLD) "${Math.floorDiv(x, Config.NETHER_SCALE)}, $NETHER_Y, ${Math.floorDiv(z, Config.NETHER_SCALE)}"
+        else "${x * Config.NETHER_SCALE}, ${z * Config.NETHER_SCALE}"
 
     /** What [setCounterpart] would do for this block, for the menu's tooltip. */
     fun counterpartTip(x: Int, z: Int, dimension: String): String =
@@ -105,7 +105,7 @@ object Waypoints {
         val world = worldFor(target) ?: return "Xaero's Minimap has no waypoints for the ${counterpartName(dimension)} yet"
         // Xaero converts from the scale it is given to the world's own, so the coordinates go in as
         // they are in the dimension clicked, with that dimension's scale.
-        val scale = if (toNether) 1.0 else NETHER_SCALE.toDouble()
+        val scale = if (toNether) 1.0 else Config.NETHER_SCALE.toDouble()
         val y = if (toNether) NETHER_Y else 0
         session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, x, y, z, toNether, scale)
         SupportMods.xaeroMinimap?.requestWaypointsRefresh()
@@ -200,7 +200,4 @@ object Waypoints {
 
     /** Height of a waypoint put in the Nether from the Overworld. */
     private const val NETHER_Y = 128
-
-    /** Overworld blocks to one Nether block. */
-    const val NETHER_SCALE = 8
 }

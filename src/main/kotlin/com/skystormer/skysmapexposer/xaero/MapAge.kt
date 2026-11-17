@@ -1,5 +1,8 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Clock
+import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.VisitLog
 import com.skystormer.skysmapexposer.xaero.MapBackup
 import java.nio.file.Files
 import java.nio.file.Path
@@ -10,7 +13,7 @@ import java.nio.file.Path
  *
  * A map left over from an old season still has that season's land and biomes, so downloads and
  * maps shared with you write over it even when only filling what you have not explored
- * ([XaeroWriter.write]), sharing your map leaves it out ([ShareFormat.Collector]), and
+ * ([XaeroWriter.write]), sharing your map leaves it out ([TerrainFormat.Collector]), and
  * [MapClear] can take it off your map altogether.
  *
  * A chunk's date is when you last had it loaded ([VisitLog], kept since this mod was installed),

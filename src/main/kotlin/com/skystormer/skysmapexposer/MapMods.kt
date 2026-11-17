@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.XaeroAdapter
 import net.fabricmc.loader.api.FabricLoader
 
 /** Which map mods are installed, asked in one place. Loaded mods can't change while the game runs. */
@@ -14,4 +15,7 @@ object MapMods {
 
     /** Whether any map this mod draws on is installed; without one it only says which to get. */
     val any: Boolean get() = xaeroWorldMap
+
+    /** The installed map, for everything that needs one; null with none. */
+    val adapter: MapAdapter? by lazy { if (xaeroWorldMap) XaeroAdapter else null }
 }

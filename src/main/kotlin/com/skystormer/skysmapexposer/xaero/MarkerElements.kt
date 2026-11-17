@@ -12,15 +12,10 @@ import com.mojang.renderpearl.api.textures.GpuTextureView
 //?} else {
 /*import com.mojang.blaze3d.textures.GpuTextureView
 *///?}
-import com.mojang.blaze3d.vertex.BufferBuilder
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphicsExtractor
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
 import net.minecraft.util.Util
-import org.joml.Matrix4f
 import xaero.lib.client.graphics.XaeroBufferProvider
 import xaero.lib.client.gui.widget.Tooltip
 import xaero.map.WorldMapSession

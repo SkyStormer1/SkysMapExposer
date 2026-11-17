@@ -1,11 +1,10 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.MapMods
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.LockedPlayers
 import com.skystormer.skysmapexposer.MapCamera
-import com.skystormer.skysmapexposer.xaero.MapMenus
-import com.skystormer.skysmapexposer.xaero.MapView
-import com.skystormer.skysmapexposer.xaero.MarkerElements
 import com.skystormer.skysmapexposer.Markers
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
@@ -98,7 +97,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         unlockAll = addRenderableWidget(
             Button.builder(Component.literal("Unlock all")) {
                 Session.current?.locks?.clear()
-                MapMenus.say("Unlocked everyone")
+                Ui.say("Unlocked everyone")
                 refreshRows(force = true)
             }.bounds(left + (quarter + GAP) * 3, y, listWidth - (quarter + GAP) * 3, ROW)
                 .tooltip(SafeTooltip.of("Stop following every player you have locked on to."))
@@ -178,7 +177,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         }
 
         // Go to moves the open world map, or opens one; either way only for the dimension it shows.
-        val mapDimension = MarkerElements.worldMapDimension() ?: myDimension()
+        val mapDimension = MapMods.adapter?.shownDimension() ?: myDimension()
         val buttonWidth = 44
         val textWidth = listWidth - (buttonWidth + GAP) * 4
 
@@ -302,12 +301,12 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     private fun goTo(entry: Row) {
         val x = floor(entry.player.x).toInt()
         val z = floor(entry.player.z).toInt()
-        if (MapView.goTo(entry.dimension, x, z, parent, entry.player.uuid)) {
+        if (MapMods.adapter?.goTo(entry.dimension, x, z, parent, entry.player.uuid) == true) {
             // Only step back to a map that was already open. When it was not, MapView has just
             // opened one, and closing this list would put whatever was behind it back on top.
             if (parent is MapCamera) onClose()
         } else {
-            MapMenus.say("Could not open the world map at ${entry.player.label}")
+            Ui.say("Could not open the world map at ${entry.player.label}")
         }
     }
 
@@ -340,7 +339,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     }
 
     companion object {
-        fun dimensionName(dimension: String): String = MapMenus.dimensionName(dimension) ?: dimension
+        fun dimensionName(dimension: String): String = Ui.dimensionName(dimension) ?: dimension
 
         private const val MAX_WIDTH = 420
         // ARGB: these are drawn onto the screen by PlayerRowWidget, not put in a Component.

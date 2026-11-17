@@ -1,8 +1,8 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.Config
-import com.skystormer.skysmapexposer.MapAge
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.Session
 import java.util.Collections
@@ -84,7 +84,7 @@ object XaeroWriter {
     ) {
         /** The regions of [layer]. */
         val folder: Path get() = layerFolder(base, layer)
-        val name: String get() = MapMenus.dimensionName(dimensionId) ?: dimensionId
+        val name: String get() = Ui.dimensionName(dimensionId) ?: dimensionId
     }
 
     /** The map the world map is showing, or why there is none to work on yet. */

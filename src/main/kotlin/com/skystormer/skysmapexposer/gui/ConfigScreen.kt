@@ -1,15 +1,13 @@
 package com.skystormer.skysmapexposer.gui
 
-import com.skystormer.skysmapexposer.xaero.Waypoints
+import com.skystormer.skysmapexposer.xaero.DownloadScreen
+import com.skystormer.skysmapexposer.MapMods
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
-import com.skystormer.skysmapexposer.xaero.BlueMapDownload
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.TileCache
-import com.skystormer.skysmapexposer.xaero.MapMenus
-import com.skystormer.skysmapexposer.xaero.MarkerElements
-import com.skystormer.skysmapexposer.xaero.Overlay
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.SettingsCheck
 import com.skystormer.skysmapexposer.terrain.FillTarget
@@ -93,7 +91,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var fullDownloadHours = Config.fullDownloadHours
     private var seaFloorHires = Config.seaFloorHires
     private var pingSound = Config.pingSound
-    private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
+    private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + (MapMods.adapter?.summary() ?: ""))
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
     /** Everything as it was on opening, to tell whether Cancel throws anything away. */
@@ -378,7 +376,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             Button.builder(Component.literal("Stop preparing")) { MapPrep.cancel(); prepareSaid = "Stopped; what is done stays."; rebuildWidgets() }
         } else {
             Button.builder(Component.literal("Prepare now")) {
-                prepareSaid = session?.let { MapPrep.start(it, MarkerElements.worldMapDimension()) } ?: ""
+                prepareSaid = session?.let { MapPrep.start(it, MapMods.adapter?.shownDimension()) } ?: ""
                 rebuildWidgets()
             }.tooltip(SafeTooltip.of("Go over the whole map now: tiles already on disk and up to date are skipped."))
         }
@@ -602,14 +600,15 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     }
 
     private fun downloadButton(x: Int, y: Int, width: Int): Button {
-        if (BlueMapDownload.running) {
+        val downloading = MapMods.adapter?.downloadStatus()
+        if (downloading != null) {
             return Button.builder(Component.literal("Stop download")) {
-                BlueMapDownload.cancel()
+                MapMods.adapter?.cancelDownload()
                 message = Component.literal("Stopping the download after the region it is on.")
                 rebuildWidgets()
             }
                 .bounds(x, y, width, ROW)
-                .tooltip(SafeTooltip.of(BlueMapDownload.status() ?: "A download from BlueMap is running."))
+                .tooltip(SafeTooltip.of(downloading))
                 .build()
         }
         val button = Button.builder(Component.literal("Download…")) { confirmDownload() }
@@ -620,13 +619,14 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                     "just before it is changed."
             ))
             .build()
-        button.active = Session.current != null
+        // Downloads write into Xaero's own map files, so they need Xaero's World Map.
+        button.active = Session.current != null && MapMods.xaeroWorldMap
         return button
     }
 
     private fun confirmDownload() {
         keepEdits()
-        val dimension = MarkerElements.worldMapDimension()?.let(MapMenus::dimensionName) ?: "current"
+        val dimension = MapMods.adapter?.shownDimension()?.let(Ui::dimensionName) ?: "current"
         minecraft.gui.setScreen(DownloadScreen(dimension) { said ->
             if (said != null) message = Component.literal(said)
             minecraft.gui.setScreen(this)
@@ -862,7 +862,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         } else {
             // Switching background preparation on or off takes effect at once.
             val session = Session.current
-            if (session != null && Config.prepareMap && !prepareWasOn && !MapPrep.running) MapPrep.start(session, MarkerElements.worldMapDimension())
+            if (session != null && Config.prepareMap && !prepareWasOn && !MapPrep.running) MapPrep.start(session, MapMods.adapter?.shownDimension())
             if (!Config.prepareMap && prepareWasOn) MapPrep.cancel()
         }
         minecraft.setScreenAndShow(parent)

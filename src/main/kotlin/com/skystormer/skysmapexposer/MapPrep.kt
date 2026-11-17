@@ -1,8 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.MapMenus
-import com.skystormer.skysmapexposer.xaero.XaeroWriter
-import xaero.map.WorldMapSession
 
 /**
  * Background preparation of the whole map: after joining, every tile BlueMap has is downloaded and
@@ -50,17 +47,15 @@ object MapPrep {
 
     /** Each client tick: what the preparing thread needs to know, and starting it after joining. */
     fun tick(session: Session?) {
-        if (session == null) {
+        val map = MapMods.adapter
+        // Nothing to prepare without a map to draw it on.
+        if (session == null || map == null) {
             if (job != null) forget()
             startedFor = null
             return
         }
-        val processor = WorldMapSession.getCurrentSession()?.mapProcessor
-        val dimension = processor?.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
-        // Only caves the overlay does not draw over: the Nether's usual cave layer is drawn over.
-        caveDimension = dimension?.takeIf {
-            XaeroWriter.blueMapLayer(it, session.server.mapFor(it), processor.currentCaveLayer) == null
-        }
+        val dimension = map.shownDimension()
+        caveDimension = map.cavesShown(session)
         gameBusy = FramePacer.game.paused
         if (startedFor !== session && dimension != null) {
             startedFor = session
@@ -71,6 +66,7 @@ object MapPrep {
     /** Starts (again) for [session], the map of [here] first. Returns what to tell the player. */
     fun start(session: Session, here: String?): String {
         if (running) return "The map is already being prepared"
+        if (MapMods.adapter == null) return "Preparing the map needs a map mod to draw it on"
         val dimensions = listOfNotNull(here) + session.server.maps.keys.filter { it != here }
         val maps = dimensions.mapNotNull { dimension -> session.server.mapFor(dimension)?.let { dimension to it } }.distinctBy { it.second }
         if (maps.isEmpty()) return "No BlueMap map's terrain is used on this server"
@@ -123,9 +119,9 @@ object MapPrep {
             // Left for being in cave mode: once more, and left out if they still are.
             for (target in later) {
                 if (job.cancelled) return
-                if (!prepare(job, target)) job.left.add(MapMenus.dimensionName(target.first) ?: target.first)
+                if (!prepare(job, target)) job.left.add(Ui.dimensionName(target.first) ?: target.first)
             }
-            val leftOut = if (job.left.isEmpty()) "" else " (left out, as Xaero shows it in cave mode: ${job.left.joinToString()})"
+            val leftOut = if (job.left.isEmpty()) "" else " (left out, as your map shows it in cave mode: ${job.left.joinToString()})"
             end(job, "Map ready$leftOut")
         } catch (e: Exception) {
             if (job.cancelled) return

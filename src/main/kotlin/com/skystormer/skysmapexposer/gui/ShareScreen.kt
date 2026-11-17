@@ -1,7 +1,7 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.xaero.MapMenus
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
@@ -72,12 +72,12 @@ class ShareScreen(
 
     private fun pick(name: String) {
         val said = share(name)
-        MapMenus.open(after)
-        MapMenus.say(said)
+        Ui.open(after)
+        Ui.say(said)
     }
 
     override fun onClose() {
-        MapMenus.open(parent)
+        Ui.open(parent)
     }
 
     private companion object {

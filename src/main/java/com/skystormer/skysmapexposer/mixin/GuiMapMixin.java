@@ -9,7 +9,7 @@ import com.skystormer.skysmapexposer.xaero.MapMenus;
 import com.skystormer.skysmapexposer.xaero.MapView;
 import com.skystormer.skysmapexposer.OtherDimensionCoords;
 import com.skystormer.skysmapexposer.xaero.Overlay;
-import com.skystormer.skysmapexposer.gui.MapBar;
+import com.skystormer.skysmapexposer.xaero.MapBar;
 import com.skystormer.skysmapexposer.gui.PanelClicks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;

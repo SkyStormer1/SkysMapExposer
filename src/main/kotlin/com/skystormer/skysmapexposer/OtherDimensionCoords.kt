@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.MarkerElements
 
 /**
  * Under the world map's readout of the block under the mouse, the same block's coordinates in the
@@ -15,7 +14,7 @@ object OtherDimensionCoords {
      * null when that is not the Overworld or the Nether.
      */
     @JvmStatic
-    fun forWorldMap(x: Int, z: Int): String? = if (!Config.otherDimensionCoords) null else when (MarkerElements.worldMapDimension()) {
+    fun forWorldMap(x: Int, z: Int): String? = if (!Config.otherDimensionCoords) null else when (MapMods.adapter?.shownDimension()) {
         "minecraft:the_nether" -> "Overworld X: ${x * 8} Z: ${z * 8}"
         "minecraft:overworld" -> "Nether X: ${Math.floorDiv(x, 8)} Z: ${Math.floorDiv(z, 8)}"
         else -> null

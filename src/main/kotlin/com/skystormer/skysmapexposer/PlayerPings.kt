@@ -1,7 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.MapMenus
-import com.skystormer.skysmapexposer.xaero.Waypoints
 import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.BlockPos
@@ -70,8 +68,8 @@ object PlayerPings {
         for (ping in active.values) {
             built.getOrPut(ping.dimension) { ArrayList() }.add(ping.pin)
             when (ping.dimension) {
-                Config.OVERWORLD -> built.getOrPut(Config.NETHER) { ArrayList() }.add(ping.pin.scaled(1.0 / Waypoints.NETHER_SCALE))
-                Config.NETHER -> built.getOrPut(Config.OVERWORLD) { ArrayList() }.add(ping.pin.scaled(Waypoints.NETHER_SCALE.toDouble()))
+                Config.OVERWORLD -> built.getOrPut(Config.NETHER) { ArrayList() }.add(ping.pin.scaled(1.0 / Config.NETHER_SCALE))
+                Config.NETHER -> built.getOrPut(Config.OVERWORLD) { ArrayList() }.add(ping.pin.scaled(Config.NETHER_SCALE.toDouble()))
             }
         }
         byDimension = built
@@ -188,7 +186,7 @@ object PlayerPings {
         show(ping.from, uuid, ping.dimensionId, ping.x, ping.y, ping.z)
         val minecraft = Minecraft.getInstance()
         if (Config.pingSound) minecraft.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_BELL.value(), 1.5f))
-        val name = MapMenus.dimensionName(ping.dimensionId) ?: ping.dimensionId
+        val name = Ui.dimensionName(ping.dimensionId) ?: ping.dimensionId
         val unverified = if (ping.verified) "" else " §7(unverified)§r"
         val id = ChatShare.offerWaypoints(
             ping.from, ping.dimensionId,

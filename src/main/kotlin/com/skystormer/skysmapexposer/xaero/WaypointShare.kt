@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.ShareFormat
 import net.minecraft.client.resources.language.I18n
@@ -54,7 +55,7 @@ object WaypointShare {
     fun add(dimensionId: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String {
         if (!Waypoints.available()) return "Adding waypoints needs Xaero's Minimap"
         val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
-        val name = MapMenus.dimensionName(dimensionId) ?: dimensionId
+        val name = Ui.dimensionName(dimensionId) ?: dimensionId
         val target = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimensionId))
         val world = Waypoints.worldFor(target) ?: return "Xaero's Minimap has no waypoints for the $name yet; go there once first"
         val set = world.currentWaypointSet ?: return "Xaero's Minimap has no waypoint set selected for the $name"

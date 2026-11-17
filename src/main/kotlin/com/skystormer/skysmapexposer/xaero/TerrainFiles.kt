@@ -1,7 +1,11 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.ChatButton
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.ShareFormat
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.xaero.BlueMapDownload
-import com.skystormer.skysmapexposer.xaero.MapMenus
 import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -57,7 +61,7 @@ object TerrainFiles {
 
     // ---- saving ----
 
-    private class Saving(val reader: ShareFormat.RegionReader, val part: Path, val file: Path, val out: DataOutputStream) {
+    private class Saving(val reader: TerrainFormat.RegionReader, val part: Path, val file: Path, val out: DataOutputStream) {
         var ticks = 0
         /** Regions in the file so far, and still to go in; both counted on [worker]. */
         val regions = AtomicInteger()
@@ -82,10 +86,10 @@ object TerrainFiles {
     fun save(left: Int, top: Int, right: Int, bottom: Int): String {
         if (saving != null) return "A map is already being saved to a file; /mapexposer terrain cancel stops it"
         val me = Minecraft.getInstance().player?.gameProfile?.name() ?: "?"
-        val (reader, why) = ShareFormat.RegionReader.plan(me, left, top, right, bottom)
+        val (reader, why) = TerrainFormat.RegionReader.plan(me, left, top, right, bottom)
         reader ?: return why!!
         val area = reader.area
-        val name = MapMenus.dimensionName(reader.dimensionId) ?: reader.dimensionId.substringAfter(':')
+        val name = Ui.dimensionName(reader.dimensionId) ?: reader.dimensionId.substringAfter(':')
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss"))
         val base = "$name near ${area.x} ${area.z} $stamp".replace(Regex("[\\\\/:*?\"<>|]"), "_")
         return try {
@@ -127,7 +131,7 @@ object TerrainFiles {
 
     private fun fail(current: Saving, message: String) {
         abandon(current)
-        MapMenus.say("Saving stopped: $message")
+        Ui.say("Saving stopped: $message")
         Log.info("Saving terrain stopped: {}", message)
     }
 
@@ -141,7 +145,7 @@ object TerrainFiles {
         // The file is behind: let it catch up rather than hold more packed regions in memory.
         if (current.queued.get() >= QUEUED) return
         when (val step = current.reader.next()) {
-            is Step.Waiting -> if (current.ticks % 40 == 0) MapMenus.say("Saving terrain: ${current.reader.progress}")
+            is Step.Waiting -> if (current.ticks % 40 == 0) Ui.say("Saving terrain: ${current.reader.progress}")
             is Step.Failed -> fail(current, step.message)
             is Step.Done -> finish(current)
             is Step.Ready -> {
@@ -187,7 +191,7 @@ object TerrainFiles {
             } catch (e: Exception) {
                 Log.error("Could not save terrain to ${current.part}", e)
                 runCatching { Files.deleteIfExists(current.part) }
-                Minecraft.getInstance().execute { MapMenus.say("Saving stopped: could not write the file (${e.message ?: e.javaClass.simpleName})") }
+                Minecraft.getInstance().execute { Ui.say("Saving stopped: could not write the file (${e.message ?: e.javaClass.simpleName})") }
                 return@execute
             }
             Minecraft.getInstance().execute { saved(current, chunks, skipped, old, size) }
@@ -196,7 +200,7 @@ object TerrainFiles {
 
     private fun saved(current: Saving, chunks: Int, skipped: Int, old: Int, size: Long) {
         if (size < 0) {
-            MapMenus.say(
+            Ui.say(
                 if (old > 0) "Nothing of your map there to save: all $old chunks you have there are from before the season began"
                 else "Nothing of your map there to save: you have not mapped those chunks"
             )
@@ -258,7 +262,7 @@ object TerrainFiles {
         val id = ThreadLocalRandom.current().nextInt(1 shl 30)
         opened[id] = file
         while (opened.size > KEEP_OPENED) opened.remove(opened.keys.first())
-        val name = MapMenus.dimensionName(file.dimensionId) ?: file.dimensionId
+        val name = Ui.dimensionName(file.dimensionId) ?: file.dimensionId
         Log.info("Opened {} as {}: {} chunks of the {} (cave layer {}) from {}", path, id, file.chunks, file.dimensionId, file.layer, file.from)
         val layer = if (file.layer == MapLayers.SURFACE) "" else " (${layerName(file.layer)})"
         player.sendSystemMessage(
@@ -332,7 +336,7 @@ object TerrainFiles {
         val file = opened[id] ?: return "That map file is no longer open; drop it onto the game again"
         val shown = XaeroWriter.shown().first
         if (!confirmed && shown != null && shown.dimensionId == file.dimensionId && shown.layer != file.layer) {
-            val name = MapMenus.dimensionName(file.dimensionId) ?: file.dimensionId
+            val name = Ui.dimensionName(file.dimensionId) ?: file.dimensionId
             val command = "/mapexposer shared $id ${if (unexploredOnly) "blank" else "all"} confirm"
             Minecraft.getInstance().player?.sendSystemMessage(
                 Component.literal("§eThis map is of ${layerName(file.layer)} of the $name, but the world map is showing ${layerName(shown.layer)}. " +
@@ -373,17 +377,17 @@ object TerrainFiles {
 
     /** One region of [file], read when it is about to be written; nothing if it cannot be read, counted in [unreadable]. */
     private fun region(file: Opened, entry: Entry, unreadable: AtomicInteger): XaeroWriter.Pixels {
-        val empty = ShareFormat.SharedRegion(entry.regionX, entry.regionZ)
+        val empty = TerrainFormat.SharedRegion(entry.regionX, entry.regionZ)
         return try {
             val bytes = ByteArray(entry.length)
             RandomAccessFile(file.path.toFile(), "r").use { input ->
                 input.seek(entry.offset)
                 input.readFully(bytes)
             }
-            val regions = HashMap<Pair<Int, Int>, ShareFormat.SharedRegion>()
+            val regions = HashMap<Pair<Int, Int>, TerrainFormat.SharedRegion>()
             ShareFormat.open(bytes) { batch ->
                 if (batch.format != ShareFormat.TERRAIN) error("not terrain")
-                ShareFormat.readTerrain(batch.input, batch.count, regions)
+                TerrainFormat.readTerrain(batch.input, batch.count, regions)
             }
             regions[entry.regionX to entry.regionZ] ?: empty
         } catch (e: Exception) {
