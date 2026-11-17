@@ -9,7 +9,6 @@ import com.skystormer.skysmapexposer.gui.MapBar
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
-import net.fabricmc.loader.api.FabricLoader
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
@@ -136,7 +135,7 @@ object MapExposerClient : ClientModInitializer {
             if (!hookChecked) {
                 hookChecked = true
                 if (!hookInstalled()) Log.warn("This version of Xaero's World Map is not supported; nothing will be drawn on it")
-                if (FabricLoader.getInstance().isModLoaded("xaerominimap") && !minimapHookInstalled()) {
+                if (MapMods.xaeroMinimap && !minimapHookInstalled()) {
                     Log.warn("This version of Xaero's Minimap is not supported; nothing will be drawn on it")
                 }
                 if (!injected("xaero.map.gui.GuiMap", "drawBiomeHighlight")) {
@@ -146,7 +145,7 @@ object MapExposerClient : ClientModInitializer {
                     Log.warn("Could not hook Xaero's player arrow; it will show on another dimension's map")
                 }
                 if (!dropHookInstalled()) Log.warn("Could not hook dropping files onto the game; open map files with /mapexposer terrain open")
-                if (FabricLoader.getInstance().isModLoaded("xaerominimap")) {
+                if (MapMods.xaeroMinimap) {
                     val radar = "xaero.hud.minimap.radar.render.element.RadarRenderer"
                     // The drawing gate is the one that has to hold; the other is only a shortcut.
                     if (!injected(radar, "hideRadarDot")) {
@@ -372,7 +371,7 @@ object MapExposerClient : ClientModInitializer {
             }
         }
         if (!minimapPinsAdded) {
-            minimapPinsAdded = if (!FabricLoader.getInstance().isModLoaded("xaerominimap")) {
+            minimapPinsAdded = if (!MapMods.xaeroMinimap) {
                 true
             } else {
                 try {

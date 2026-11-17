@@ -6,7 +6,7 @@ import com.skystormer.skysmapexposer.MapRefresh
 import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Session
 import net.fabricmc.fabric.api.client.screen.v1.Screens
-import net.fabricmc.loader.api.FabricLoader
+import com.skystormer.skysmapexposer.MapMods
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
@@ -68,8 +68,8 @@ object MapBar {
         Switch("Players", "Other players' heads, on both maps and over the ones you lock on to", { Config.showPlayers }) {
             Config.showPlayers = !Config.showPlayers; Config.save()
         },
-        // Only with Xaero's Minimap installed, which this mod does not need.
-        if (FabricLoader.getInstance().isModLoaded("xaerominimap")) {
+        // Only with Xaero's Minimap (or Fair-Play) installed, which this mod does not need.
+        if (MapMods.xaeroMinimap) {
             Switch("Minimap", "The biomes you pick below, tinted on the minimap too", { Config.minimapBiomes }) {
                 Config.minimapBiomes = !Config.minimapBiomes; Config.save()
             }

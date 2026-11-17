@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
@@ -22,7 +21,7 @@ import kotlin.math.floor
  */
 object Waypoints {
 
-    fun available(): Boolean = FabricLoader.getInstance().isModLoaded("xaerominimap")
+    fun available(): Boolean = MapMods.xaeroMinimap
 
     fun save(pin: Markers.Pin) {
         say(
