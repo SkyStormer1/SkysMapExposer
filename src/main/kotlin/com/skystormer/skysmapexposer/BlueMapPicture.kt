@@ -29,7 +29,7 @@ object BlueMapPicture {
      * column and row belong to the next tile and are dropped.
      */
     fun decode(tileX: Int, tileZ: Int, size: Int, bytes: ByteArray): Tile {
-        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
+        val image = BlueMap.readTile(bytes, size)
         val width = image.width
         val half = image.height / 2
         if (width != half || width < size) throw IOException("unexpected tile shape ${width}x${image.height}")

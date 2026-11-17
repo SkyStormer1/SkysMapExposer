@@ -373,8 +373,6 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         private const val MAX_BODY = 32 * 1024 * 1024
         private const val MAX_TILE_SIZE = 4096
 
-        /** The biggest lowres tile image: `(tileSize + 1)` wide and twice as tall. */
-        const val MAX_TILE_IMAGE = (MAX_TILE_SIZE + 1) * 2
 
         /** The biggest marker icon worth drawing. */
         const val MAX_ICON = 1024
@@ -406,7 +404,20 @@ class BlueMap(baseUrl: String) : AutoCloseable {
          * [maxSide] before decoding it, so a small file claiming a huge picture cannot use up memory.
          */
         @Throws(IOException::class)
-        fun readImage(bytes: ByteArray, maxSide: Int): BufferedImage {
+        /**
+         * A lowres tile of a map whose tiles are [tileSize] blocks: exactly `(tileSize + 1)` wide and
+         * twice as tall, as BlueMap writes them. Any other shape is refused from the image's header,
+         * before a single pixel is decoded, so a broken or hostile server can't make the game decode
+         * a picture far bigger than a tile.
+         */
+        fun readTile(bytes: ByteArray, tileSize: Int): BufferedImage {
+            val side = tileSize + 1
+            return readImage(bytes, side, side * 2, exact = true)
+        }
+
+        fun readImage(bytes: ByteArray, maxSide: Int): BufferedImage = readImage(bytes, maxSide, maxSide, exact = false)
+
+        private fun readImage(bytes: ByteArray, maxWidth: Int, maxHeight: Int, exact: Boolean): BufferedImage {
             val input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)) ?: throw IOException("not an image")
             input.use {
                 val reader = ImageIO.getImageReaders(input).asSequence().firstOrNull() ?: throw IOException("not an image")
@@ -414,7 +425,8 @@ class BlueMap(baseUrl: String) : AutoCloseable {
                     reader.input = input
                     val width = reader.getWidth(0)
                     val height = reader.getHeight(0)
-                    if (width !in 1..maxSide || height !in 1..maxSide) throw IOException("image too big: ${width}x$height")
+                    val fits = if (exact) width == maxWidth && height == maxHeight else width in 1..maxWidth && height in 1..maxHeight
+                    if (!fits) throw IOException("unexpected image size ${width}x$height")
                     return reader.read(0)
                 } finally {
                     reader.dispose()

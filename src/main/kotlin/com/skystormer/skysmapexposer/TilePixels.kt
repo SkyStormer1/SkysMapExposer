@@ -24,7 +24,7 @@ object TilePixels {
      * map has the same relief and brightness as the part you explored.
      */
     fun decode(bytes: ByteArray, tileSize: Int, blocksPerPixel: Int): IntArray {
-        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
+        val image = BlueMap.readTile(bytes, tileSize)
         val width = image.width
         val half = image.height / 2
         require(width == half && width == tileSize + 1) { "unexpected tile shape ${width}x${image.height}" }
@@ -91,7 +91,7 @@ object TilePixels {
 
     /** The height of the ground at each pixel BlueMap has anything at, from the height half. */
     fun heights(bytes: ByteArray, tileSize: Int): IntArray {
-        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
+        val image = BlueMap.readTile(bytes, tileSize)
         val width = image.width
         val half = image.height / 2
         require(width == half && width == tileSize + 1) { "unexpected tile shape ${width}x${image.height}" }
