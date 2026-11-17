@@ -1,5 +1,10 @@
 package com.skystormer.skysmapexposer
 
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Semaphore
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.awt.image.BufferedImage
@@ -36,10 +41,11 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** The web address with exactly one trailing slash. */
     val base: String = baseUrl.trimEnd('/') + "/"
 
-    private val client: HttpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(10))
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .build()
+    /** Requests of this one still waiting for their reply, so [close] can stop them. */
+    private val inFlight: MutableSet<CompletableFuture<*>> = ConcurrentHashMap.newKeySet()
+
+    @Volatile
+    private var closed = false
 
     /**
      * How one BlueMap map lays out its lowres tiles.
@@ -270,11 +276,12 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     }
 
     /**
-     * Stops the web client and its background thread now, rather than whenever the garbage
-     * collector gets to it. Nothing can be fetched afterwards.
+     * Stops this one's requests now, rather than letting a cancelled job wait out their replies.
+     * Nothing can be fetched with it afterwards. The web client itself is shared ([CLIENT]).
      */
     override fun close() {
-        client.shutdownNow()
+        closed = true
+        inFlight.forEach { it.cancel(true) }
     }
 
     /** A reply, read whole on the calling thread, but never more than [MAX_BODY] bytes of it. */
@@ -286,9 +293,20 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         fun header(name: String): String? = headers?.firstValue(name)?.orElse(null)?.takeIf { it.isNotBlank() && it.length <= 200 }
     }
 
+    /** One request, holding one of the [REQUESTS] permits until its reply is read. */
     private fun getBytes(path: String, headers: List<Pair<String, String>> = emptyList()): Reply<ByteArray> {
-        val response = get(path, HttpResponse.BodyHandlers.ofInputStream(), headers)
-        return Reply(response.statusCode(), readCapped(response.body()), response.headers())
+        try {
+            REQUESTS.acquire()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IOException("interrupted", e)
+        }
+        try {
+            val response = get(path, HttpResponse.BodyHandlers.ofInputStream(), headers)
+            return Reply(response.statusCode(), readCapped(response.body()), response.headers())
+        } finally {
+            REQUESTS.release()
+        }
     }
 
     private fun getText(path: String): Reply<String> {
@@ -308,15 +326,43 @@ class BlueMap(baseUrl: String) : AutoCloseable {
             .apply { for ((name, value) in headers) header(name, value) }
             .GET()
             .build()
+        if (closed) throw IOException("closed")
+        val reply = CLIENT.sendAsync(request, handler)
+        inFlight.add(reply)
         try {
-            return client.send(request, handler)
+            if (closed) reply.cancel(true)
+            return reply.get()
         } catch (e: InterruptedException) {
+            reply.cancel(true)
             Thread.currentThread().interrupt()
             throw IOException("interrupted", e)
+        } catch (e: CancellationException) {
+            throw IOException("closed", e)
+        } catch (e: ExecutionException) {
+            throw e.cause as? IOException ?: IOException(e.cause)
+        } finally {
+            inFlight.remove(reply)
         }
     }
 
     companion object {
+        /**
+         * One web client for every BlueMap job (map tiles, downloads, preparing, terrain fill, sea
+         * floor), so they share its connections and its one background thread.
+         */
+        private val CLIENT: HttpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build()
+
+        /**
+         * At most this many requests to BlueMap at once, across every job: the map on screen,
+         * preparing, downloads and terrain fill would otherwise each bring their own threads' worth
+         * and could hit the server with a dozen at a time. Fair, so no job waits forever.
+         */
+        private const val MAX_REQUESTS = 6
+        private val REQUESTS = Semaphore(MAX_REQUESTS, true)
+
         /**
          * BlueMap splits each coordinate's digits into folders, so tile (-12, 3) at level 1 is
          * `tiles/1/x-1/2/z3.png`. This keeps any one folder on the server small.
