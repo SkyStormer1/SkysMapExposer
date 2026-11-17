@@ -5,14 +5,22 @@ import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.Screenshot
 import net.minecraft.client.gui.components.ChatComponent
+import net.minecraft.client.gui.screens.TitleScreen
+import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.client.multiplayer.chat.GuiMessage
 import net.minecraft.network.chat.ClickEvent
 import net.minecraft.network.chat.Style
+import net.minecraft.world.Difficulty
+import net.minecraft.world.level.GameType
+import net.minecraft.world.level.LevelSettings
+import net.minecraft.world.level.WorldDataConfiguration
+import net.minecraft.world.level.levelgen.WorldOptions
+import net.minecraft.world.level.levelgen.presets.WorldPresets
 import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * For testing in a development client only: once in a world, runs the steps in the file named by
+ * For testing in a development client only: from the title screen or a world, runs the steps in the file named by
  * the `skysmapexposer.autotest` system property, one a tick, and logs each ("AutoTest: …"), so a
  * test run can be driven and looked at without anyone at the keyboard. Without the property, which
  * only a development launch sets, it does nothing.
@@ -32,6 +40,11 @@ import java.nio.file.Path
  * - `mapzoom <scale>` zooms the open world map to that many pixels a block (Xaero eases to it)
  * - `refresh` presses the map bar's Refresh button
  * - `close` closes whatever screen is open
+ * - `join <world>` opens that singleplayer world, first making it (creative, peaceful) if needed
+ * - `waitworld` waits until you are in a world with no screen open
+ * - `leave` saves and quits to the title screen, as the pause menu does
+ * - `waittitle` waits until you are back on the title screen
+ * - `heap` collects garbage and logs the memory in use, for checking that leaving frees it
  * - `quit` closes the game
  *
  * Saving the file again once it has finished runs it again.
@@ -46,7 +59,7 @@ object AutoTest {
 
     fun tick(client: Minecraft) {
         val file = file ?: return
-        val player = client.player ?: return
+        if (client.gui.overlay() != null) return // still loading the game or its resources
         val now = System.currentTimeMillis()
         // Saving the file again runs it again, so steps can be changed without restarting the game.
         val changed = runCatching { Files.getLastModifiedTime(file).toMillis() }.getOrDefault(0L)
@@ -68,6 +81,7 @@ object AutoTest {
         val verb = step.substringBefore(' ')
         val rest = step.substringAfter(' ', "")
         try {
+            val player by lazy { client.player ?: error("not in a world") }
             when (verb) {
                 "wait" -> waitUntil = now + (rest.toDouble() * 1000).toLong()
                 "waitplayer" -> {
@@ -113,7 +127,32 @@ object AutoTest {
                 }
                 "mapzoom" -> (client.gui.screen() as? MapCamera)?.skysmapexposerSetZoom(rest.toDouble())
                 "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
-                "close" -> client.gui.setScreen(null)
+                "close" -> {
+                    Log.info("AutoTest: closing {}", client.gui.screen()?.javaClass?.simpleName)
+                    client.gui.setScreen(null)
+                }
+                "join" -> {
+                    if (client.levelSource.levelExists(rest)) client.createWorldOpenFlows().openWorld(rest) {}
+                    else client.createWorldOpenFlows().createFreshLevel(
+                        rest,
+                        LevelSettings(rest, GameType.CREATIVE, LevelSettings.DifficultySettings(Difficulty.PEACEFUL, false, false), true, WorldDataConfiguration.DEFAULT),
+                        WorldOptions.defaultWithRandomSeed(), WorldPresets::createNormalWorldDimensions, TitleScreen(),
+                    )
+                }
+                "waitworld" -> if (client.player == null || client.gui.screen() != null) {
+                    queue.addFirst(step)
+                    waitUntil = now + 500L
+                }
+                "leave" -> client.disconnectFromWorld(ClientLevel.DEFAULT_QUIT_MESSAGE)
+                "waittitle" -> if (client.level != null || client.gui.screen() !is TitleScreen) {
+                    queue.addFirst(step)
+                    waitUntil = now + 500L
+                }
+                "heap" -> {
+                    repeat(2) { System.gc() }
+                    val runtime = Runtime.getRuntime()
+                    Log.info("AutoTest: heap {} MB used of {} MB", (runtime.totalMemory() - runtime.freeMemory()) shr 20, runtime.maxMemory() shr 20)
+                }
                 "quit" -> client.stop()
                 else -> Log.warn("AutoTest: no such step '{}'", verb)
             }
