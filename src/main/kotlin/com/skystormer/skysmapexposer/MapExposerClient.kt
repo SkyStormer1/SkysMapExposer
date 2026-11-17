@@ -55,6 +55,15 @@ object MapExposerClient : ClientModInitializer {
         false
     }
 
+    /** One step of leaving a world; if it fails, the rest still run and the error is logged. */
+    private inline fun leaving(what: String, step: () -> Unit) {
+        try {
+            step()
+        } catch (e: Throwable) {
+            Log.error("Could not let go of $what on leaving the world", e)
+        }
+    }
+
     /** "Texture memory 180 / 256 MB", and why it is held back, if it is. */
     fun textureMemory(session: Session): String {
         val pacer = FramePacer.game
@@ -81,17 +90,26 @@ object MapExposerClient : ClientModInitializer {
         MapMods.adapter?.init()
         ChatShare.register()
 
+        // On the client thread, like leaving, so a quick rejoin never starts before the last leave ends.
         ClientPlayConnectionEvents.JOIN.register { _, _, client ->
-            Session.start(addressOf(client))
-            MapMods.adapter?.join()
+            client.execute {
+                Session.start(addressOf(client))
+                MapMods.adapter?.join()
+            }
         }
-        ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
-            Session.end()
-            com.skystormer.skysmapexposer.terrain.TerrainFill.forget()
-            ChatShare.forget()
-            PlayerPings.forget()
-            MapMods.adapter?.leave()
-            HookErrors.forget()
+        // In single player Fabric calls this on the network thread, where textures can't be freed,
+        // so leaving is done on the client thread. And each step on its own, nothing thrown out of
+        // here: Fabric only lets go of the connection once every leave handler has returned, so
+        // one that throws keeps the whole world you left in memory (the game swallows the error).
+        ClientPlayConnectionEvents.DISCONNECT.register { _, client ->
+            client.execute {
+                leaving("the BlueMap session") { Session.end() }
+                leaving("terrain fill") { com.skystormer.skysmapexposer.terrain.TerrainFill.forget() }
+                leaving("chat sharing") { ChatShare.forget() }
+                leaving("pings") { PlayerPings.forget() }
+                leaving("the map") { MapMods.adapter?.leave() }
+                leaving("hook errors") { HookErrors.forget() }
+            }
         }
 
         // A chunk arriving from the server is what makes Xaero redraw it, so this is the moment
