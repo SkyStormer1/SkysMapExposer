@@ -111,7 +111,7 @@ object AutoTest {
                         Log.info("AutoTest: fill: {}", com.skystormer.skysmapexposer.terrain.TerrainFill.status())
                     }
                 }
-                "mapzoom" -> GuiMapFields.destScale.set(client.gui.screen(), rest.toDouble())
+                "mapzoom" -> (client.gui.screen() as? MapCamera)?.skysmapexposerSetZoom(rest.toDouble())
                 "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
                 "close" -> client.gui.setScreen(null)
                 "quit" -> client.stop()

@@ -22,4 +22,7 @@ interface MapCamera {
 
     /** Zooms the map in until it is at least [scale] (Xaero's zoom, 1 = one pixel per block), never out. */
     fun skysmapexposerZoomIn(scale: Double)
+
+    /** Sets the map's zoom to [scale], in or out; for the test runner. */
+    fun skysmapexposerSetZoom(scale: Double)
 }

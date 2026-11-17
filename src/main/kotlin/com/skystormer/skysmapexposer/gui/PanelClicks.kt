@@ -1,7 +1,7 @@
 package com.skystormer.skysmapexposer.gui
 
 import com.mojang.blaze3d.platform.InputConstants
-import com.skystormer.skysmapexposer.GuiMapFields
+import com.skystormer.skysmapexposer.mixin.ScreenBaseAccess
 import net.minecraft.client.gui.components.events.GuiEventListener
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.MouseButtonEvent
@@ -66,9 +66,5 @@ object PanelClicks {
     fun hidesHover(screen: Screen, widget: Any, mouseX: Int, mouseY: Int): Boolean =
         !isPanel(widget) && !menuOpen(screen) && panelAt(screen, mouseX.toDouble(), mouseY.toDouble()) != null
 
-    private fun menuOpen(screen: Screen): Boolean = try {
-        GuiMapFields.openDropdown.get(screen) != null
-    } catch (e: Exception) {
-        false
-    }
+    private fun menuOpen(screen: Screen): Boolean = (screen as? ScreenBaseAccess)?.`skysmapexposer$openDropdown`() != null
 }
