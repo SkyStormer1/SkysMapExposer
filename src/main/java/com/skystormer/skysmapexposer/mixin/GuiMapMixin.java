@@ -293,7 +293,8 @@ public abstract class GuiMapMixin implements MapCamera {
         @SuppressWarnings("unchecked")
         ResourceKey<Level> dimension = (ResourceKey<Level>) GuiMapFields.rightClickDim.get(this);
         MapMenus.addMapOptions(cir.getReturnValue(), (IRightClickableElement) this,
-                GuiMapFields.rightClickX.getInt(this), GuiMapFields.rightClickZ.getInt(this), dimension,
+                GuiMapFields.rightClickX.getInt(this), GuiMapFields.rightClickZ.getInt(this),
+                GuiMapFields.rightClickY.getFound() ? (Integer) GuiMapFields.rightClickY.getInt(this) : null, dimension,
                 (MapTileSelection) GuiMapFields.mapTileSelection.get(this));
     }
 }

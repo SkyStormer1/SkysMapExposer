@@ -109,7 +109,7 @@ object PlayerBeacon : HudElement {
     }
 
     /**
-     * [ping]'s beam, a column from the world's floor to high in the sky. A vertical line leans on
+     * [ping]'s beam, a column from the pinged block up to high in the sky. A vertical line leans on
      * screen when you look up or down, so it is drawn along its projected ends, cut off where it
      * passes behind the camera.
      */
@@ -118,7 +118,7 @@ object PlayerBeacon : HudElement {
         val level = minecraft.level ?: return
         val eye = minecraft.gameRenderer.mainCamera().position()
         val away = hypot(ping.x - eye.x, ping.z - eye.z)
-        val low = Vec3(ping.x, level.minY.toDouble(), ping.z)
+        val low = Vec3(ping.x, ping.y, ping.z)
         val high = Vec3(ping.x, max(level.maxY.toDouble(), ping.y + away * BEAM_RISE), ping.z)
         val lowDepth = depth(low)
         val highDepth = depth(high)

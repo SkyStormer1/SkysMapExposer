@@ -58,6 +58,7 @@ object GuiMapFields {
     @JvmField val mapProcessor = XaeroField(GUI_MAP, "mapProcessor", DRAWING)
     @JvmField val rightClickX = XaeroField(GUI_MAP, "rightClickX", MENU)
     @JvmField val rightClickZ = XaeroField(GUI_MAP, "rightClickZ", MENU)
+    @JvmField val rightClickY = XaeroField(GUI_MAP, "rightClickY", "the height of a ping from the map")
     @JvmField val rightClickDim = XaeroField(GUI_MAP, "rightClickDim", MENU)
     @JvmField val mapTileSelection = XaeroField(GUI_MAP, "mapTileSelection", MENU)
     @JvmField val cameraDestination = XaeroField(GUI_MAP, "cameraDestination", CAMERA)

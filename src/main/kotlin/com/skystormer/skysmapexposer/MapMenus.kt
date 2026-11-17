@@ -24,7 +24,8 @@ object MapMenus {
 
     /**
      * The map itself, right-clicked at block ([x], [z]) of [dimension] — Xaero's own reading of
-     * which dimension that click landed in, falling back to the one the map is showing.
+     * which dimension that click landed in, falling back to the one the map is showing. [y] is the
+     * height Xaero shows for that block, when this Xaero gives it.
      */
     @JvmStatic
     fun addMapOptions(
@@ -32,6 +33,7 @@ object MapMenus {
         target: IRightClickableElement,
         x: Int,
         z: Int,
+        y: Int?,
         dimension: ResourceKey<Level>?,
         selection: MapTileSelection?,
     ) {
@@ -40,7 +42,7 @@ object MapMenus {
             options.add(option("Copy coordinates", options.size, target) { copy(x, null, z, where) })
             if (selection != null) options.add(saveOption(options.size, target, selection))
             options.add(waypointsOption(options.size, target))
-            if (where != null) options.add(pingOption(options.size, target, x, z, where))
+            if (where != null) options.add(pingOption(options.size, target, x, y, z, where))
             if (where != null) addCounterpartOption(options, target, x, z, where)
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
@@ -154,17 +156,17 @@ object MapMenus {
         }.also { it.setActive(Waypoints.available() && !busy) }
     }
 
-    /** "Ping here": flashes a beam on this block for everyone you trust who is online. */
-    private fun pingOption(index: Int, target: IRightClickableElement, x: Int, z: Int, dimension: String): RightClickOption {
-        val to = PlayerPings.trustedOnline()
+    /** "Ping here": flashes a beam on this block for those online you ping. */
+    private fun pingOption(index: Int, target: IRightClickableElement, x: Int, y: Int?, z: Int, dimension: String): RightClickOption {
+        val to = PlayerPings.recipients()
         val tooltip = listOf(
             Component.literal("Ping this spot"),
             Component.literal(
-                if (to.isEmpty()) "§7Nobody you trust is online. Trust someone from the player list or with /mapexposer trust."
+                if (to.isEmpty()) "§7Nobody you ping is online. Trust someone, then pick them with Ping in the player list or /mapexposer pingto add."
                 else "§7A flashing beam here for ${to.joinToString()}. Sent by private message."
             ),
         )
-        return MenuTooltips.Option("Ping here", index, target, tooltip) { say(PlayerPings.send(dimension, x, z)) }
+        return MenuTooltips.Option("Ping here", index, target, tooltip) { say(PlayerPings.sendFromMap(dimension, x, z, y)) }
             .also { it.setActive(to.isNotEmpty()) }
     }
 

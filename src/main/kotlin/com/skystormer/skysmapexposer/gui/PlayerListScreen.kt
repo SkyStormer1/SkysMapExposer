@@ -153,7 +153,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         val visible = players.drop(page * rows).take(rows)
         // Rebuilding every tick would flicker the tooltips, so it only happens on a real change.
         val signature = visible.joinToString("|") {
-            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}${PlayerPings.isTrusted(it.player.uuid)}"
+            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}${PlayerPings.isTrusted(it.player.uuid)}${PlayerPings.isPingedTo(it.player.uuid)}"
         } + "/$pages/$page"
         if (!force && signature == shown) return
         shown = signature
@@ -180,7 +180,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         // Go to moves the open world map, or opens one; either way only for the dimension it shows.
         val mapDimension = MarkerElements.worldMapDimension() ?: myDimension()
         val buttonWidth = 44
-        val textWidth = listWidth - (buttonWidth + GAP) * 3
+        val textWidth = listWidth - (buttonWidth + GAP) * 4
 
         // The columns are as wide as the widest thing going in them, measured over every player the
         // list holds rather than just this page, so paging does not shuffle them sideways.
@@ -231,9 +231,28 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                     .bounds(x, y, buttonWidth, ROW)
                     .tooltip(SafeTooltip.of(
                         if (trusted) "Stop taking pings from ${player.label} and sending yours to them."
-                        else "Take pings from ${player.label} and send yours to them, by private message."
+                        else "Take pings from ${player.label}. Ping picks whether yours go to them."
                     ))
                     .build()
+            )
+            x += buttonWidth + GAP
+
+            val pinged = PlayerPings.isPingedTo(player.uuid)
+            row(
+                Button.builder(Component.literal(if (pinged) "Unping" else "Ping")) {
+                    PlayerPings.setPingedTo(player.uuid, !pinged)
+                    refreshRows(force = true)
+                }
+                    .bounds(x, y, buttonWidth, ROW)
+                    .tooltip(SafeTooltip.of(
+                        when {
+                            !trusted -> "Trust ${player.label} first to send them your pings."
+                            pinged -> "Stop sending your pings to ${player.label}."
+                            else -> "Send your pings to ${player.label}, by private message."
+                        }
+                    ))
+                    .build()
+                    .also { it.active = trusted }
             )
             x += buttonWidth + GAP
 

@@ -141,8 +141,14 @@ object Config {
     /** Whether pings from trusted players are shown ([PlayerPings]). */
     var pings: Boolean = true
 
+    /** Whether a ping arriving plays a bell. */
+    var pingSound: Boolean = true
+
     /** The players whose pings you take and who get yours, by server address as [normalise] writes it. */
     val trusted: MutableMap<String, MutableSet<UUID>> = HashMap()
+
+    /** Of those, the players who get your pings, by server address as [trusted]. */
+    val pingTo: MutableMap<String, MutableSet<UUID>> = HashMap()
 
     /**
      * How often a tile on screen is asked about on the server ("has it changed?", which costs
@@ -267,13 +273,9 @@ object Config {
             read("barRows") { barRows = it.asInt.coerceIn(1, 40) }
             read("minimapBiomes") { minimapBiomes = it.asBoolean }
             read("pings") { pings = it.asBoolean }
-            read("trusted") { element ->
-                val read = element.asJsonObject.entrySet().associate { (server, players) ->
-                    server to players.asJsonArray.mapTo(LinkedHashSet()) { UUID.fromString(it.asString) }
-                }
-                trusted.clear()
-                trusted.putAll(read)
-            }
+            read("pingSound") { pingSound = it.asBoolean }
+            read("trusted") { readPlayers(it, trusted) }
+            read("pingTo") { readPlayers(it, pingTo) }
             read("fillOff") { element ->
                 val names = element.asJsonArray.map { it.asString }
                 fillOff.clear()
@@ -335,6 +337,21 @@ object Config {
             ?: emptyMap(),
     )
 
+    /** Player lists by server, as [trusted] and [pingTo] are saved. */
+    private fun readPlayers(element: JsonElement, into: MutableMap<String, MutableSet<UUID>>) {
+        val read = element.asJsonObject.entrySet().associate { (server, players) ->
+            server to players.asJsonArray.mapTo(LinkedHashSet()) { UUID.fromString(it.asString) }
+        }
+        into.clear()
+        into.putAll(read)
+    }
+
+    private fun playersJson(lists: Map<String, Set<UUID>>) = JsonObject().also { servers ->
+        lists.forEach { (server, players) ->
+            servers.add(server, JsonArray().also { list -> players.forEach { list.add(it.toString()) } })
+        }
+    }
+
     /** Copies a file that could not be fully read beside itself, before anything saves over it. */
     private fun keepAside(path: Path, what: String) {
         val copy = path.resolveSibling("${path.fileName}.broken-${LocalDateTime.now().format(STAMP)}")
@@ -369,11 +386,9 @@ object Config {
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
         json.addProperty("pings", pings)
-        json.add("trusted", JsonObject().also { servers ->
-            trusted.forEach { (server, players) ->
-                servers.add(server, JsonArray().also { list -> players.forEach { list.add(it.toString()) } })
-            }
-        })
+        json.addProperty("pingSound", pingSound)
+        json.add("trusted", playersJson(trusted))
+        json.add("pingTo", playersJson(pingTo))
         json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
         json.addProperty("barScale", barScale)
         json.addProperty("barExtra", barExtra)

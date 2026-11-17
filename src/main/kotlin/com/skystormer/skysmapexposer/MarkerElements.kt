@@ -155,6 +155,14 @@ object MarkerElements {
                         PlayerPings.setTrusted(pin.uuid, !trusted)
                     }
                 )
+                if (trusted) {
+                    val pinged = PlayerPings.isPingedTo(pin.uuid)
+                    options.add(
+                        MapMenus.option(if (pinged) "Stop sending pings" else "Send my pings", options.size, target) {
+                            PlayerPings.setPingedTo(pin.uuid, !pinged)
+                        }
+                    )
+                }
             }
             options.add(
                 MapMenus.option("Save as waypoint", options.size, target) { Waypoints.save(pin) }
@@ -319,7 +327,8 @@ object MarkerElements {
             ).withStyle { it.withColor(0xAAAAAA) }
         )
         is Markers.Ping -> Component.literal(pin.label).append(
-            Component.literal("\nPing · ${pin.x.toInt()}, ${pin.y.toInt()}, ${pin.z.toInt()}\nRight-click to save as a waypoint")
+            // A ping's pin stands on the block pinged, which is the height chat gave.
+            Component.literal("\nPing · ${pin.x.toInt()}, ${pin.y.toInt() - 1}, ${pin.z.toInt()}\nRight-click to save as a waypoint")
                 .withStyle { it.withColor(0xAAAAAA) }
         )
     }

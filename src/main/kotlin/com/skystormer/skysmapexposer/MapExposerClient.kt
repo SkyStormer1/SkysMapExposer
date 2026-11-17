@@ -210,6 +210,20 @@ object MapExposerClient : ClientModInitializer {
                         )
                     )
                     .then(
+                        ClientCommands.literal("pingto")
+                            .executes(::pingTo)
+                            .then(ClientCommands.literal("add").then(
+                                ClientCommands.argument("player", StringArgumentType.word())
+                                    .suggests { _, builder -> PlayerPings.trustedOnline().forEach(builder::suggest); builder.buildFuture() }
+                                    .executes { setPingedTo(it, true) }
+                            ))
+                            .then(ClientCommands.literal("remove").then(
+                                ClientCommands.argument("player", StringArgumentType.word())
+                                    .suggests { _, builder -> PlayerPings.recipients().forEach(builder::suggest); builder.buildFuture() }
+                                    .executes { setPingedTo(it, false) }
+                            ))
+                    )
+                    .then(
                         ClientCommands.literal("download")
                             .then(ClientCommands.literal("all").executes { download(it, unexploredOnly = false) })
                             .then(ClientCommands.literal("unexplored").executes { download(it, unexploredOnly = true) })
@@ -495,7 +509,21 @@ object MapExposerClient : ClientModInitializer {
         val wanted = StringArgumentType.getString(context, "player")
         val (uuid, name) = PlayerPings.online(wanted) ?: return say(context, "$wanted is not on the server")
         PlayerPings.setTrusted(uuid, trusted)
-        return say(context, if (trusted) "You and $name can ping each other once they trust you too" else "No longer trusting $name")
+        return say(context, if (trusted) "Taking pings from $name; /mapexposer pingto add $name sends yours to them" else "No longer trusting $name")
+    }
+
+    /** Who online gets your pings. */
+    private fun pingTo(context: CommandContext<FabricClientCommandSource>): Int {
+        val online = PlayerPings.recipients()
+        return say(context, if (online.isEmpty()) "Nobody you ping is online; /mapexposer pingto add <player> picks someone you trust" else "Your pings go to: ${online.joinToString()}")
+    }
+
+    private fun setPingedTo(context: CommandContext<FabricClientCommandSource>, on: Boolean): Int {
+        val wanted = StringArgumentType.getString(context, "player")
+        val (uuid, name) = PlayerPings.online(wanted) ?: return say(context, "$wanted is not on the server")
+        if (on && !PlayerPings.isTrusted(uuid)) return say(context, "Trust $name first: /mapexposer trust $name")
+        PlayerPings.setPingedTo(uuid, on)
+        return say(context, if (on) "Your pings go to $name, once they trust you too" else "No longer pinging $name")
     }
 
     /**

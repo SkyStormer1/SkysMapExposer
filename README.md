@@ -332,11 +332,15 @@ Trust a player and you can show each other a spot, on this server only. Use **Tr
 list, right-click them on the map, or `/mapexposer trust <player>`; `/mapexposer untrust <player>`
 stops it. Both of you need to trust each other, and pings from anyone else are dropped unseen.
 
-To ping, right-click the world map and choose **Ping here**, press the ping key (unbound until you
-pick one in Controls) to ping the block you are looking at, or use `/mapexposer ping <x> <z>`. Your
-ping goes to everyone you trust who is online.
+Your pings go only to those you pick: **Ping** beside a trusted player in the player list, **Send my
+pings** when you right-click them on the map, or `/mapexposer pingto add <player>`
+(`/mapexposer pingto remove <player>` stops it, `/mapexposer pingto` lists them). Trusting someone
+alone lets you see their pings without sending them yours.
 
-A beam flashes five times over the spot and goes: on your screen, however far away it is, on the
+To ping, right-click the world map and choose **Ping here**, press the ping key (unbound until you
+pick one in Controls) to ping the block you are looking at, or use `/mapexposer ping <x> <z>`.
+
+A beam flashes five times from the spot up into the sky and goes: on your screen, however far away it is, on the
 world map and on the minimap, with the sender's head. An Overworld ping shows at the matching spot
 when you are in the Nether, and the other way round. Chat keeps a line with an **[Add waypoint]**
 button. The **Pings** setting turns them off.

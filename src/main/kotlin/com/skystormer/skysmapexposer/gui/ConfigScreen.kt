@@ -91,6 +91,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var prepareMap = Config.prepareMap
     private var fullDownloadHours = Config.fullDownloadHours
     private var seaFloorHires = Config.seaFloorHires
+    private var pingSound = Config.pingSound
     private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -205,7 +206,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
     }
 
-    /** Settings that may get you in trouble on some servers; all off as the mod comes. */
+    /** Settings that may get you in trouble on some servers, off as the mod comes, and the ping sound. */
     private fun experimentalPage(left: Int, top: Int) {
         var y = top
         addRenderableWidget(MultiLineTextWidget(left, y, Component.literal(
@@ -223,6 +224,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 "nearest the middle first, so zooming in later finds it ready; the first time, a stretch of sea takes a " +
                 "minute or so. Needs Terrain on."))
         addRenderableWidget(floor)
+        y += ROW + GAP
+        addRenderableWidget(toggle(left, y, WIDTH, "Ping sound", pingSound,
+            "Play a bell when a ping from someone you trust arrives. Off, the beam still flashes and chat still says so.") { pingSound = it })
         y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
@@ -766,7 +770,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun state(): String = listOf(
         enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
         playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, pings, matchWaypoints, guessBiomes,
-        prepareMap, fullDownloadHours, seaFloorHires, Config.fillOff.sorted(),
+        prepareMap, fullDownloadHours, seaFloorHires, pingSound, Config.fillOff.sorted(),
         drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
             listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
         },
@@ -839,6 +843,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.fullDownloadHours = fullDownloadHours
         if (Config.seaFloorHires && !seaFloorHires) Session.current?.seaFloor?.clear()
         Config.seaFloorHires = seaFloorHires
+        Config.pingSound = pingSound
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
