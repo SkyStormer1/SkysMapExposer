@@ -1,5 +1,7 @@
 package com.skystormer.skysmapexposer
 
+import net.minecraft.client.Minecraft
+import net.minecraft.resources.Identifier
 import com.google.gson.JsonObject
 import com.mojang.blaze3d.platform.NativeImage
 //? if >=26.3 {
@@ -71,6 +73,8 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         @Volatile
         var image: NativeImage? = null
         var texture: DynamicTexture? = null
+        /** Where the texture is registered, so other maps (JourneyMap) can draw the same one. */
+        var location: Identifier? = null
         @Volatile
         var failed = false
         var width = 0
@@ -149,15 +153,29 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         slot.width = image.width
         slot.height = image.height
         val texture = DynamicTexture({ "skysmapexposer icon $path" }, image)
+        val location = Identifier.fromNamespaceAndPath("skysmapexposer", "marker_icon/${nextIcon++}")
+        Minecraft.getInstance().textureManager.register(location, texture)
         slot.texture = texture
+        slot.location = location
         return Triple(texture.textureView, slot.width, slot.height)
     }
+
+    /** Where icon [path] is registered as a texture, with its size, once it is loaded. Client thread. */
+    fun iconLocation(path: String?): Triple<Identifier, Int, Int>? {
+        icon(path) ?: return null
+        val slot = icons[path] ?: return null
+        return slot.location?.let { Triple(it, slot.width, slot.height) }
+    }
+
+    /** Numbers the icons' texture names; client thread only. */
+    private var nextIcon = 0
 
     /** Frees every icon: uploaded textures, and pictures downloaded but not yet uploaded. */
     fun close() {
         closed = true
         icons.values.forEach { slot ->
-            slot.texture?.close()
+            // Releasing the registered name closes the texture too.
+            slot.location?.let { Minecraft.getInstance().textureManager.release(it) } ?: slot.texture?.close()
             synchronized(slot) {
                 slot.image?.close()
                 slot.image = null

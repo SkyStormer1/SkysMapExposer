@@ -3,6 +3,7 @@ package com.skystormer.skysmapexposer.xaero
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.LockedPlayers
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapPins
 import com.skystormer.skysmapexposer.Markers
 import com.skystormer.skysmapexposer.PinDrawing
 import com.skystormer.skysmapexposer.PlayerPings
@@ -62,41 +63,7 @@ object MarkerElements {
      */
     fun pinsForWorldMap(): List<Markers.Pin> = pinsFor(worldMapDimension())
 
-    /**
-     * The markers and players BlueMap has for [dimension], in that dimension's own coordinates.
-     *
-     * Asked for every frame, so the list is kept and only rebuilt when what it is made from
-     * changes. Markers and players are each replaced by a new list when read again, so comparing
-     * them by identity is enough; another dimension or a switch turned off gives another list or none.
-     */
-    fun pinsFor(dimension: String?): List<Markers.Pin> {
-        if (dimension == null) return emptyList()
-        val session = Session.current
-        // Pings need no BlueMap, so a server without one still gets them.
-        val map = session?.server?.markersFor(dimension)
-        val snapshot = if (map != null && Config.showMarkers) session.markers.of(map) else null
-        val players = if (map != null && Config.showPlayers) session.markers.players(map) else null
-        val pings = PlayerPings.pinsIn(dimension)
-        val me = Minecraft.getInstance().player?.uuid
-        if (snapshot === pinsSnapshot && players === pinsPlayers && pings === pinsPings && me == pinsMe) return pins
-        val built = ArrayList<Markers.Pin>()
-        snapshot?.let { built.addAll(it.points) }
-        players?.filterTo(built) { it.uuid != me }
-        built.addAll(pings)
-        pins = built
-        pinsSnapshot = snapshot
-        pinsPlayers = players
-        pinsPings = pings
-        pinsMe = me
-        return built
-    }
-
-    // What [pinsFor] last built [pins] from.
-    private var pins: List<Markers.Pin> = emptyList()
-    private var pinsSnapshot: Markers.Snapshot? = null
-    private var pinsPlayers: List<Markers.Player>? = null
-    private var pinsPings: List<Markers.Ping>? = null
-    private var pinsMe: java.util.UUID? = null
+    fun pinsFor(dimension: String?): List<Markers.Pin> = MapPins.pinsFor(dimension)
 
     class Provider : ElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: ElementRenderLocation, context: Context) {
