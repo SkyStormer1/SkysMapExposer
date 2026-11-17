@@ -8,6 +8,7 @@ import com.skystormer.skysmapexposer.Markers
 import com.skystormer.skysmapexposer.PinDrawing
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.Ui
 //? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
 //?} else {
@@ -149,7 +150,7 @@ object MarkerElements {
             // dimension their coordinates are in.
             options.add(
                 MapMenus.option("Copy coordinates", options.size, target) {
-                    MapMenus.copy(pin.x, pin.y, pin.z, worldMapDimension())
+                    Ui.copy(pin.x, pin.y, pin.z, worldMapDimension())
                 }
             )
             if (FabricLoader.getInstance().isModLoaded("skysmapshapes")) {

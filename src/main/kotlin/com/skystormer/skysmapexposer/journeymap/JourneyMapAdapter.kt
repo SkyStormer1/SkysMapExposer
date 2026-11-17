@@ -27,7 +27,7 @@ object JourneyMapAdapter : MapAdapter {
 
     private var missingSaid = false
 
-    override fun init() {}
+    override fun init() = JourneyMapMenus.register()
 
     override fun checkHooks() {}
 
@@ -43,6 +43,7 @@ object JourneyMapAdapter : MapAdapter {
         api?.removeAll(MOD_ID)
         JourneyMapPins.forget()
         JourneyMapTerrain.forget()
+        JourneyMapMenus.forget()
     }
 
     override fun tick(client: Minecraft, session: Session?) {
@@ -70,8 +71,8 @@ object JourneyMapAdapter : MapAdapter {
         return state.dimension?.identifier()?.toString()?.takeIf { state.mapType == Context.MapType.Underground }
     }
 
-    // Moving JourneyMap's full-screen map comes with its menus (plan S6).
-    override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean = false
+    override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
+        JourneyMapMenus.goTo(dimension, x, z, from)
 
     private fun fullscreen() = api?.getUIState(Context.UI.Fullscreen)?.takeIf { it.active }
 }

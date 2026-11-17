@@ -3,6 +3,7 @@ package com.skystormer.skysmapexposer
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
+import kotlin.math.floor
 
 /** Small things every part of the mod says or shows, whichever map is installed. */
 object Ui {
@@ -32,5 +33,28 @@ object Ui {
         Config.NETHER -> "Nether"
         Config.END -> "End"
         else -> dimension.removePrefix("minecraft:")
+    }
+
+    /**
+     * Puts a position on the clipboard, as `-350 72 200 (Overworld)` — the numbers first, the way
+     * `/tp` and most chat messages want them, and the dimension after, because coordinates from a
+     * map you can switch between dimensions mean nothing without it.
+     *
+     * Answers on the action bar, which only this client sees.
+     */
+    fun copy(x: Double, y: Double?, z: Double, dimension: String?) =
+        copy(floor(x).toInt(), y?.let { floor(it).toInt() }, floor(z).toInt(), dimension)
+
+    fun copy(x: Int, y: Int?, z: Int, dimension: String?) {
+        val position = if (y == null) "$x $z" else "$x $y $z"
+        val name = dimensionName(dimension)
+        val text = if (name == null) position else "$position ($name)"
+        try {
+            Minecraft.getInstance().keyboardHandler.setClipboard(text)
+            say("Copied $text")
+        } catch (e: Throwable) {
+            Log.error("Could not copy $text to the clipboard", e)
+            say("Could not copy $text to the clipboard")
+        }
     }
 }

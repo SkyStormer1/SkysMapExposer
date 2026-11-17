@@ -39,6 +39,8 @@ import java.nio.file.Path
  * - `fillwait` waits for a terrain fill to finish, then logs how it went
  * - `mapzoom <scale>` zooms the open world map to that many pixels a block (Xaero eases to it)
  * - `refresh` presses the map bar's Refresh button
+ * - `goto <x> <z>` sends the installed map's full-screen map there, as the player list's Go to does
+ * - `mouse <x> <y>` puts the mouse there, in window pixels, so maps see it move
  * - `close` closes whatever screen is open
  * - `join <world>` opens that singleplayer world, first making it (creative, peaceful) if needed
  * - `waitworld` waits until you are in a world with no screen open
@@ -127,6 +129,19 @@ object AutoTest {
                 }
                 "mapzoom" -> (client.gui.screen() as? MapCamera)?.skysmapexposerSetZoom(rest.toDouble())
                 "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
+                "goto" -> {
+                    val (x, z) = rest.split(' ').map { it.toInt() }
+                    val dimension = client.level?.dimension()?.identifier()?.toString() ?: return
+                    Log.info("AutoTest: go to: {}", MapMods.adapter?.goTo(dimension, x, z, client.gui.screen(), null))
+                }
+                "mouse" -> {
+                    val (x, y) = rest.split(' ').map { it.toDouble() }
+                    //? if >=26.3 {
+                    org.lwjgl.sdl.SDLMouse.SDL_WarpMouseInWindow(client.window.handle(), x.toFloat(), y.toFloat())
+                    //?} else {
+                    /*org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.window.handle(), x, y)
+                    *///?}
+                }
                 "close" -> {
                     Log.info("AutoTest: closing {}", client.gui.screen()?.javaClass?.simpleName)
                     client.gui.setScreen(null)

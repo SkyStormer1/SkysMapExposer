@@ -45,7 +45,7 @@ object MapMenus {
     ) {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
-            options.add(option("Copy coordinates", options.size, target) { copy(x, null, z, where) })
+            options.add(option("Copy coordinates", options.size, target) { Ui.copy(x, null, z, where) })
             if (selection != null) options.add(saveOption(options.size, target, selection))
             options.add(waypointsOption(options.size, target))
             if (where != null) options.add(pingOption(options.size, target, x, y, z, where))
@@ -175,31 +175,6 @@ object MapMenus {
         return MenuTooltips.Option("Ping here", index, target, tooltip) { Ui.say(PlayerPings.sendFromMap(dimension, x, z, y)) }
             .also { it.setActive(to.isNotEmpty()) }
     }
-
-    /**
-     * Puts a position on the clipboard, as `-350 72 200 (Overworld)` — the numbers first, the way
-     * `/tp` and most chat messages want them, and the dimension after, because coordinates from a
-     * map you can switch between dimensions mean nothing without it.
-     *
-     * Answers on the action bar, which only this client sees.
-     */
-    fun copy(x: Double, y: Double?, z: Double, dimension: String?) =
-        copy(floor(x).toInt(), y?.let { floor(it).toInt() }, floor(z).toInt(), dimension)
-
-    fun copy(x: Int, y: Int?, z: Int, dimension: String?) {
-        val position = if (y == null) "$x $z" else "$x $y $z"
-        val name = Ui.dimensionName(dimension)
-        val text = if (name == null) position else "$position ($name)"
-        try {
-            Minecraft.getInstance().keyboardHandler.setClipboard(text)
-            Ui.say("Copied $text")
-        } catch (e: Throwable) {
-            Log.error("Could not copy $text to the clipboard", e)
-            Ui.say("Could not copy $text to the clipboard")
-        }
-    }
-
-    /** A dimension id as a person would write it: `minecraft:the_nether` is the Nether. */
 
     /**
      * Moves Xaero's world map to ([x], [z]): the open map if [screen] is it, otherwise a new one,
