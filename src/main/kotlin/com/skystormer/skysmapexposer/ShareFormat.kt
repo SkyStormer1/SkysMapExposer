@@ -1,5 +1,7 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.MapBackup
+import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import com.skystormer.skysmapexposer.mixin.MapPixelAccess
 import net.minecraft.commands.arguments.blocks.BlockStateParser
 import net.minecraft.core.registries.BuiltInRegistries

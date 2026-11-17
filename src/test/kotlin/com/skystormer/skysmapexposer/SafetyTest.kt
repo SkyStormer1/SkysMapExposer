@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.MapClear
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test

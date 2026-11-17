@@ -1,5 +1,6 @@
 {
   "required": false,
+  "plugin": "com.skystormer.skysmapexposer.plugin.XaeroMixinPlugin",
   "package": "com.skystormer.skysmapexposer.mixin.tooltip",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [

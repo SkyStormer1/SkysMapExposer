@@ -1,5 +1,7 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.ShareFormat
 import net.minecraft.client.resources.language.I18n
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier

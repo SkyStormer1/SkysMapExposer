@@ -1,5 +1,10 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BlueMapPicture
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.MapAge
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.Session
 import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.math.abs
@@ -41,7 +46,7 @@ import java.nio.file.Path
 object XaeroWriter {
 
     /** Xaero's cave layer for the surface, the only one BlueMap has anything for. */
-    const val SURFACE = Int.MAX_VALUE
+    const val SURFACE = MapLayers.SURFACE
 
     /**
      * Where Xaero keeps the regions of cave [layer], under a dimension's map folder [base]. The

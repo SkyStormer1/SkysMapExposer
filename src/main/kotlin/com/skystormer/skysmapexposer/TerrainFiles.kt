@@ -1,5 +1,8 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.BlueMapDownload
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -257,7 +260,7 @@ object TerrainFiles {
         while (opened.size > KEEP_OPENED) opened.remove(opened.keys.first())
         val name = MapMenus.dimensionName(file.dimensionId) ?: file.dimensionId
         Log.info("Opened {} as {}: {} chunks of the {} (cave layer {}) from {}", path, id, file.chunks, file.dimensionId, file.layer, file.from)
-        val layer = if (file.layer == XaeroWriter.SURFACE) "" else " (${layerName(file.layer)})"
+        val layer = if (file.layer == MapLayers.SURFACE) "" else " (${layerName(file.layer)})"
         player.sendSystemMessage(
             Component.literal("§b${file.from}§r's terrain: ${file.chunks} chunks of the $name$layer near ${file.area.x}, ${file.area.z}  ")
                 .append(ChatButton.of("[Add to unexplored only]", "/mapexposer shared $id blank", "Only fills chunks you have never mapped."))
@@ -286,7 +289,7 @@ object TerrainFiles {
             if (version !in 1..VERSION) error("it was made by a different version of the mod")
             val from = input.readUTF()
             val dimensionId = input.readUTF()
-            val layer = if (version >= 2) input.readInt() else XaeroWriter.SURFACE
+            val layer = if (version >= 2) input.readInt() else MapLayers.SURFACE
             val area = ShareFormat.readArea(input)
             input.readLong()
             var offset = MAGIC.size + 4L + utfSize(from) + utfSize(dimensionId) + (if (version >= 2) 4 else 0) + 16 + 8
@@ -347,7 +350,7 @@ object TerrainFiles {
         }
     }
 
-    private fun layerName(layer: Int) = if (layer == XaeroWriter.SURFACE) "the surface" else "cave layer $layer"
+    private fun layerName(layer: Int) = if (layer == MapLayers.SURFACE) "the surface" else "cave layer $layer"
 
     /**
      * Reads [file]'s regions on [worker], a few ahead of the one being written, so that the

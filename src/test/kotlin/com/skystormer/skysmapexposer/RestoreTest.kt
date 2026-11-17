@@ -1,5 +1,8 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.MapBackup
+import com.skystormer.skysmapexposer.xaero.MapClear
+import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull

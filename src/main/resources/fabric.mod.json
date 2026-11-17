@@ -39,15 +39,18 @@
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
     "fabric-language-kotlin": ">=${fabric_kotlin_version}",
-    "xaeroworldmap": ">=${xaero_worldmap_min}",
     "minecraft": "${minecraft_version}",
     "java": ">=${java_version}"
   },
   "suggests": {
+    "xaeroworldmap": ">=${xaero_worldmap_min}",
     "modmenu": "*",
     "xaerominimap": "*",
     "xaerominimapfair": "*",
     "skysmapshapes": "*",
     "skysstructuremap": "*"
+  },
+  "breaks": {
+    "xaeroworldmap": "<${xaero_worldmap_min}"
   }
 }

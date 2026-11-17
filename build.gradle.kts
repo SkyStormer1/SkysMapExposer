@@ -37,11 +37,15 @@ dependencies {
     modImplementation("net.fabricmc:fabric-language-kotlin:${property("fabric_kotlin_version")}")
 
     // Compiled against for the mixin into its map screen, and loaded in the dev client for testing.
-    // Never bundled: players install Xaero's World Map themselves.
+    // Never bundled: players install Xaero's World Map themselves. `-PmapMod=none` leaves the map
+    // mods out of the dev client, to check the game still loads without one.
+    val mapMod = findProperty("mapMod")?.toString() ?: "xaero"
     modCompileOnly("maven.modrinth:xaeros-world-map:${property("xaero_worldmap_version")}")
-    modLocalRuntime("maven.modrinth:xaeros-world-map:${property("xaero_worldmap_version")}")
     modCompileOnly("maven.modrinth:xaeros-minimap:${property("xaero_minimap_version")}")
-    modLocalRuntime("maven.modrinth:xaeros-minimap:${property("xaero_minimap_version")}")
+    if (mapMod == "xaero") {
+        modLocalRuntime("maven.modrinth:xaeros-world-map:${property("xaero_worldmap_version")}")
+        modLocalRuntime("maven.modrinth:xaeros-minimap:${property("xaero_minimap_version")}")
+    }
 
     modCompileOnly("com.terraformersmc:modmenu:${property("modmenu_version")}")
 

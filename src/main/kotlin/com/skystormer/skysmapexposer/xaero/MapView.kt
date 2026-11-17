@@ -1,5 +1,7 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapCamera
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen

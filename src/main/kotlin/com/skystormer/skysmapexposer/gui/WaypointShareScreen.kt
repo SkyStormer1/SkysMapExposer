@@ -1,8 +1,8 @@
 package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.MapMenus
-import com.skystormer.skysmapexposer.WaypointShare
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.WaypointShare
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget

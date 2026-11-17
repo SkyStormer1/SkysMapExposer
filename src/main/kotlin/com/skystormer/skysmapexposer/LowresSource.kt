@@ -30,7 +30,7 @@ class LowresSource(
                 l[i] = lab.l
                 a[i] = lab.a
                 b[i] = lab.b
-                water[i] = XaeroPalette.isWater(lab.l, lab.a, lab.b, tile.height[i].toInt(), hasSea)
+                water[i] = BlockPalette.isWater(lab.l, lab.a, lab.b, tile.height[i].toInt(), hasSea)
             }
         }
     }

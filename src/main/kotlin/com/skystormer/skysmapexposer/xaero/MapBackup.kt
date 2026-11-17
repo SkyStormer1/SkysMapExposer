@@ -1,5 +1,11 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.SafeFiles
+import com.skystormer.skysmapexposer.Session
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import net.minecraft.client.Minecraft
@@ -114,7 +120,7 @@ object MapBackup {
      * The name a batch's folder carries for [dimension]'s cave [layer]: just the dimension for the
      * surface.
      */
-    fun label(dimension: String, layer: Int): String = if (layer == XaeroWriter.SURFACE) dimension else "$dimension$LAYER$layer"
+    fun label(dimension: String, layer: Int): String = if (layer == MapLayers.SURFACE) dimension else "$dimension$LAYER$layer"
 
     private const val LAYER = "_cave_layer_"
 

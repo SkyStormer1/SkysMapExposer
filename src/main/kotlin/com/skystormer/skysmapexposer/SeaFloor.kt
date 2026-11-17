@@ -205,7 +205,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
                 if (lit == 0) continue
                 fun channel(shift: Int) = (((lit shr shift) and 0xFF) / FLAT_WATER_LIGHT).toInt().coerceIn(0, 255)
                 val lab = BlockPalette.toLab((channel(16) shl 16) or (channel(8) shl 8) or channel(0))
-                if (XaeroPalette.isWater(lab.l, lab.a, lab.b, SEA_LEVEL, true)) return true
+                if (BlockPalette.isWater(lab.l, lab.a, lab.b, SEA_LEVEL, true)) return true
             }
         }
         return false

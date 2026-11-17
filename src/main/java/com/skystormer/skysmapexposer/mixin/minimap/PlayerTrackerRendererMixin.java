@@ -1,6 +1,6 @@
 package com.skystormer.skysmapexposer.mixin.minimap;
 
-import com.skystormer.skysmapexposer.MapView;
+import com.skystormer.skysmapexposer.xaero.MapView;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;

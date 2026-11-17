@@ -1,5 +1,17 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.Clock
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.FramePacer
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.SeaFloor
+import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.TilePixels
+import com.skystormer.skysmapexposer.TileStore
+import com.skystormer.skysmapexposer.UnshowableRegions
+import com.skystormer.skysmapexposer.TileStore.Mask
 //? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
 //?} else {
@@ -34,12 +46,7 @@ import kotlin.math.floor
  */
 object Backfill {
 
-    /**
-     * Rectangles to draw for one tile, as `minX, minZ, maxX, maxZ` in block coordinates, four
-     * floats per rectangle.
-     */
-    class Mask(val builtAt: Long, val contentMinute: Int, val rectangles: FloatArray, val count: Int, val xaeroGaps: Int)
-
+    
     /** One tile's worth of drawing: its texture, the rectangles to draw, and where the tile starts. */
     class Piece(val texture: GpuTextureView, val mask: Mask, val originX: Int, val originZ: Int, val tileSize: Int)
 

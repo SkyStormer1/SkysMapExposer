@@ -1,5 +1,7 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import xaero.map.WorldMapSession
 
 /**

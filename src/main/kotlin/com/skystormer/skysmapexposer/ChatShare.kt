@@ -1,5 +1,8 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.WaypointShare
+import com.skystormer.skysmapexposer.xaero.Waypoints
 import com.skystormer.skysmapexposer.ShareFormat.Step
 import com.skystormer.skysmapexposer.ShareInbox.Companion.ASK
 import com.skystormer.skysmapexposer.ShareInbox.Companion.ANSWER_WAIT

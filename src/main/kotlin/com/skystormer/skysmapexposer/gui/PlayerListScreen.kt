@@ -3,9 +3,9 @@ package com.skystormer.skysmapexposer.gui
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.LockedPlayers
 import com.skystormer.skysmapexposer.MapCamera
-import com.skystormer.skysmapexposer.MapMenus
-import com.skystormer.skysmapexposer.MapView
-import com.skystormer.skysmapexposer.MarkerElements
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.MapView
+import com.skystormer.skysmapexposer.xaero.MarkerElements
 import com.skystormer.skysmapexposer.Markers
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session

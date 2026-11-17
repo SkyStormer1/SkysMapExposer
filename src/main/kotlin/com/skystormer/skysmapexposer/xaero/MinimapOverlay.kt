@@ -1,5 +1,9 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.FramePacer
+import com.skystormer.skysmapexposer.HookErrors
+import com.skystormer.skysmapexposer.Session
 //? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
 //?} else {

@@ -2,13 +2,13 @@ package com.skystormer.skysmapexposer.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
-import com.skystormer.skysmapexposer.BiomeHighlight;
+import com.skystormer.skysmapexposer.xaero.BiomeHighlight;
 import com.skystormer.skysmapexposer.HookErrors;
 import com.skystormer.skysmapexposer.MapCamera;
-import com.skystormer.skysmapexposer.MapMenus;
-import com.skystormer.skysmapexposer.MapView;
+import com.skystormer.skysmapexposer.xaero.MapMenus;
+import com.skystormer.skysmapexposer.xaero.MapView;
 import com.skystormer.skysmapexposer.OtherDimensionCoords;
-import com.skystormer.skysmapexposer.Overlay;
+import com.skystormer.skysmapexposer.xaero.Overlay;
 import com.skystormer.skysmapexposer.gui.MapBar;
 import com.skystormer.skysmapexposer.gui.PanelClicks;
 import net.minecraft.client.Minecraft;

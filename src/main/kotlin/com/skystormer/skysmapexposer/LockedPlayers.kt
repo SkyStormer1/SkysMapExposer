@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.MapMenus
 import net.minecraft.client.Minecraft
 import net.minecraft.world.level.ClipContext
 import net.minecraft.world.phys.HitResult

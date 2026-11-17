@@ -1,5 +1,18 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.xaero.Backfill
+import com.skystormer.skysmapexposer.xaero.BlueMapDownload
+import com.skystormer.skysmapexposer.xaero.MapBackup
+import com.skystormer.skysmapexposer.xaero.MapClear
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.MapView
+import com.skystormer.skysmapexposer.xaero.MarkerElements
+import com.skystormer.skysmapexposer.xaero.MinimapMarkerElements
+import com.skystormer.skysmapexposer.xaero.Overlay
+import com.skystormer.skysmapexposer.xaero.WaypointScope
+import com.skystormer.skysmapexposer.xaero.WaypointShare
+import com.skystormer.skysmapexposer.xaero.Waypoints
+import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import com.mojang.blaze3d.platform.InputConstants
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
@@ -646,7 +659,7 @@ object MapExposerClient : ClientModInitializer {
             return 0
         }
         val target = preview.target
-        val where = (if (target.layer == XaeroWriter.SURFACE) "" else "cave layer ${target.layer} of ") + "the ${MapMenus.dimensionName(target.dimensionId) ?: target.dimensionId}"
+        val where = (if (target.layer == MapLayers.SURFACE) "" else "cave layer ${target.layer} of ") + "the ${MapMenus.dimensionName(target.dimensionId) ?: target.dimensionId}"
         val count = preview.regions.size
         if (!confirmed) {
             val notes = buildString {

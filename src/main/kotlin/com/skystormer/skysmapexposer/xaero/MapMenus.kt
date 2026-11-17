@@ -1,5 +1,13 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.ChatShare
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapCamera
+import com.skystormer.skysmapexposer.PlayerPings
+import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.TerrainFiles
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import net.minecraft.client.Minecraft

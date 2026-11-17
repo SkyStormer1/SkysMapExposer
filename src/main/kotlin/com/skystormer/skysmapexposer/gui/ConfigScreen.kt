@@ -1,14 +1,15 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.xaero.Waypoints
 import com.skystormer.skysmapexposer.BlueMap
-import com.skystormer.skysmapexposer.BlueMapDownload
+import com.skystormer.skysmapexposer.xaero.BlueMapDownload
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.TileCache
-import com.skystormer.skysmapexposer.MapMenus
-import com.skystormer.skysmapexposer.MarkerElements
-import com.skystormer.skysmapexposer.Overlay
+import com.skystormer.skysmapexposer.xaero.MapMenus
+import com.skystormer.skysmapexposer.xaero.MarkerElements
+import com.skystormer.skysmapexposer.xaero.Overlay
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.SettingsCheck
 import com.skystormer.skysmapexposer.terrain.FillTarget

@@ -135,4 +135,28 @@ object BlockPalette {
     /** sRGB's transfer curve undone, so the mixing above happens on light rather than on bytes. */
     private fun linear(channel: Float): Float =
         if (channel <= 0.04045f) channel / 12.92f else ((channel + 0.055f) / 1.055f).pow(2.4f)
+
+    /** Whether a colour already in Oklab, at [height], is water (see `XaeroPalette.isWater`); no game classes, so usable off the client thread and by any map. */
+    fun isWater(l: Float, a: Float, b: Float, height: Int, hasSea: Boolean): Boolean {
+        if (l >= WATER_LIGHT) return false
+        if (b < WATER_BLUE) return true
+        return hasSea && height <= SEA_TOP && a < SEA_GREEN && b < SEA_BLUE || isMurky(l, a, b, height, hasSea)
+    }
+
+    /**
+     * Whether a colour already in Oklab is swamp water (see `XaeroPalette.isMurky`). Clearly blue water is never murky: dark ocean
+     * is as dark and as faintly green as swamp water, and only swamp water is not blue.
+     */
+    fun isMurky(l: Float, a: Float, b: Float, height: Int, hasSea: Boolean): Boolean =
+        hasSea && height <= SEA_TOP && l < MURK_LIGHT && a < MURK_GREEN && b >= WATER_BLUE && b < MURK_BLUE
+
+    const val WATER_BLUE = -0.035f
+    const val WATER_LIGHT = 0.74f
+    /** The overworld's water surface block, one below sea level 63. */
+    const val SEA_TOP = 62
+    const val SEA_GREEN = -0.015f
+    const val SEA_BLUE = 0.03f
+    const val MURK_LIGHT = 0.6f
+    const val MURK_GREEN = -0.003f
+    const val MURK_BLUE = 0.045f
 }

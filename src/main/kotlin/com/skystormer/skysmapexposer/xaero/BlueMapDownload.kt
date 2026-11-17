@@ -1,5 +1,18 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BiomeGuide
+import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.BlueMapPicture
+import com.skystormer.skysmapexposer.ChatButton
+import com.skystormer.skysmapexposer.CoarseScan
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.LowresSource
+import com.skystormer.skysmapexposer.MapAge
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.SkippedRegions
+import com.skystormer.skysmapexposer.TickGuard
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
@@ -76,7 +89,7 @@ object BlueMapDownload {
         val source: String = "BlueMap",
         capacity: Int = 2,
         /** Xaero's cave layer written into: the surface, except for a shared map read from a cave layer. */
-        val layer: Int = XaeroWriter.SURFACE,
+        val layer: Int = MapLayers.SURFACE,
         /** Says what is said at the end, for a job that is not a download ([MapClear]); null for the usual. */
         val summary: ((XaeroWriter.Tally) -> String)? = null,
         /** Added to the end of what is said at the end, e.g. how many regions of a file could not be read. */

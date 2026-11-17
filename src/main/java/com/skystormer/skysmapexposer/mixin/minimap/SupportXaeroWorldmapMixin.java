@@ -8,7 +8,7 @@ import com.mojang.renderpearl.api.textures.GpuTextureView;
 *///?}
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.skystormer.skysmapexposer.MinimapOverlay;
+import com.skystormer.skysmapexposer.xaero.MinimapOverlay;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

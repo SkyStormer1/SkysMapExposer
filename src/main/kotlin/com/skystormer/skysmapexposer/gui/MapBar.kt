@@ -1,9 +1,9 @@
 package com.skystormer.skysmapexposer.gui
 
-import com.skystormer.skysmapexposer.BiomeHighlight
+import com.skystormer.skysmapexposer.xaero.BiomeHighlight
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapRefresh
-import com.skystormer.skysmapexposer.MarkerElements
+import com.skystormer.skysmapexposer.xaero.MarkerElements
 import com.skystormer.skysmapexposer.Session
 import net.fabricmc.fabric.api.client.screen.v1.Screens
 import com.skystormer.skysmapexposer.MapMods

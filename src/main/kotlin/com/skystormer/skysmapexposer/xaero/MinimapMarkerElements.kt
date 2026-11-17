@@ -1,5 +1,10 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.LockedPlayers
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.PinDrawing
+import com.skystormer.skysmapexposer.PlayerPings
 import net.minecraft.client.Minecraft
 import xaero.common.HudMod
 import xaero.common.graphics.CustomRenderTypes

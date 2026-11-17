@@ -1,5 +1,7 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
 import xaero.map.WorldMap
 import xaero.map.config.primary.option.WorldMapPrimaryClientConfigOptions
 import xaero.map.config.util.WorldMapClientConfigUtils

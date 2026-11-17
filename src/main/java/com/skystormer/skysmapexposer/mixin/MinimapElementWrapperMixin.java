@@ -1,6 +1,6 @@
 package com.skystormer.skysmapexposer.mixin;
 
-import com.skystormer.skysmapexposer.MapView;
+import com.skystormer.skysmapexposer.xaero.MapView;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;

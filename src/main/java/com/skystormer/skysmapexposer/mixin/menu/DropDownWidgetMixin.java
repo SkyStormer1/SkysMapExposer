@@ -1,6 +1,6 @@
 package com.skystormer.skysmapexposer.mixin.menu;
 
-import com.skystormer.skysmapexposer.MenuTooltips;
+import com.skystormer.skysmapexposer.xaero.MenuTooltips;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

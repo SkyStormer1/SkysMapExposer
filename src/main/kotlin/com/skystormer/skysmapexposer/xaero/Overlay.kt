@@ -1,5 +1,10 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.FramePacer
+import com.skystormer.skysmapexposer.HookErrors
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.Session
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.Minecraft
 import org.joml.Matrix4f

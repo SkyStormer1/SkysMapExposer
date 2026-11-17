@@ -108,10 +108,10 @@ class TileStore(
         var failedAt: Long = 0
 
         /** The drawing plan for this tile; rebuilt by [Backfill] from time to time. */
-        var mask: Backfill.Mask? = null
+        var mask: Mask? = null
 
         /** While this tile is on its way: where a coarser tile stands in for it, and which level that is. */
-        var standIn: Backfill.Mask? = null
+        var standIn: Mask? = null
         var standInLod: Int = 0
 
         /**
@@ -626,4 +626,10 @@ class TileStore(
         /** Video memory of a [side]-pixel square texture. */
         fun textureBytes(side: Int): Long = side.toLong() * side * 4
     }
+
+    /**
+     * Rectangles to draw for one tile, as `minX, minZ, maxX, maxZ` in block coordinates, four
+     * floats per rectangle.
+     */
+    class Mask(val builtAt: Long, val contentMinute: Int, val rectangles: FloatArray, val count: Int, val xaeroGaps: Int)
 }

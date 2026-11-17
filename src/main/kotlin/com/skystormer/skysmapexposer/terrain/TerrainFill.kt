@@ -2,7 +2,7 @@ package com.skystormer.skysmapexposer.terrain
 
 import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.Log
-import com.skystormer.skysmapexposer.MapMenus
+import com.skystormer.skysmapexposer.xaero.MapMenus
 import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.Minecraft

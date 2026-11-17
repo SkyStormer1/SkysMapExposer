@@ -1,5 +1,6 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.gui.DockPanel
 import com.skystormer.skysmapexposer.mixin.menu.DropDownWidgetAccess
 import com.skystormer.skysmapexposer.mixin.menu.RightClickMenuAccess

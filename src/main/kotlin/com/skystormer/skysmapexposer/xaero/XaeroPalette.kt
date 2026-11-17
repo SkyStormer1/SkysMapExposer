@@ -1,5 +1,7 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BlockPalette
+import com.skystormer.skysmapexposer.Config
 import net.minecraft.client.Minecraft
 import net.minecraft.client.color.block.BlockTintSources
 import net.minecraft.client.multiplayer.ClientLevel
@@ -133,30 +135,30 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
     /**
      * Whether BlueMap's [colour] is water. BlueMap marks water no other way: its lowres tiles are a
      * colour and the height of the surface. Water is the one common thing on a map that is clearly
-     * blue without being bright, which in Oklab is b below [WATER_BLUE] and lightness below
-     * [WATER_LIGHT]; ice, packed ice and snow are lighter than that. Checked against a real
+     * blue without being bright, which in Oklab is b below [BlockPalette.WATER_BLUE] and lightness below
+     * [BlockPalette.WATER_LIGHT]; ice, packed ice and snow are lighter than that. Checked against a real
      * server's tiles: it finds oceans, rivers and ponds, and misses nothing but a few blue blocks
      * on buildings.
      *
      * Warm and lukewarm oceans are the exception: their water is tinted teal, and over sand BlueMap
      * draws it a light blue-green that is barely blue at all. So at the sea's surface ([height] at
-     * most [SEA_TOP], and only in a dimension with a sea) anything greenish-blue counts too: a below
-     * [SEA_GREEN] and b below [SEA_BLUE]. Land at sea level is sand, gravel or stone, which are not
+     * most [BlockPalette.SEA_TOP], and only in a dimension with a sea) anything greenish-blue counts too: a below
+     * [BlockPalette.SEA_GREEN] and b below [BlockPalette.SEA_BLUE]. Land at sea level is sand, gravel or stone, which are not
      * green, or grass and leaves, which are yellower than that.
      */
     fun isWater(colour: Int, height: Int): Boolean {
         val lab = BlockPalette.toLab(colour and 0xFFFFFF)
-        return isWater(lab.l, lab.a, lab.b, height, hasSea)
+        return BlockPalette.isWater(lab.l, lab.a, lab.b, height, hasSea)
     }
 
     /**
      * Whether BlueMap's [colour] is swamp water: at the sea's surface, dark, faintly green and
      * greyish but not blue, from swamp water's olive tint over a mud bed. Swamp grass and the
-     * leaves over it are yellower (b above [MURK_BLUE]); mud and stone are not green at all.
+     * leaves over it are yellower (b above [BlockPalette.MURK_BLUE]); mud and stone are not green at all.
      */
     private fun isMurky(colour: Int, height: Int): Boolean {
         val lab = BlockPalette.toLab(colour and 0xFFFFFF)
-        return isMurky(lab.l, lab.a, lab.b, height, hasSea)
+        return BlockPalette.isMurky(lab.l, lab.a, lab.b, height, hasSea)
     }
 
     /**
@@ -268,20 +270,6 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
         private val DRY_FOLIAGE_SOURCE = BlockTintSources.dryFoliage().javaClass
         private val WATER_SOURCE = BlockTintSources.water().javaClass
 
-        /** [isWater] for a colour already in Oklab; also used off the client thread by [BiomeGuide]. */
-        fun isWater(l: Float, a: Float, b: Float, height: Int, hasSea: Boolean): Boolean {
-            if (l >= WATER_LIGHT) return false
-            if (b < WATER_BLUE) return true
-            return hasSea && height <= SEA_TOP && a < SEA_GREEN && b < SEA_BLUE || isMurky(l, a, b, height, hasSea)
-        }
-
-        /**
-         * [isMurky] for a colour already in Oklab. Clearly blue water is never murky: dark ocean
-         * is as dark and as faintly green as swamp water, and only swamp water is not blue.
-         */
-        fun isMurky(l: Float, a: Float, b: Float, height: Int, hasSea: Boolean): Boolean =
-            hasSea && height <= SEA_TOP && l < MURK_LIGHT && a < MURK_GREEN && b >= WATER_BLUE && b < MURK_BLUE
-
         /**
          * The biome written where your map never recorded one and [BiomeGuide] has no guess (the
          * nether and the end, for now). BlueMap publishes no biomes, so this is the last resort: the
@@ -308,15 +296,5 @@ class XaeroPalette(private val level: ClientLevel, dimensionId: String) {
         private const val SHALLOW = 3
         private const val SHORE_LIGHT = 0.56f
         private const val LIGHT_PER_BLOCK = 0.01f
-
-        private const val WATER_BLUE = -0.035f
-        private const val WATER_LIGHT = 0.74f
-        /** The overworld's water surface block, one below sea level 63. */
-        private const val SEA_TOP = 62
-        private const val SEA_GREEN = -0.015f
-        private const val SEA_BLUE = 0.03f
-        private const val MURK_LIGHT = 0.6f
-        private const val MURK_GREEN = -0.003f
-        private const val MURK_BLUE = 0.045f
     }
 }

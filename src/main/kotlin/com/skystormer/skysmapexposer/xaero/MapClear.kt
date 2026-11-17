@@ -1,5 +1,15 @@
-package com.skystormer.skysmapexposer
+package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.ChatButton
+import com.skystormer.skysmapexposer.Clock
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapAge
+import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
@@ -106,7 +116,7 @@ object MapClear {
      */
     internal fun mismatch(dimensionId: String, layer: Int, shownDimension: String, shownLayer: Int, nameOf: (String) -> String): String? {
         val name = nameOf(dimensionId)
-        fun layerName(l: Int) = if (l == XaeroWriter.SURFACE) "the surface" else "cave layer $l"
+        fun layerName(l: Int) = if (l == MapLayers.SURFACE) "the surface" else "cave layer $l"
         return when {
             dimensionId != shownDimension -> "This clear is for the $name; switch the world map there and click again."
             layer != shownLayer -> "This clear is for ${layerName(layer)} of the $name, but the world map shows ${layerName(shownLayer)}; switch back and click again."
