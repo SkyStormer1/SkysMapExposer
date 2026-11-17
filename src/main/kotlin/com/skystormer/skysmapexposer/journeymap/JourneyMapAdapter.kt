@@ -42,19 +42,21 @@ object JourneyMapAdapter : MapAdapter {
     override fun leave() {
         api?.removeAll(MOD_ID)
         JourneyMapPins.forget()
+        JourneyMapTerrain.forget()
     }
 
     override fun tick(client: Minecraft, session: Session?) {
         val api = api ?: return
         if (client.level == null) return
         JourneyMapPins.tick(api, shownDimension())
+        JourneyMapTerrain.tick(api, session)
     }
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {}
 
     override fun status(say: (String) -> Unit) {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
-        if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}")
+        if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}")
     }
 
     /** The full-screen map's dimension while it is open; otherwise yours, which it opens on. */

@@ -32,6 +32,15 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
 
     val gaps = GapStore(folder, io)
 
+    /** Runs [task] on this session's workers; dropped once the session has ended. */
+    fun work(task: () -> Unit) {
+        try {
+            workers.execute(task)
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // The session ended while this was being asked for: nothing left to do it for.
+        }
+    }
+
     init {
         io.execute {
             try {

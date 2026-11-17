@@ -214,9 +214,7 @@ class TileStore(
         if (tile.state != State.READY || !tile.requested.add(factor)) return
         workers.execute {
             try {
-                val floor = tile.floor
-                tile.pending[factor] = (if (floor == null) TileFile.pixels(tileFile(tile.key), factor) else withFloor(tile, floor, factor))
-                    ?: throw IOException("the tile file has no 1:$factor picture")
+                tile.pending[factor] = drawnPicture(tile, factor) ?: throw IOException("the tile file has no 1:$factor picture")
             } catch (e: Exception) {
                 warnOnce(tile.key, "Could not read BlueMap tile back from disk; loading it again in a minute", e)
                 tile.requested.remove(factor)
@@ -257,7 +255,16 @@ class TileStore(
     }
 
     /** [tile]'s picture at a block a pixel, `tileSize` square, as it is drawn; null if it has none. Blocking. */
-    fun picture(tile: Tile): IntArray? = TileFile.pixels(tileFile(tile.key), 1)
+    fun picture(tile: Tile): IntArray? = picture(tile, 1)
+
+    /** [tile]'s picture at [factor], `tileSize / factor` square, from its file; null if it has no such size. Blocking. */
+    fun picture(tile: Tile, factor: Int): IntArray? = TileFile.pixels(tileFile(tile.key), factor)
+
+    /** [tile]'s picture at [factor] as it is drawn: with its sea floor in, once it has one. Blocking. */
+    fun drawnPicture(tile: Tile, factor: Int): IntArray? {
+        val floor = tile.floor
+        return if (floor == null) picture(tile, factor) else withFloor(tile, floor, factor)
+    }
 
     /** The picture at [factor] with the sea floor [floor] in, where the picture has anything. */
     private fun withFloor(tile: Tile, floor: IntArray, factor: Int): IntArray? {

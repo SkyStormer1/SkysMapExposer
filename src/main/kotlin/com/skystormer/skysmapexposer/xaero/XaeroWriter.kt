@@ -4,6 +4,7 @@ import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
 import java.util.Collections
 import java.util.WeakHashMap
@@ -66,11 +67,7 @@ object XaeroWriter {
     fun viewOf(mapId: String?): MapLayers.View? = mapId?.let { Session.current?.view(it) }
 
     /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
-    fun hasCeiling(dimensionId: String): Boolean {
-        val level = Minecraft.getInstance().level
-        if (level != null && level.dimension().identifier().toString() == dimensionId) return level.dimensionType().hasCeiling()
-        return dimensionId == Config.NETHER
-    }
+    fun hasCeiling(dimensionId: String): Boolean = SeaFloor.hasCeiling(dimensionId)
 
     /** The map the world map is showing: its dimension, and the folder of the layer on screen. */
     class Shown(

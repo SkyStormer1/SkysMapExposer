@@ -461,6 +461,13 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     }
 
     companion object {
+        /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
+        fun hasCeiling(dimensionId: String): Boolean {
+            val level = net.minecraft.client.Minecraft.getInstance().level
+            if (level != null && level.dimension().identifier().toString() == dimensionId) return level.dimensionType().hasCeiling()
+            return dimensionId == Config.NETHER
+        }
+
         /** Blocks a texture pixel, at most, for the sea floor to be drawn: the world map at a block a pixel or closer. Further out it is only downloaded ahead. */
         const val CLOSE_UP = 1
 
