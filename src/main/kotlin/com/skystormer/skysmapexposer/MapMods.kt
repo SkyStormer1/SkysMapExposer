@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer
 
+import com.skystormer.skysmapexposer.journeymap.JourneyMapAdapter
 import com.skystormer.skysmapexposer.xaero.XaeroAdapter
 import net.fabricmc.loader.api.FabricLoader
 
@@ -13,9 +14,20 @@ object MapMods {
     /** Xaero's Minimap, or its Fair-Play build: the same code with a different mod id. */
     val xaeroMinimap: Boolean by lazy { loaded("xaerominimap", "xaerominimapfair") }
 
-    /** Whether any map this mod draws on is installed; without one it only says which to get. */
-    val any: Boolean get() = xaeroWorldMap
+    val journeyMap: Boolean by lazy { loaded("journeymap") }
 
-    /** The installed map, for everything that needs one; null with none. */
-    val adapter: MapAdapter? by lazy { if (xaeroWorldMap) XaeroAdapter else null }
+    /** Whether any map this mod draws on is installed; without one it only says which to get. */
+    val any: Boolean get() = xaeroWorldMap || journeyMap
+
+    /**
+     * The installed map, for everything that needs one; null with none. With both installed,
+     * Xaero's for now: drawing on both at once comes with JourneyMap's layers (plan S4).
+     */
+    val adapter: MapAdapter? by lazy {
+        when {
+            xaeroWorldMap -> XaeroAdapter
+            journeyMap -> JourneyMapAdapter
+            else -> null
+        }
+    }
 }

@@ -112,7 +112,7 @@ object MapExposerClient : ClientModInitializer {
                 Config.takeLoadProblem()?.let { player.sendSystemMessage(Component.literal("§e$it")) }
                 if (!noMapSaid && !MapMods.any) {
                     noMapSaid = true
-                    player.sendSystemMessage(Component.literal("§eSky's Map Exposer has no map to show anything on: install Xaero's World Map"))
+                    player.sendSystemMessage(Component.literal("§eSky's Map Exposer has no map to show anything on: install Xaero's World Map or JourneyMap"))
                 }
             }
             MapMods.adapter?.tick(client, Session.current)
@@ -239,7 +239,7 @@ object MapExposerClient : ClientModInitializer {
         val session = Session.current
         source.sendFeedback(Component.literal("§bSky's Map Exposer§r ${if (Config.enabled) "§aon" else "§coff"}§r, stale after ${Config.staleDays} day(s)"))
         val say = { line: String -> source.sendFeedback(Component.literal(line)) }
-        MapMods.adapter?.status(say) ?: say("§eNo map to show anything on: install Xaero's World Map")
+        MapMods.adapter?.status(say) ?: say("§eNo map to show anything on: install Xaero's World Map or JourneyMap")
         val off = HookErrors.switchedOff()
         if (off.isNotEmpty()) source.sendFeedback(Component.literal("§cOff after an error until you rejoin: ${off.joinToString()}§r (the log says why)"))
         if (!dropHookInstalled()) source.sendFeedback(Component.literal("§eDropping map files onto the game: §cmissing§r; /mapexposer terrain open opens them"))

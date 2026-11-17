@@ -27,6 +27,9 @@
         "value": "com.skystormer.skysmapexposer.gui.ModMenuIntegration",
         "adapter": "kotlin"
       }
+    ],
+    "journeymap": [
+      "com.skystormer.skysmapexposer.journeymap.MapExposerPlugin"
     ]
   },
   "mixins": [
@@ -47,6 +50,7 @@
     "modmenu": "*",
     "xaerominimap": "*",
     "xaerominimapfair": "*",
+    "journeymap": "*",
     "skysmapshapes": "*",
     "skysstructuremap": "*"
   },
