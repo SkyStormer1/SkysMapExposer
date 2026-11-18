@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.MapBorder
 import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
@@ -311,7 +312,7 @@ object XaeroAdapter : MapAdapter {
                 .then(confirmClear { context, previewed -> clearBox(context, true, true, previewed) })))
 
     private fun clearBox(context: CommandContext<FabricClientCommandSource>, centred: Boolean, confirm: Boolean, previewed: Pair<String, Int>?): Int {
-        val box = MapClear.Box(
+        val box = MapBorder.Box(
             IntegerArgumentType.getInteger(context, "radius"),
             if (centred) IntegerArgumentType.getInteger(context, "centerX") else 0,
             if (centred) IntegerArgumentType.getInteger(context, "centerZ") else 0,
