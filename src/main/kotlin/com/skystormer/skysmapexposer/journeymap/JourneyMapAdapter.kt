@@ -5,6 +5,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapAdapter
+import com.skystormer.skysmapexposer.MapBorder
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
@@ -53,7 +54,7 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     override fun leave() {
-        JourneyMapDownload.forget()
+        JourneyMapEdits.forget()
         api?.let(JourneyMapWaypoints::forget)
         api?.removeAll(MOD_ID)
         JourneyMapPins.forget()
@@ -69,39 +70,62 @@ object JourneyMapAdapter : MapAdapter {
             JourneyMapWaypoints.tidy(api)
         }
         JourneyMapMenus.tick(client)
-        JourneyMapDownload.tick()
+        JourneyMapEdits.tick()
         JourneyMapPins.tick(api, shownDimension())
         JourneyMapTerrain.tick(api, session)
     }
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
+        fun say(context: CommandContext<FabricClientCommandSource>, text: String): Int {
+            context.source.sendFeedback(Component.literal(text))
+            return 1
+        }
         root.then(
             ClientCommands.literal("download")
-                .then(ClientCommands.literal("all").executes { it.source.sendFeedback(Component.literal(JourneyMapDownload.start(unexploredOnly = false))); 1 })
-                .then(ClientCommands.literal("unexplored").executes { it.source.sendFeedback(Component.literal(JourneyMapDownload.start(unexploredOnly = true))); 1 })
+                .then(ClientCommands.literal("all").executes { say(it, JourneyMapEdits.download(unexploredOnly = false)) })
+                .then(ClientCommands.literal("unexplored").executes { say(it, JourneyMapEdits.download(unexploredOnly = true)) })
                 .then(ClientCommands.literal("region").then(
                     ClientCommands.argument("x", IntegerArgumentType.integer()).then(
                         ClientCommands.argument("z", IntegerArgumentType.integer())
-                            .executes { regionDownload(it, unexploredOnly = true) }
-                            .then(ClientCommands.literal("all").executes { regionDownload(it, unexploredOnly = false) })
+                            .executes { say(it, JourneyMapEdits.download(true, regionOf(it))) }
+                            .then(ClientCommands.literal("all").executes { say(it, JourneyMapEdits.download(false, regionOf(it))) })
                     )
                 ))
                 .then(ClientCommands.literal("cancel").executes {
-                    it.source.sendFeedback(Component.literal(if (JourneyMapDownload.cancel()) "Stopping the download after the region it is on" else "No download into JourneyMap's map is running"))
-                    1
+                    say(it, if (JourneyMapEdits.cancel()) "Stopping after the region it is on" else "Nothing is being written into JourneyMap's map")
                 })
-                .then(ClientCommands.literal("undo").executes { it.source.sendFeedback(Component.literal(JourneyMapDownload.undo())); 1 })
         )
+        root.then(ClientCommands.literal("undo").executes { say(it, JourneyMapEdits.undo()) })
+        // `clear <kind>` says what would go; `clear <kind> confirm` takes it off; a border can be given by hand.
+        val clear = ClientCommands.literal("clear")
+        for (kind in JourneyMapEdits.Clear.entries) {
+            val node = ClientCommands.literal(kind.word)
+                .executes { it.source.sendFeedback(JourneyMapEdits.clearPreview(kind, null)); 1 }
+                .then(ClientCommands.literal("confirm").executes { say(it, JourneyMapEdits.clear(kind, null)) })
+            if (kind == JourneyMapEdits.Clear.BORDER) {
+                node.then(ClientCommands.argument("radius", IntegerArgumentType.integer(1))
+                    .executes { it.source.sendFeedback(JourneyMapEdits.clearPreview(kind, boxOf(it, false))); 1 }
+                    .then(ClientCommands.literal("confirm").executes { say(it, JourneyMapEdits.clear(kind, boxOf(it, false))) })
+                    .then(ClientCommands.argument("centerX", IntegerArgumentType.integer())
+                        .then(ClientCommands.argument("centerZ", IntegerArgumentType.integer())
+                            .executes { it.source.sendFeedback(JourneyMapEdits.clearPreview(kind, boxOf(it, true))); 1 }
+                            .then(ClientCommands.literal("confirm").executes { say(it, JourneyMapEdits.clear(kind, boxOf(it, true))) }))))
+            }
+            clear.then(node)
+        }
+        root.then(clear)
     }
 
-    /** `download region <x> <z>`: the region holding block ([x], [z]). */
-    private fun regionDownload(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean): Int {
-        val x = IntegerArgumentType.getInteger(context, "x")
-        val z = IntegerArgumentType.getInteger(context, "z")
-        val region = Math.floorDiv(x, JourneyMapFiles.REGION) to Math.floorDiv(z, JourneyMapFiles.REGION)
-        context.source.sendFeedback(Component.literal(JourneyMapDownload.start(unexploredOnly, region)))
-        return 1
-    }
+    /** The region holding block (`x`, `z`) of a command. */
+    private fun regionOf(context: CommandContext<FabricClientCommandSource>): Pair<Int, Int> =
+        Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION) to
+            Math.floorDiv(IntegerArgumentType.getInteger(context, "z"), JourneyMapFiles.REGION)
+
+    private fun boxOf(context: CommandContext<FabricClientCommandSource>, centred: Boolean) = MapBorder.Box(
+        IntegerArgumentType.getInteger(context, "radius"),
+        if (centred) IntegerArgumentType.getInteger(context, "centerX") else 0,
+        if (centred) IntegerArgumentType.getInteger(context, "centerZ") else 0,
+    )
 
     override fun status(say: (String) -> Unit) {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
@@ -135,9 +159,9 @@ object JourneyMapAdapter : MapAdapter {
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
         JourneyMapMenus.goTo(dimension, x, z, from)
 
-    override fun downloadStatus(): String? = JourneyMapDownload.status()?.takeIf { JourneyMapDownload.running }
+    override fun downloadStatus(): String? = JourneyMapEdits.status()?.takeIf { JourneyMapEdits.running }
 
-    override fun cancelDownload(): Boolean = JourneyMapDownload.cancel()
+    override fun cancelDownload(): Boolean = JourneyMapEdits.cancel()
 
     override fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = api?.let(JourneyMapWaypoints::mine)
 

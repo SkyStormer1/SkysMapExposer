@@ -9,7 +9,6 @@ import com.skystormer.skysmapexposer.MapLayers
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
-import xaero.map.WorldMapSession
 import xaero.map.region.MapBlock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -131,15 +130,6 @@ object MapClear {
     }
 
     /** The regions Xaero has a file for in [folder]. */
-    fun seasons(): String = Seasons.list()
-
-    fun setSeason(text: String?): String = Seasons.set(text, shownDimension(), busy = BlueMapDownload.running)
-
-    /** The dimension the world map is showing, or else the one you are in. */
-    private fun shownDimension(): String? =
-        WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
-            ?: Minecraft.getInstance().level?.dimension()?.identifier()?.toString()
-
     private fun format(minute: Int): String = Seasons.format(minute)
 
     private fun regionsIn(folder: Path): List<Pair<Int, Int>> = try {

@@ -104,7 +104,7 @@ internal object JourneyMapMenus {
         // The list and downloads read BlueMap, so they are only worth offering on a server that has one.
         if (Session.current != null) {
             menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
-            if (!JourneyMapDownload.running) menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z) }
+            if (!JourneyMapEdits.running) menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z) }
         }
     }
 
@@ -123,7 +123,7 @@ internal object JourneyMapMenus {
         }
         val lines = listOfNotNull(
             blockUnder(map, event.mouseX, event.mouseY)?.let { (x, z) -> OtherDimensionCoords.forWorldMap(x, z) },
-            JourneyMapDownload.status() ?: MapPrep.status(),
+            JourneyMapEdits.status() ?: MapPrep.status(),
         )
         if (lines.isEmpty()) return
         val graphics = event.graphics

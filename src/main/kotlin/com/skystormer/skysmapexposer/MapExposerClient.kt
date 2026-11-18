@@ -209,6 +209,14 @@ object MapExposerClient : ClientModInitializer {
                                 })
                         )
                     )
+                    .then(
+                        ClientCommands.literal("season")
+                            .executes { say(it, Seasons.list()) }
+                            .then(ClientCommands.literal("set").then(
+                                ClientCommands.argument("time", StringArgumentType.greedyString()).executes { say(it, setSeason(StringArgumentType.getString(it, "time"))) }
+                            ))
+                            .then(ClientCommands.literal("remove").executes { say(it, setSeason(null)) })
+                    )
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
                         ClientCommands.literal("prepare")
@@ -291,6 +299,13 @@ object MapExposerClient : ClientModInitializer {
         minecraft.execute { minecraft.gui.setScreen(PlayerListScreen(null)) }
         return 1
     }
+
+    /** The season start of the dimension the map shows, or else the one you are in; not while the map is being written. */
+    private fun setSeason(text: String?): String = Seasons.set(
+        text,
+        MapMods.adapter?.shownDimension() ?: Minecraft.getInstance().level?.dimension()?.identifier()?.toString(),
+        busy = MapMods.adapter?.downloadStatus() != null,
+    )
 
     private fun say(context: CommandContext<FabricClientCommandSource>, message: String): Int {
         context.source.sendFeedback(Component.literal(message))

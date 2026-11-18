@@ -407,20 +407,6 @@ object XaeroAdapter : MapAdapter {
                     .then(clearCommand(MapClear.Kind.OLD_SEASON))
                     .then(clearCommand(MapClear.Kind.BORDER))
             )
-            .then(
-                ClientCommands.literal("season")
-                    .executes { it.source.sendFeedback(Component.literal(MapClear.seasons())); 1 }
-                    .then(ClientCommands.literal("set").then(
-                        ClientCommands.argument("time", StringArgumentType.greedyString()).executes {
-                            it.source.sendFeedback(Component.literal(MapClear.setSeason(StringArgumentType.getString(it, "time"))))
-                            1
-                        }
-                    ))
-                    .then(ClientCommands.literal("remove").executes {
-                        it.source.sendFeedback(Component.literal(MapClear.setSeason(null)))
-                        1
-                    })
-            )
             .then(ClientCommands.literal("backup").executes(::backup))
             .then(ClientCommands.literal("backups").executes(::backups))
             .then(
