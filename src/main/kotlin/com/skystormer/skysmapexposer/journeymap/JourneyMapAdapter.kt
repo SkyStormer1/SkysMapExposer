@@ -51,13 +51,12 @@ object JourneyMapAdapter : MapAdapter {
     override fun init() = JourneyMapMenus.register()
 
     /**
-     * JourneyMap's own classes that two hooks and the biome tint lean on, checked once at start as
+     * JourneyMap's own classes that the two hooks lean on, checked once at start as
      * Xaero's hooks are: whatever is missing is said in the log and in `/mapexposer`.
      */
     override fun checkHooks() {
         if (!dimensionHooked()) Log.warn("Could not hook JourneyMap's full-screen map; its dimension button will snap back to yours")
         if (!minimapHooked()) Log.warn("Could not hook JourneyMap's minimap; BlueMap's terrain and the biome tint will not show on it")
-        if (!JourneyMapBiomes.available) Log.warn("Could not find JourneyMap's chunk cache; picked biomes will not be tinted on its maps")
     }
 
     private fun dimensionHooked() = MapExposerClient.injected("journeymap.client.model.map.MapState", "keepDimension")
@@ -187,7 +186,7 @@ object JourneyMapAdapter : MapAdapter {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
         if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}" + (JourneyMapBiomes.summary()?.let { ", $it" } ?: ""))
         fun mark(ok: Boolean) = if (ok) "§aok§r" else "§cmissing§r"
-        say("JourneyMap hooks: dimension ${mark(dimensionHooked())}, minimap ${mark(minimapHooked() && JourneyMapMinimap.working)}, chunk cache ${mark(JourneyMapBiomes.available)}")
+        say("JourneyMap hooks: dimension ${mark(dimensionHooked())}, minimap ${mark(minimapHooked() && JourneyMapMinimap.working)}, chunk cache ${mark(JourneyMapChunkCache.knownFormat)}")
     }
 
     /** The full-screen map's dimension while it is open; otherwise yours, which it opens on. */

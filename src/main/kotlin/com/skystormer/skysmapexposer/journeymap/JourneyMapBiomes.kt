@@ -7,15 +7,10 @@ import com.skystormer.skysmapexposer.Log
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
-import journeymap.common.chunk.JMChunkCache
-import journeymap.common.chunk.JMChunkSnapshot
-import journeymap.common.chunk.JMChunkStorage
 import net.minecraft.client.Minecraft
 import net.minecraft.resources.ResourceKey
-import net.minecraft.world.level.ChunkPos
-import net.minecraft.world.level.Level
 import net.minecraft.world.level.biome.Biome
-import net.minecraft.world.level.levelgen.Heightmap
+import net.minecraft.core.RegistryAccess
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executors
@@ -27,12 +22,11 @@ import java.util.concurrent.Executors
  *
  * Xaero keeps the biome of every pixel of its map; JourneyMap does not, but it keeps the chunks it
  * has mapped in its chunk cache (`<world>/<dimension>/chunk_cache`, one file per region), biomes
- * included. Those are read through JourneyMap's own reader, read-only and off the client thread, a
+ * included. Those files are read ([JourneyMapChunkCache]), read-only and off the client thread, a
  * region (32 by 32 chunks) at a time, into a small grid of the biome every 4 blocks (the game keeps
- * biomes no finer): at the top block on the surface maps, at the slice shown on the cave map. A
- * region is read when it first comes on screen, and again only once JourneyMap has written its
- * cache file since. JourneyMap keeps the cache of the dimension you are in only, so that is the one
- * tinted.
+ * biomes no finer): at the top block on the surface maps, at the slice shown on the cave map. Any
+ * dimension the map shows, as on Xaero's. A region is read when it first comes on screen, and
+ * again only once JourneyMap has written its cache file since.
  *
  * Each region with something picked in it is one see-through picture ([RegionPicture]), a pixel
  * per 4 blocks, over BlueMap's terrain and under the outlines and pins.
@@ -92,15 +86,10 @@ internal object JourneyMapBiomes {
             return
         }
         lastActive[ui] = now
-        val level = Minecraft.getInstance().level ?: return
+        val registries = Minecraft.getInstance().level?.registryAccess() ?: return
         val dimension = state.dimension?.identifier()?.toString() ?: return
-        if (dimension != level.dimension().identifier().toString()) {
-            clear(api, ui)
-            if (fullscreen) note = "JourneyMap keeps biomes for the dimension you are in only"
-            return
-        }
-        if (STORAGE == null) {
-            if (fullscreen) note = "this JourneyMap keeps its chunk cache where this mod cannot read it"
+        if (!JourneyMapChunkCache.knownFormat) {
+            if (fullscreen) note = "this JourneyMap keeps its chunk cache in a format this mod does not know"
             return
         }
         val layer = layerOf(state)
@@ -126,7 +115,7 @@ internal object JourneyMapBiomes {
         var built = 0
         for (area in wanted) {
             val grid = grids[area]
-            if (reading.isEmpty() && (grid == null || cacheFolder != null && fileTime(cacheFolder, area) != grid.fileTime)) read(area, level)
+            if (reading.isEmpty() && (grid == null || cacheFolder != null && fileTime(cacheFolder, area) != grid.fileTime)) read(area, registries)
             if (grid == null || built >= PER_TICK) continue
             val old = shown[area to ui]
             if (old != null && old.grid === grid && old.version == BiomePicks.version) continue
@@ -143,39 +132,45 @@ internal object JourneyMapBiomes {
      * or null where it knows none. Client thread; may read one chunk from JourneyMap's cache.
      */
     fun biomeAt(state: UIState?, x: Int, z: Int): ResourceKey<Biome>? {
-        val level = Minecraft.getInstance().level ?: return null
+        val registries = Minecraft.getInstance().level?.registryAccess() ?: return null
         val dimension = state?.dimension?.identifier()?.toString() ?: return null
-        if (dimension != level.dimension().identifier().toString()) return null
         val layer = layerOf(state)
-        grids[Area(dimension, Math.floorDiv(x, REGION), Math.floorDiv(z, REGION), layer)]?.let { grid ->
+        val area = Area(dimension, Math.floorDiv(x, REGION), Math.floorDiv(z, REGION), layer)
+        grids[area]?.let { grid ->
             val cell = grid.cells[cellIndex(Math.floorMod(x, REGION) / 4, Math.floorMod(z, REGION) / 4)].toInt()
             if (cell >= 0) return grid.palette[cell]
         }
+        val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return null
+        val chunk = Math.floorMod(z shr 4, CHUNKS) * CHUNKS + Math.floorMod(x shr 4, CHUNKS)
         return try {
-            val snapshot = storage()?.read(ChunkPos(x shr 4, z shr 4), level) ?: return null
-            biomeIn(snapshot, x and 15, z and 15, layer)
+            JourneyMapChunkCache.readChunk(cacheFile(folder, area), chunk, registries)?.biomeAt(x and 15, z and 15, sliceY(layer))
         } catch (e: Exception) {
             null
         }
     }
 
+    private fun cacheFile(folder: Path, area: Area): Path = folder.resolve("c.${area.x}.${area.z}.jmc")
+
+    /** The height a cave slice is read at: its middle. */
+    private fun sliceY(layer: Int?): Int? = layer?.let { it * 16 + 8 }
+
     /** When JourneyMap last wrote [area]'s cache file, or 0 if it has none. */
     private fun fileTime(folder: Path, area: Area): Long = try {
-        Files.getLastModifiedTime(folder.resolve("c.${area.x}.${area.z}.jmc")).toMillis()
+        Files.getLastModifiedTime(cacheFile(folder, area)).toMillis()
     } catch (e: Exception) {
         0L
     }
 
     /** Off the client thread: [area]'s grid, from JourneyMap's chunk cache. */
-    private fun read(area: Area, level: Level) {
-        val storage = storage() ?: return
+    private fun read(area: Area, registries: RegistryAccess) {
         val folder = JourneyMapFiles.chunkCacheFolder(area.dimension) ?: return
         reading.add(area)
         val generation = generation
         worker.execute {
             val grid = try {
                 // The file's date first: a write while this reads is caught by the next check.
-                readGrid(storage, level, area, fileTime(folder, area))
+                val fileTime = fileTime(folder, area)
+                gridOf(JourneyMapChunkCache.readRegion(cacheFile(folder, area), registries), area.layer, fileTime)
             } catch (e: Exception) {
                 Log.warn("Could not read JourneyMap's biomes for region {}, {}: {}", area.x, area.z, e.toString())
                 null
@@ -188,47 +183,21 @@ internal object JourneyMapBiomes {
         }
     }
 
-    private fun readGrid(storage: JMChunkStorage, level: Level, area: Area, fileTime: Long): Grid {
+    private fun gridOf(chunks: Array<JourneyMapChunkCache.Chunk?>, layer: Int?, fileTime: Long): Grid {
         val palette = ArrayList<ResourceKey<Biome>>()
         val indexOf = HashMap<ResourceKey<Biome>, Int>()
         val cells = ShortArray(CELLS * CELLS) { -1 }
+        val y = sliceY(layer)
         for (chunkZ in 0 until CHUNKS) for (chunkX in 0 until CHUNKS) {
-            val snapshot = storage.read(ChunkPos(area.x * CHUNKS + chunkX, area.z * CHUNKS + chunkZ), level) ?: continue
+            val chunk = chunks[chunkZ * CHUNKS + chunkX] ?: continue
             for (quarterZ in 0 until 4) for (quarterX in 0 until 4) {
-                val biome = biomeIn(snapshot, quarterX * 4 + 2, quarterZ * 4 + 2, area.layer) ?: continue
+                val biome = chunk.biomeAt(quarterX * 4 + 2, quarterZ * 4 + 2, y) ?: continue
                 val index = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
                 if (index > Short.MAX_VALUE) continue
                 cells[cellIndex(chunkX * 4 + quarterX, chunkZ * 4 + quarterZ)] = index.toShort()
             }
         }
         return Grid(palette, cells, fileTime)
-    }
-
-    /** The biome at ([x], [z]) within [snapshot]'s chunk: at the top block, or the middle of cave slice [layer]. */
-    private fun biomeIn(snapshot: JMChunkSnapshot, x: Int, z: Int, layer: Int?): ResourceKey<Biome>? {
-        val y = layer?.let { it * 16 + 8 } ?: (snapshot.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1)
-        if (y < snapshot.minBuildHeight || y >= snapshot.maxBuildHeight) return null
-        return snapshot.getBiomeHolder(x, y, z)?.unwrapKey()?.orElse(null)
-    }
-
-    /** Whether this JourneyMap's chunk cache can be read, for `/mapexposer` and the hook check. */
-    val available: Boolean get() = STORAGE != null
-
-    /**
-     * JourneyMap's chunk cache of the dimension you are in, or null while it has none (its chunk
-     * caching switched off). Read as JourneyMap reads it, from any thread.
-     */
-    private fun storage(): JMChunkStorage? = try {
-        STORAGE?.get(JMChunkCache.INSTANCE) as JMChunkStorage?
-    } catch (e: Exception) {
-        null
-    }
-
-    /** JourneyMap keeps the open cache in a private field; read through it, never written. */
-    private val STORAGE = try {
-        JMChunkCache::class.java.getDeclaredField("storage").apply { isAccessible = true }
-    } catch (e: Exception) {
-        null
     }
 
     /** Client thread: [area]'s tint on [ui], replacing the old one. */
