@@ -344,7 +344,9 @@ pick one in Controls) to ping the block you are looking at, or use `/mapexposer 
 A beam flashes five times from the spot up into the sky and goes: on your screen, however far away it is, on the
 world map and on the minimap, with the sender's head. An Overworld ping shows at the matching spot
 when you are in the Nether, and the other way round. Chat keeps a line with an **[Add waypoint]**
-button. The **Pings** setting turns them off.
+button. The **Pings** setting turns them off. On servers where the game cannot check who sent a
+private message (see [Privacy](#privacy)), a ping only gets its chat line, marked "(unverified)",
+with no beam and no sound.
 
 Pings are plain private messages. A trusted player without the mod reads one as a line of
 coordinates, and server staff who can read private messages can read them too. With a lot of trusted

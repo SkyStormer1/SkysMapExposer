@@ -64,6 +64,10 @@ class FloorColumns(val size: Int) {
         /** A face counts as facing up from this far round (cos of about 45°). */
         private const val UP = 0.7f
 
+        /**
+         * Needs no cap on unpacking: it reads at most [MAX_SIZE]² columns of 12 bytes (about 3 MB)
+         * and stops, however much more the file would unpack to.
+         */
         @Throws(IOException::class)
         fun decode(bytes: ByteArray): FloorColumns {
             DataInputStream(InflaterInputStream(ByteArrayInputStream(bytes))).use { input ->

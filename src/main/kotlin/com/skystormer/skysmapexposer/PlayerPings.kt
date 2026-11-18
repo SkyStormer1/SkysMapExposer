@@ -183,9 +183,11 @@ object PlayerPings {
         val key = ping.from.lowercase()
         if (now - (lastArrived[key] ?: Long.MIN_VALUE / 2) < MIN_GAP_MILLIS) return
         lastArrived[key] = now
-        show(ping.from, uuid, ping.dimensionId, ping.x, ping.y, ping.z)
+        // An unverified ping came as a plain server line, which a server or a chat plugin could
+        // fake: it only gets the chat line, with no beam and no sound.
+        if (ping.verified) show(ping.from, uuid, ping.dimensionId, ping.x, ping.y, ping.z)
         val minecraft = Minecraft.getInstance()
-        if (Config.pingSound) minecraft.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_BELL.value(), 1.5f))
+        if (ping.verified && Config.pingSound) minecraft.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_BELL.value(), 1.5f))
         val name = Ui.dimensionName(ping.dimensionId) ?: ping.dimensionId
         val unverified = if (ping.verified) "" else " §7(unverified)§r"
         val id = ChatShare.offerWaypoints(

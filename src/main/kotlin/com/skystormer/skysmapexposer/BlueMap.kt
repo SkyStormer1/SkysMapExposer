@@ -302,8 +302,8 @@ class BlueMap(baseUrl: String) : AutoCloseable {
             throw IOException("interrupted", e)
         }
         try {
-            val response = get(path, HttpResponse.BodyHandlers.ofInputStream(), headers)
-            return Reply(response.statusCode(), readCapped(response.body()), response.headers())
+            val response = get(path, headers)
+            return Reply(response.statusCode(), response.body().use(::readCapped), response.headers())
         } finally {
             REQUESTS.release()
         }
@@ -314,12 +314,38 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         return Reply(reply.statusCode(), String(reply.body(), Charsets.UTF_8))
     }
 
-    private fun <T> get(path: String, handler: HttpResponse.BodyHandler<T>, headers: List<Pair<String, String>> = emptyList()): HttpResponse<T> {
-        val uri = try {
+    /**
+     * Asks for [path] on this server. A redirect is followed only to the same server (or from http
+     * to https on it), at most [MAX_REDIRECTS] times; one to anywhere else comes back as its own
+     * reply, which every caller treats as nothing there. So a server cannot send the game to other
+     * addresses, such as ones on the player's home network.
+     */
+    private fun get(path: String, headers: List<Pair<String, String>>): HttpResponse<InputStream> {
+        val start = try {
             URI.create(base + path)
         } catch (e: IllegalArgumentException) {
             throw IOException("not a usable address: $path", e)
         }
+        var uri = start
+        repeat(MAX_REDIRECTS) {
+            val response = send(uri, headers)
+            if (response.statusCode() !in REDIRECTS) return response
+            val next = response.headers().firstValue("Location").orElse(null)
+                ?.let { runCatching { uri.resolve(it) }.getOrNull() }
+                ?.takeIf { sameServer(start, it) }
+                ?: return response
+            response.body().close()
+            uri = next
+        }
+        throw IOException("too many redirects: $path")
+    }
+
+    private fun sameServer(from: URI, to: URI): Boolean {
+        if (!from.host.equals(to.host, ignoreCase = true)) return false
+        return (from.scheme == to.scheme && from.port == to.port) || (from.scheme == "http" && to.scheme == "https")
+    }
+
+    private fun send(uri: URI, headers: List<Pair<String, String>>): HttpResponse<InputStream> {
         val request = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(20))
             .header("User-Agent", "SkysMapExposer (Minecraft mod)")
@@ -327,7 +353,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
             .GET()
             .build()
         if (closed) throw IOException("closed")
-        val reply = CLIENT.sendAsync(request, handler)
+        val reply = CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
         inFlight.add(reply)
         try {
             if (closed) reply.cancel(true)
@@ -352,8 +378,11 @@ class BlueMap(baseUrl: String) : AutoCloseable {
          */
         private val CLIENT: HttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
+            .followRedirects(HttpClient.Redirect.NEVER) // followed by hand, same server only ([get])
             .build()
+
+        private const val MAX_REDIRECTS = 5
+        private val REDIRECTS = setOf(301, 302, 303, 307, 308)
 
         /**
          * At most this many requests to BlueMap at once, across every job: the map on screen,
