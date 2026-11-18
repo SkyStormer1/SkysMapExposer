@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.gui.ConfigScreen
 import com.skystormer.skysmapexposer.gui.DockPanel
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
@@ -17,7 +18,6 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.core.registries.Registries
 import net.minecraft.network.chat.Component
-import net.minecraft.locale.Language
 import net.minecraft.resources.ResourceKey
 import net.minecraft.tags.BiomeTags
 import net.minecraft.world.level.biome.Biome
@@ -385,9 +385,5 @@ object MapBar {
      * The biome's name in the game's language, as its own screens show it; one this version has no
      * name for is named from its id (`dappled_forest` is "Dappled Forest").
      */
-    private fun nameOf(key: ResourceKey<Biome>): String {
-        val languageKey = key.identifier().toLanguageKey("biome")
-        if (Language.getInstance().has(languageKey)) return Component.translatable(languageKey).string
-        return key.identifier().path.split('_').joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
-    }
+    private fun nameOf(key: ResourceKey<Biome>): String = BiomePicks.nameOf(key)
 }

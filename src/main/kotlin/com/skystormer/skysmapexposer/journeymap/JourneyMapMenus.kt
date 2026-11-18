@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.mojang.blaze3d.platform.InputConstants
+import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapPrep
@@ -39,6 +40,9 @@ internal object JourneyMapMenus {
     private var pending: Pair<Int, Int>? = null
     private var pendingDimension: String? = null
 
+    /** The block under the mouse when the map was last drawn: where a right-click opens the menu. */
+    private var mouseBlock: Pair<Int, Int>? = null
+
     /** Switches [map] to [dimension] if it is showing another ([JourneyMapDimension]). */
     private fun showIfOther(map: IFullscreen, dimension: String) {
         if (map.uiState?.dimension?.identifier()?.toString() == dimension) return
@@ -60,6 +64,7 @@ internal object JourneyMapMenus {
     fun forget() {
         fullscreen = null
         pending = null
+        mouseBlock = null
         JourneyMapDimension.forget()
     }
 
@@ -101,6 +106,13 @@ internal object JourneyMapMenus {
                 menu.addMenuItem("$other temp waypoint") { block -> Ui.say(JourneyMapWaypoints.counterpart(api, block.x, block.z, dimension)) }
             }
         }
+        // Biome highlight, as Xaero's map bar picks them: the biome JourneyMap knows under the click.
+        val biome = mouseBlock?.let { (x, z) -> JourneyMapBiomes.biomeAt(map.uiState, x, z) }
+        if (biome != null) {
+            val name = BiomePicks.nameOf(biome)
+            menu.addMenuItem(if (BiomePicks.isPicked(biome)) "Stop highlighting $name" else "Highlight $name") { BiomePicks.toggle(biome) }
+        }
+        if (BiomePicks.any) menu.addMenuItem("Clear biome highlights") { BiomePicks.clear() }
         // The list and downloads read BlueMap, so they are only worth offering on a server that has one.
         if (Session.current != null) {
             menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
@@ -121,9 +133,11 @@ internal object JourneyMapMenus {
             pendingDimension = null
             map.centerOn(x.toDouble(), z.toDouble())
         }
+        mouseBlock = blockUnder(map, event.mouseX, event.mouseY)
         val lines = listOfNotNull(
-            blockUnder(map, event.mouseX, event.mouseY)?.let { (x, z) -> OtherDimensionCoords.forWorldMap(x, z) },
+            mouseBlock?.let { (x, z) -> OtherDimensionCoords.forWorldMap(x, z) },
             JourneyMapEdits.status() ?: MapPrep.status(),
+            BiomePicks.all.keys.takeIf { it.isNotEmpty() }?.joinToString(", ", "Highlighted: ") { BiomePicks.nameOf(it) },
         )
         if (lines.isEmpty()) return
         val graphics = event.graphics

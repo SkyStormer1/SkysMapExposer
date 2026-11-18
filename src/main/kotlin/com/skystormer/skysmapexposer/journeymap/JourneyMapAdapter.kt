@@ -1,8 +1,10 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.mojang.brigadier.arguments.IntegerArgumentType
+import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
+import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapAdapter
 import com.skystormer.skysmapexposer.MapBorder
@@ -19,6 +21,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.minecraft.network.chat.Component
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.core.registries.Registries
 import java.util.UUID
 
 /**
@@ -59,6 +62,7 @@ object JourneyMapAdapter : MapAdapter {
         api?.removeAll(MOD_ID)
         JourneyMapPins.forget()
         JourneyMapTerrain.forget()
+        JourneyMapBiomes.forget()
         JourneyMapMenus.forget()
     }
 
@@ -73,6 +77,7 @@ object JourneyMapAdapter : MapAdapter {
         JourneyMapEdits.tick()
         JourneyMapPins.tick(api, shownDimension())
         JourneyMapTerrain.tick(api, session)
+        JourneyMapBiomes.tick(api)
     }
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
@@ -114,6 +119,39 @@ object JourneyMapAdapter : MapAdapter {
             clear.then(node)
         }
         root.then(clear)
+        root.then(biomeCommand())
+    }
+
+    /**
+     * `biome` lists the biomes highlighted, `biome <name or id>` highlights one or stops, `biome clear`
+     * stops them all; on Xaero's map the map bar does this, and JourneyMap's right-click menu offers
+     * the biome under the click.
+     */
+    private fun biomeCommand(): LiteralArgumentBuilder<FabricClientCommandSource> {
+        fun say(context: CommandContext<FabricClientCommandSource>, text: String): Int {
+            context.source.sendFeedback(Component.literal(text))
+            return 1
+        }
+        fun biomes() = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME)?.listElementIds()?.toList().orEmpty()
+        return ClientCommands.literal("biome")
+            .executes {
+                say(it, if (!BiomePicks.any) "No biomes are highlighted" else BiomePicks.all.keys.joinToString(", ", "Highlighted: ") { key -> BiomePicks.nameOf(key) })
+            }
+            .then(ClientCommands.literal("clear").executes { BiomePicks.clear(); say(it, "Biome highlights cleared") })
+            .then(ClientCommands.argument("biome", StringArgumentType.greedyString())
+                .suggests { _, builder ->
+                    val typed = builder.remaining.lowercase()
+                    biomes().map { it.identifier().toString() }.filter { it.contains(typed) }.sorted().forEach(builder::suggest)
+                    builder.buildFuture()
+                }
+                .executes {
+                    val typed = StringArgumentType.getString(it, "biome").trim()
+                    val biome = biomes().firstOrNull { key -> key.identifier().toString() == typed || key.identifier().path == typed }
+                        ?: biomes().firstOrNull { key -> BiomePicks.nameOf(key).equals(typed, ignoreCase = true) }
+                        ?: return@executes say(it, "No biome called '$typed' here")
+                    BiomePicks.toggle(biome)
+                    say(it, (if (BiomePicks.isPicked(biome)) "Highlighting " else "No longer highlighting ") + BiomePicks.nameOf(biome))
+                })
     }
 
     /** The region holding block (`x`, `z`) of a command. */
@@ -129,7 +167,7 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun status(say: (String) -> Unit) {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
-        if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}")
+        if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}" + (JourneyMapBiomes.summary()?.let { ", $it" } ?: ""))
         say("JourneyMap dimension hook: " + if (JourneyMapDimension.hookRan) "§aworking" else "§enot seen yet (open the full-screen map)")
     }
 

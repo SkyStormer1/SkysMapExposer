@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.mojang.blaze3d.vertex.VertexConsumer
@@ -30,12 +31,6 @@ import xaero.map.region.texture.RegionTexture
  */
 object BiomeHighlight {
 
-    /** The biomes picked, in the order they were picked, and the colour each is tinted. */
-    private val picked = LinkedHashMap<ResourceKey<Biome>, Int>()
-
-    /** Bumped whenever [picked] changes, so every square is worked out again. */
-    private var version = 0
-
     private class Square(val texture: RegionTexture<*>, val textureVersion: Int, val version: Int, val step: Int, val rects: IntArray)
 
     /**
@@ -44,7 +39,8 @@ object BiomeHighlight {
      */
     private val squares = Array(5) { HashMap<Long, Square>() }
 
-    val any: Boolean get() = picked.isNotEmpty()
+    /** The picks themselves are shared with JourneyMap's map ([BiomePicks]). */
+    val any: Boolean get() = BiomePicks.any
 
     /**
      * Biomes the map has recorded that this version of the game does not know, by dimension: from
@@ -60,31 +56,24 @@ object BiomeHighlight {
 
     fun unknownIn(dimension: String?): Set<ResourceKey<Biome>> = dimension?.let { unknown[it] }.orEmpty()
 
-    fun isPicked(biome: ResourceKey<Biome>): Boolean = biome in picked
+    fun isPicked(biome: ResourceKey<Biome>): Boolean = BiomePicks.isPicked(biome)
 
     /** The tint of [biome], or null if it is not picked. */
-    fun colourOf(biome: ResourceKey<Biome>): Int? = picked[biome]
+    fun colourOf(biome: ResourceKey<Biome>): Int? = BiomePicks.colourOf(biome)
 
     fun toggle(biome: ResourceKey<Biome>) {
-        if (picked.remove(biome) == null) picked[biome] = nextColour()
+        BiomePicks.toggle(biome)
         changed()
     }
 
     fun clear() {
-        if (picked.isEmpty()) return
-        picked.clear()
+        BiomePicks.clear()
         changed()
     }
 
+    /** Squares worked out for other picks are let go of; a pick changed elsewhere is caught by its version. */
     private fun changed() {
-        version++
         squares.forEach { it.clear() }
-    }
-
-    /** The first colour of [COLOURS] not in use, or the least used once all are. */
-    private fun nextColour(): Int {
-        val used = picked.values.groupingBy { it }.eachCount()
-        return COLOURS.minBy { used[it] ?: 0 }
     }
 
     /** The world map, from Xaero's `GuiMap`, with the matrix and origin its terrain was drawn with. */
@@ -95,7 +84,7 @@ object BiomeHighlight {
         } catch (e: Throwable) {
             Log.warn("Could not look for biomes this game version does not know: {}", e.toString())
         }
-        if (picked.isEmpty()) return
+        if (!BiomePicks.any) return
         try {
             val view = MapViewport.of(matrix, cameraX, cameraZ)
             // Zoomed out, Xaero draws from coarser copies of its regions (level 1 to 3, each pixel
@@ -118,7 +107,7 @@ object BiomeHighlight {
         processor: MapProcessor, buffer: VertexConsumer, matrix: Matrix4f, blocksPerUnit: Float,
         originX: Int, originZ: Int, minX: Double, maxX: Double, minZ: Double, maxZ: Double,
     ) {
-        if (picked.isEmpty() || !Config.minimapBiomes) return
+        if (!BiomePicks.any || !Config.minimapBiomes) return
         try {
             drawArea(processor, buffer, matrix, 0, MINIMAP, blocksPerUnit, originX, originZ, minX, maxX, minZ, maxZ)
         } catch (e: Throwable) {
@@ -191,8 +180,7 @@ object BiomeHighlight {
     }
 
     private fun giveUp(where: String, e: Throwable) {
-        picked.clear()
-        changed()
+        clear()
         Log.error("Could not highlight biomes on the $where; the highlight is turned off", e)
     }
 
@@ -205,10 +193,10 @@ object BiomeHighlight {
         val known = squares[slot][key]
         val textureVersion = texture.textureVersion
         if (known != null && known.texture === texture && known.textureVersion == textureVersion &&
-            known.version == version && known.step == step
+            known.version == BiomePicks.version && known.step == step
         ) return known.rects
         val rects = trace(texture, step)
-        squares[slot][key] = Square(texture, textureVersion, version, step, rects)
+        squares[slot][key] = Square(texture, textureVersion, BiomePicks.version, step, rects)
         return rects
     }
 
@@ -226,13 +214,13 @@ object BiomeHighlight {
             val next = HashMap<Int, Int>()
             var col = 0
             while (col < cells) {
-                val colour = texture.getBiome(col * step, row * step)?.let(picked::get)
+                val colour = texture.getBiome(col * step, row * step)?.let(BiomePicks::colourOf)
                 if (colour == null) {
                     col++
                     continue
                 }
                 val start = col
-                while (col < cells && texture.getBiome(col * step, row * step)?.let(picked::get) == colour) col++
+                while (col < cells && texture.getBiome(col * step, row * step)?.let(BiomePicks::colourOf) == colour) col++
                 val above = open[start]
                 if (above != null && out[above + 2] == col * step && out[above + 4] == colour) {
                     out[above + 3] = (row + 1) * step
@@ -275,12 +263,6 @@ object BiomeHighlight {
     private const val NOTICE_MILLIS = 2_000L
     private const val MAX_SQUARES = 50_000
     private const val MINIMAP = 4
-
-    /** See-through tints that stand apart from each other and from terrain's greens and blues. */
-    private val COLOURS = intArrayOf(
-        0x90FF3B30.toInt(), 0x90FFCC00.toInt(), 0x90FF2DAA.toInt(), 0x90AF52DE.toInt(),
-        0x90FF9500.toInt(), 0x9000E5FF.toInt(), 0x90FFFFFF.toInt(), 0x9034C759.toInt(),
-    )
 }
 
 /**
