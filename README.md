@@ -4,7 +4,7 @@
 
 <p align="center">
 A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b> into
-<b>Xaero's World Map</b>, <b>Xaero's Minimap</b> and more.
+<b>Xaero's World Map</b>, <b>Xaero's Minimap</b> or <b>JourneyMap</b>, and more.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@ A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b
 
 ![Xaero's World Map on its own, with black unexplored areas, next to the same map with Sky's Map Exposer: the gaps filled from BlueMap, a red world border, shop and banner markers, a hover label and a player's head](docs/world-map.png)
 
-<sub>An unofficial, fan-made mod. Not made by, endorsed by or affiliated with the BlueMap or Xaero's Minimap / World Map projects.</sub>
+<sub>An unofficial, fan-made mod. Not made by, endorsed by or affiliated with the BlueMap, Xaero's Minimap / World Map or JourneyMap projects.</sub>
 
 ## What it does
 
@@ -77,9 +77,10 @@ You need:
 
 - Minecraft **26.3** with **Fabric Loader** 0.19.5 or newer
 - **Fabric API** and **Fabric Language Kotlin**
-- **Xaero's World Map** 1.47 or newer
-- Recommended: **Xaero's Minimap** (for the minimap and for saving waypoints) and **Mod Menu**
-  (for the settings screen)
+- One map mod: **Xaero's World Map** 1.47 or newer, or **JourneyMap** 6.0.10 or newer
+  ([what works with JourneyMap](#with-journeymap)). With both installed, Xaero's is used.
+- Recommended with Xaero's: **Xaero's Minimap** (for the minimap and for saving waypoints)
+- Recommended: **Mod Menu** (for the settings screen)
 
 Then **[download the latest `.jar`](https://github.com/SkyStormer1/SkysMapExposer/releases/latest)**
 and put it in your `mods` folder with the others.
@@ -396,6 +397,32 @@ name; on servers whose chat plugin delivers `/msg` as a server message, the game
 sent it, so the share is marked "(unverified)". Its data is kept in `skysmapexposer/` in
 your game folder, and its settings in `config/skysmapexposer.json`.
 
+## With JourneyMap
+
+Without Xaero's World Map, the mod works with JourneyMap instead, through JourneyMap's own plugin
+API. It behaves as it does on Xaero's map wherever JourneyMap allows:
+
+- **Terrain:** BlueMap's terrain fills the full-screen map wherever JourneyMap has nothing or your
+  map is old, by the same rules as on Xaero's map, on the day map and, where BlueMap has it, the
+  cave map.
+- **Markers, players and pings** on the full-screen map and the minimap, with the same right-click
+  menus (lock on, trust, save as waypoint, temporary waypoint, copy).
+- **Right-click on the map:** Copy coordinates, Ping here, Share waypoints…, a temporary waypoint
+  in the other dimension, Players… and Download BlueMap…. The other dimension's coordinates of the
+  block under the mouse show at the top, and a dimension button sits with JourneyMap's own.
+- **Waypoints** saved, shared and received go into JourneyMap's waypoints, in a "Map Exposer" group.
+- **Downloading** writes BlueMap into JourneyMap's own map files, region by region, backing each
+  one up first: `/mapexposer download unexplored|all|region <x> <z>`, and `/mapexposer undo` puts
+  them back. Regions JourneyMap has open wait until it lets go of them.
+- **Seasons and clearing:** `/mapexposer clear oldseason` and `/mapexposer clear border`, with the
+  same backups and undo.
+- **Biome highlight:** right-click the map to highlight the biome under the click, or
+  `/mapexposer biome <name>` / `/mapexposer biome clear`. Biomes are read from JourneyMap's own
+  chunk cache, so they show where JourneyMap has mapped, in the dimension you are in.
+
+Not on JourneyMap (yet): BlueMap's terrain on the minimap (JourneyMap draws picture overlays there
+in the wrong place), the bar on the world map, and importing shared terrain files.
+
 ## Limits
 
 - Surface only: in Xaero's cave mode only borders and markers are drawn, not terrain, and a
@@ -437,6 +464,9 @@ Written from scratch; no code was copied from any other project.
 - Bobby (LGPL-3.0), Voxy (all rights reserved) and Distant Horizons (LGPL-3.0) are compiled against and called only
   when installed, never bundled; Map Exposer hands them chunks through their own storage, ingest
   and API. None of their code was copied.
+- JourneyMap (under its own licence) is compiled against, never bundled. Map Exposer uses its plugin
+  API, and reads its map folders, region cache and chunk cache through JourneyMap's own classes;
+  one mixin keeps its full-screen map on a picked dimension. None of its code was copied.
 - Xaero's World Map and Minimap are closed source. They are compiled against, never bundled.
   Their class, method and field names, and the layout of their map files, were read to place the
   mixins, use their element and waypoint systems, and write downloads through Xaero's own map code.
