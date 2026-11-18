@@ -34,6 +34,7 @@ import java.nio.file.Path
  * - `key <key>` presses a key once, by the game's name for it, e.g. `key.keyboard.m`
  * - `screenshot` takes a screenshot (F2's), into `screenshots/`
  * - `waypoint <x> <y> <z> <name>` adds a waypoint where you are, as an added shared one is
+ * - `mywaypoints` logs the waypoints the installed map would offer to share
  * - `click <text>` runs the newest chat button reading that, e.g. `click [Add waypoints]`
  * - `fill <blocks>` starts a terrain fill that far around you, as the settings button does
  * - `fillwait` waits for a terrain fill to finish, then logs how it went
@@ -110,6 +111,7 @@ object AutoTest {
                     val dimension = client.level?.dimension()?.identifier()?.toString() ?: return
                     Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(dimension, "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
                 }
+                "mywaypoints" -> Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
                 "click" -> {
                     val command = buttonCommand(client, rest)
                     if (command == null) Log.warn("AutoTest: no chat button '{}'", rest)

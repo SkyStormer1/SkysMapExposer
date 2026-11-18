@@ -1,7 +1,6 @@
 package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.xaero.TerrainFormat
-import com.skystormer.skysmapexposer.xaero.Waypoints
 import com.google.gson.JsonParser
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -60,9 +59,9 @@ class SmallFixesTest {
 
     @Test
     fun `waypoint initials keep the label's colour but never take a code for a letter`() {
-        assertEquals("§cSH", Waypoints.initials("§cShop"))
-        assertEquals("§c§lMS", Waypoints.initials("§c§lMain §eSpawn"))
-        assertEquals("FB", Waypoints.initials("Farm Base"))
+        assertEquals("§cSH", WaypointRules.initials("§cShop"))
+        assertEquals("§c§lMS", WaypointRules.initials("§c§lMain §eSpawn"))
+        assertEquals("FB", WaypointRules.initials("Farm Base"))
     }
 
     @Test

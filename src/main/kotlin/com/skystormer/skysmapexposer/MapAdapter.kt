@@ -50,8 +50,8 @@ interface MapAdapter {
     /** What the BlueMap layer drew last, for the settings screen and `/mapexposer`. */
     fun summary(): String = ""
 
-    /** Your waypoints of the dimension shown, to share; null with none to read, after saying why. */
-    fun myWaypoints(): Pair<String, List<ShareFormat.SharedWaypoint>>? = null
+    /** Your waypoints of the dimension you are in, to share; null with none to read. */
+    fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = null
 
     /** Adds waypoints [from] someone else to [dimension]; what to tell you. */
     fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =

@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.ShareFormat
@@ -21,28 +22,25 @@ import xaero.map.mods.SupportMods
  */
 object WaypointShare {
 
-    /** A waypoint you can share, and the set it is in. */
-    class Entry(val set: String, val waypoint: Waypoint) {
-        val name: String get() = waypoint.getName()
-        val label: String get() = "$name  ${waypoint.x}, ${if (waypoint.isYIncluded) "${waypoint.y}, " else ""}${waypoint.z}"
-
-        fun shared() = ShareFormat.SharedWaypoint(
-            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
-        )
-    }
-
     /** A set's name as Xaero shows it: its default set is named by a translation key, which this turns into words. */
     fun setName(name: String): String = I18n.get(name)
 
     /** The dimension you are in and its waypoints, every set, without temporary ones; null if Xaero has none open. */
-    fun mine(): Pair<String, List<Entry>>? {
+    fun mine(): Pair<String, List<ShareableWaypoint>>? {
         val world = BuiltInHudModules.MINIMAP.currentSession?.worldManager?.currentWorld ?: return null
         val dimensionId = world.dimId?.identifier()?.toString() ?: return null
-        val entries = ArrayList<Entry>()
+        val entries = ArrayList<ShareableWaypoint>()
         for (set in world.iterableWaypointSets) {
             for (waypoint in set.waypoints) {
                 if (waypoint.isTemporary || waypoint.isThirdParty || waypoint.isDestination) continue
-                entries.add(Entry(setName(set.name), waypoint))
+                entries.add(
+                    ShareableWaypoint(
+                        setName(set.name),
+                        ShareFormat.SharedWaypoint(
+                            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
+                        ),
+                    )
+                )
             }
         }
         return dimensionId to entries

@@ -7,7 +7,9 @@ import com.skystormer.skysmapexposer.OtherDimensionCoords
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.Ui
+import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
+import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import journeymap.api.v2.client.event.FullscreenRenderEvent
 import journeymap.api.v2.client.event.PopupMenuEvent
 import journeymap.api.v2.client.fullscreen.IFullscreen
@@ -84,6 +86,18 @@ internal object JourneyMapMenus {
         menu.addMenuItem("Copy coordinates") { block -> Ui.copy(block.x, null, block.z, dimension) }
         if (dimension != null && PlayerPings.recipients().isNotEmpty()) {
             menu.addMenuItem("Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, null)) }
+        }
+        val api = JourneyMapAdapter.api
+        if (api != null) {
+            menu.addMenuItem("Share waypoints…") {
+                val mine = JourneyMapWaypoints.mine(api)
+                if (mine == null || mine.second.isEmpty()) Ui.say("You have no saved waypoints here to share")
+                else Ui.open(WaypointShareScreen(map.screen, mine.first, mine.second))
+            }
+            val other = dimension?.let(WaypointRules::counterpartName)
+            if (other != null) {
+                menu.addMenuItem("$other temp waypoint") { block -> Ui.say(JourneyMapWaypoints.counterpart(api, block.x, block.z, dimension)) }
+            }
         }
         // The list reads BlueMap, so it is only worth offering on a server that has one.
         if (Session.current != null) menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }

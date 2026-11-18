@@ -7,7 +7,9 @@ import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapPins
 import com.skystormer.skysmapexposer.Markers
 import com.skystormer.skysmapexposer.PinDrawing
+import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.Ui
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.display.IOverlayListener
 import journeymap.api.v2.client.display.MarkerOverlay
@@ -157,6 +159,7 @@ internal object JourneyMapPins {
         overlay.setTitle(if (pin is Markers.Ping) "${pin.label} pinged here" else pin.label)
         overlay.setDisplayOrder(if (pin is Markers.Ping) PING_ORDER else POINT_ORDER)
         overlay.setActiveUIs(Context.UI.Fullscreen, Context.UI.Minimap)
+        overlay.setOverlayListener(PinMenu(pin, dimensionId))
         return overlay
     }
 
@@ -170,7 +173,7 @@ internal object JourneyMapPins {
         overlay.setLabel(if (LockedPlayers.isLocked(player.uuid)) player.label else "")
         overlay.setDisplayOrder(PLAYER_ORDER)
         overlay.setActiveUIs(*uisFor(player))
-        overlay.setOverlayListener(PlayerMenu("player|$dimensionId|${player.uuid}", player.uuid))
+        overlay.setOverlayListener(PlayerMenu("player|$dimensionId|${player.uuid}", player.uuid, dimensionId))
         return overlay
     }
 
@@ -209,8 +212,15 @@ internal object JourneyMapPins {
         return if (onMinimap) BOTH else FULLSCREEN
     }
 
-    /** Right-clicking a player: lock on or unlock, as on Xaero's map. */
-    private class PlayerMenu(private val key: String, private val uuid: java.util.UUID) : IOverlayListener {
+    /** Right-clicking a marker or ping: the same entries as on Xaero's map. */
+    private class PinMenu(private val pin: Markers.Pin, private val dimension: String) : IOverlayListener {
+        override fun onOverlayMenuPopup(state: UIState, mouse: Point2D.Double, block: BlockPos, menu: ModPopupMenu) {
+            waypointEntries(menu, pin, dimension)
+        }
+    }
+
+    /** Right-clicking a player: lock on, trust, pings, then the same entries as a marker's, as on Xaero's map. */
+    private class PlayerMenu(private val key: String, private val uuid: java.util.UUID, private val dimension: String) : IOverlayListener {
         override fun onOverlayMenuPopup(state: UIState, mouse: Point2D.Double, block: BlockPos, menu: ModPopupMenu) {
             val player = shown[key]?.player ?: return
             val locked = LockedPlayers.isLocked(uuid)
@@ -218,7 +228,21 @@ internal object JourneyMapPins {
                 LockedPlayers.set(player, !locked)
                 lastPins = null // the label shows whether they are locked
             }
+            val trusted = PlayerPings.isTrusted(uuid)
+            menu.addMenuItem(if (trusted) "Stop trusting" else "Trust for pings") { PlayerPings.setTrusted(uuid, !trusted) }
+            if (trusted) {
+                val pinged = PlayerPings.isPingedTo(uuid)
+                menu.addMenuItem(if (pinged) "Stop sending pings" else "Send my pings") { PlayerPings.setPingedTo(uuid, !pinged) }
+            }
+            waypointEntries(menu, player, dimension)
         }
+    }
+
+    private fun waypointEntries(menu: ModPopupMenu, pin: Markers.Pin, dimension: String) {
+        val api = JourneyMapAdapter.api ?: return
+        menu.addMenuItem("Save as waypoint") { Ui.say(JourneyMapWaypoints.save(api, pin, dimension, temporary = false)) }
+        menu.addMenuItem("Set temporary waypoint") { Ui.say(JourneyMapWaypoints.save(api, pin, dimension, temporary = true)) }
+        menu.addMenuItem("Copy coordinates") { Ui.copy(pin.x, pin.y, pin.z, dimension) }
     }
 
     // ---- pictures ----

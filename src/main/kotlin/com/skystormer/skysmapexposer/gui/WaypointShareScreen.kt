@@ -1,10 +1,10 @@
-package com.skystormer.skysmapexposer.xaero
+package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.skystormer.skysmapexposer.gui.SafeTooltip
 import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.xaero.WaypointShare
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
@@ -24,14 +24,14 @@ import java.util.IdentityHashMap
 class WaypointShareScreen(
     private val parent: Screen?,
     private val dimensionId: String,
-    private val entries: List<WaypointShare.Entry>,
+    private val entries: List<ShareableWaypoint>,
 ) : Screen(Component.literal("Share waypoints")) {
 
-    private val picked: MutableSet<WaypointShare.Entry> = Collections.newSetFromMap(IdentityHashMap())
+    private val picked: MutableSet<ShareableWaypoint> = Collections.newSetFromMap(IdentityHashMap())
     private var search: EditBox? = null
     private val rows = ArrayList<Button>()
     private var page = 0
-    private var shown: List<WaypointShare.Entry> = entries
+    private var shown: List<ShareableWaypoint> = entries
     private var pageLabel: StringWidget? = null
     private var previous: Button? = null
     private var nextPage: Button? = null
@@ -120,7 +120,7 @@ class WaypointShareScreen(
 
     private fun next() {
         // In the order they are listed, not the order they were ticked.
-        val chosen = entries.filter { it in picked }.map { it.shared() }
+        val chosen = entries.filter { it in picked }.map { it.waypoint }
         Ui.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent) { name ->
             ChatShare.shareWaypoints(name, dimensionId, chosen)
         })

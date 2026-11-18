@@ -6,6 +6,8 @@ import com.skystormer.skysmapexposer.MapAdapter
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.ShareFormat
+import com.skystormer.skysmapexposer.ShareableWaypoint
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
@@ -30,12 +32,16 @@ object JourneyMapAdapter : MapAdapter {
 
     private var missingSaid = false
 
+    /** When you joined, until this mod's leftover temporary waypoints have been tidied away; 0 once they have. */
+    private var tidyAfter = 0L
+
     override fun init() = JourneyMapMenus.register()
 
     override fun checkHooks() {}
 
     // JourneyMap starts its plugins with itself, so by the time a world opens it has, or never will.
     override fun join() {
+        tidyAfter = System.currentTimeMillis() + TIDY_DELAY_MS
         if (api == null && !missingSaid) {
             missingSaid = true
             Log.warn("JourneyMap has not started this mod's plugin; nothing will be drawn on it")
@@ -43,6 +49,7 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     override fun leave() {
+        api?.let(JourneyMapWaypoints::forget)
         api?.removeAll(MOD_ID)
         JourneyMapPins.forget()
         JourneyMapTerrain.forget()
@@ -52,6 +59,10 @@ object JourneyMapAdapter : MapAdapter {
     override fun tick(client: Minecraft, session: Session?) {
         val api = api ?: return
         if (client.level == null) return
+        if (tidyAfter != 0L && System.currentTimeMillis() >= tidyAfter) {
+            tidyAfter = 0L
+            JourneyMapWaypoints.tidy(api)
+        }
         JourneyMapMenus.tick(client)
         JourneyMapPins.tick(api, shownDimension())
         JourneyMapTerrain.tick(api, session)
@@ -90,6 +101,14 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
         JourneyMapMenus.goTo(dimension, x, z, from)
+
+    override fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = api?.let(JourneyMapWaypoints::mine)
+
+    override fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =
+        api?.let { JourneyMapWaypoints.addShared(it, dimension, from, waypoints) } ?: "JourneyMap has not started this mod's plugin"
+
+    /** How long after joining before leftover temporary waypoints are looked for: a server sends its waypoints a moment after you join. */
+    private const val TIDY_DELAY_MS = 5_000L
 
     private fun fullscreen() = api?.getUIState(Context.UI.Fullscreen)?.takeIf { it.active }
 }

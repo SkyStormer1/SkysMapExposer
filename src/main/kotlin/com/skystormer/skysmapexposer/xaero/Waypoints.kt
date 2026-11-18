@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapMods
@@ -59,29 +60,12 @@ object Waypoints {
         return "Temporary waypoint set on ${pin.label}"
     }
 
-    /** "Nether" for the Overworld and "Overworld" for the Nether: the dimensions with a counterpart. */
-    fun counterpartName(dimension: String?): String? = when (dimension) {
-        Config.OVERWORLD -> "Nether"
-        Config.NETHER -> "Overworld"
-        else -> null
-    }
-
-    /** Block ([x], [z]) of [dimension] in the other one, written as the waypoint will have it. */
-    private fun counterpartCoordinates(x: Int, z: Int, dimension: String): String =
-        if (dimension == Config.OVERWORLD) "${Math.floorDiv(x, Config.NETHER_SCALE)}, $NETHER_Y, ${Math.floorDiv(z, Config.NETHER_SCALE)}"
-        else "${x * Config.NETHER_SCALE}, ${z * Config.NETHER_SCALE}"
-
-    /** What [setCounterpart] would do for this block, for the menu's tooltip. */
-    fun counterpartTip(x: Int, z: Int, dimension: String): String =
-        if (dimension == Config.OVERWORLD) "At ${counterpartCoordinates(x, z, dimension)}, on the Nether roof. It shows when you are in the Nether."
-        else "At ${counterpartCoordinates(x, z, dimension)}, height unknown. It shows when you are in the Overworld."
-
     /**
      * A temporary waypoint at the other dimension's counterpart of block ([x], [z]) of [dimension]:
      * an eighth as far out in the Nether, eight times in the Overworld. It goes in that dimension's
      * own waypoints, so it is there when you arrive, wherever you are when you set it.
      *
-     * In the Nether it is put at Y [NETHER_Y], on top of the bedrock roof, where Nether highways
+     * In the Nether it is put at Y [WaypointRules.NETHER_Y], on top of the bedrock roof, where Nether highways
      * usually run. The Overworld has no such height, so there Y is left out and Xaero shows it as
      * unknown.
      */
@@ -102,14 +86,14 @@ object Waypoints {
         val target = if (toNether) Level.NETHER else Level.OVERWORLD
         val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
         session.worldManager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
-        val world = worldFor(target) ?: return "Xaero's Minimap has no waypoints for the ${counterpartName(dimension)} yet"
+        val world = worldFor(target) ?: return "Xaero's Minimap has no waypoints for the ${WaypointRules.counterpartName(dimension)} yet"
         // Xaero converts from the scale it is given to the world's own, so the coordinates go in as
         // they are in the dimension clicked, with that dimension's scale.
         val scale = if (toNether) 1.0 else Config.NETHER_SCALE.toDouble()
-        val y = if (toNether) NETHER_Y else 0
+        val y = if (toNether) WaypointRules.NETHER_Y else 0
         session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, x, y, z, toNether, scale)
         SupportMods.xaeroMinimap?.requestWaypointsRefresh()
-        return "Temporary waypoint set in the ${counterpartName(dimension)} at ${counterpartCoordinates(x, z, dimension)}"
+        return "Temporary waypoint set in the ${WaypointRules.counterpartName(dimension)} at ${WaypointRules.counterpartCoordinates(x, z, dimension)}"
     }
 
     /**
@@ -146,7 +130,7 @@ object Waypoints {
         val y = floor(pin.y).toInt()
         val z = floor(pin.z).toInt()
         if (set.waypoints.any { it.x == x && it.z == z && it.name == pin.label }) return "${pin.label} is already a waypoint"
-        set.add(Waypoint(x, y, z, pin.label, initials(pin.label), colourOf(pin)))
+        set.add(Waypoint(x, y, z, pin.label, WaypointRules.initials(pin.label), WaypointColor.values()[WaypointRules.colourFor(pin)]))
         session.worldManagerIO.saveWorld(world)
         return "Saved ${pin.label} as a waypoint"
     }
@@ -154,50 +138,4 @@ object Waypoints {
     private fun say(message: String) {
         Minecraft.getInstance().player?.sendOverlayMessage(Component.literal(message))
     }
-
-    /**
-     * Two letters for [label]. Xaero shows `§` colour codes in waypoint names and initials (checked
-     * in game), so the name keeps them and the initials take the colour the label starts with; the
-     * codes themselves are never taken for letters (`§cShop` is a red "SH", not "CS").
-     */
-    internal fun initials(label: String): String {
-        val leading = FORMAT_CODE_AT_START.find(label)?.value ?: ""
-        val words = label.replace(FORMAT_CODE, "").split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
-        return leading + when {
-            words.size >= 2 -> "${words[0][0]}${words[1][0]}".uppercase()
-            words.size == 1 -> words[0].take(2).uppercase()
-            else -> "B"
-        }
-    }
-
-    private val FORMAT_CODE = Regex("§.")
-    private val FORMAT_CODE_AT_START = Regex("^(§.)+")
-
-    /** Banners in the colour of the banner, shops gold, everything else aqua. */
-    private fun colourOf(pin: Markers.Pin): WaypointColor {
-        val icon = (pin as? Markers.Point)?.icon?.substringAfterLast('/')?.substringBeforeLast('.')?.lowercase() ?: ""
-        return when (icon) {
-            "white" -> WaypointColor.WHITE
-            "orange" -> WaypointColor.GOLD
-            "magenta" -> WaypointColor.MAGENTA
-            "light_blue" -> WaypointColor.LIGHT_BLUE
-            "yellow" -> WaypointColor.YELLOW
-            "lime" -> WaypointColor.LIME
-            "pink" -> WaypointColor.PINK
-            "gray" -> WaypointColor.DARK_GRAY
-            "light_gray" -> WaypointColor.GRAY
-            "cyan" -> WaypointColor.DARK_AQUA
-            "purple" -> WaypointColor.DARK_PURPLE
-            "blue" -> WaypointColor.BLUE
-            "brown" -> WaypointColor.BROWN
-            "green" -> WaypointColor.DARK_GREEN
-            "red" -> WaypointColor.RED
-            "black" -> WaypointColor.BLACK
-            "shop" -> WaypointColor.GOLD
-            else -> WaypointColor.AQUA
-        }
-    }
-
-    /** Height of a waypoint put in the Nether from the Overworld. */
-    private const val NETHER_Y = 128
 }

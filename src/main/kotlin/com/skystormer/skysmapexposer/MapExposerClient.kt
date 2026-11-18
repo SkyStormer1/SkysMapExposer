@@ -335,7 +335,7 @@ object MapExposerClient : ClientModInitializer {
         val to = StringArgumentType.getString(context, "player")
         val mine = MapMods.adapter?.myWaypoints()
         val said = if (mine == null) "No waypoints to share: your map has no waypoint world open"
-        else ChatShare.shareWaypoints(to, mine.first, mine.second)
+        else ChatShare.shareWaypoints(to, mine.first, mine.second.map { it.waypoint })
         context.source.sendFeedback(Component.literal(said))
         return 1
     }

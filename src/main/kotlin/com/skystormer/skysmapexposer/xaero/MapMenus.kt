@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
 import com.skystormer.skysmapexposer.Log
@@ -7,7 +8,7 @@ import com.skystormer.skysmapexposer.MapCamera
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
-import com.skystormer.skysmapexposer.xaero.WaypointShareScreen
+import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -17,7 +18,6 @@ import xaero.map.WorldMapSession
 import xaero.map.gui.IRightClickableElement
 import xaero.map.gui.MapTileSelection
 import xaero.map.gui.dropdown.rightclick.RightClickOption
-import kotlin.math.floor
 
 /**
  * What this mod adds to Xaero's world map right-click menu, and the odd jobs those options do:
@@ -90,10 +90,10 @@ object MapMenus {
         z: Int,
         dimension: String,
     ) {
-        val other = Waypoints.counterpartName(dimension) ?: return
+        val other = WaypointRules.counterpartName(dimension) ?: return
         val tooltip = listOf(
             Component.literal("Temporary waypoint in the $other"),
-            Component.literal("§7" + Waypoints.counterpartTip(x, z, dimension)),
+            Component.literal("§7" + WaypointRules.counterpartTip(x, z, dimension)),
         )
         options.add(
             MenuTooltips.Option("$other temp waypoint", options.size, target, tooltip) { Waypoints.setCounterpart(x, z, dimension) }

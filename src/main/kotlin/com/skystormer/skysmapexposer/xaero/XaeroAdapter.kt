@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
@@ -478,8 +479,8 @@ object XaeroAdapter : MapAdapter {
 
     override fun summary(): String = Overlay.lastSummary
 
-    override fun myWaypoints(): Pair<String, List<ShareFormat.SharedWaypoint>>? =
-        if (!Waypoints.available()) null else WaypointShare.mine()?.let { (dimension, mine) -> dimension to mine.map { it.shared() } }
+    override fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? =
+        if (!Waypoints.available()) null else WaypointShare.mine()
 
     override fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =
         WaypointShare.add(dimension, from, waypoints)
