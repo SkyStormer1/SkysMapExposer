@@ -1,6 +1,8 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
+import com.mojang.brigadier.context.CommandContext
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapAdapter
 import com.skystormer.skysmapexposer.MapLayers
@@ -11,7 +13,9 @@ import com.skystormer.skysmapexposer.ShareableWaypoint
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
+import net.minecraft.network.chat.Component
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import java.util.UUID
@@ -49,6 +53,7 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     override fun leave() {
+        JourneyMapDownload.forget()
         api?.let(JourneyMapWaypoints::forget)
         api?.removeAll(MOD_ID)
         JourneyMapPins.forget()
@@ -64,11 +69,39 @@ object JourneyMapAdapter : MapAdapter {
             JourneyMapWaypoints.tidy(api)
         }
         JourneyMapMenus.tick(client)
+        JourneyMapDownload.tick()
         JourneyMapPins.tick(api, shownDimension())
         JourneyMapTerrain.tick(api, session)
     }
 
-    override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {}
+    override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
+        root.then(
+            ClientCommands.literal("download")
+                .then(ClientCommands.literal("all").executes { it.source.sendFeedback(Component.literal(JourneyMapDownload.start(unexploredOnly = false))); 1 })
+                .then(ClientCommands.literal("unexplored").executes { it.source.sendFeedback(Component.literal(JourneyMapDownload.start(unexploredOnly = true))); 1 })
+                .then(ClientCommands.literal("region").then(
+                    ClientCommands.argument("x", IntegerArgumentType.integer()).then(
+                        ClientCommands.argument("z", IntegerArgumentType.integer())
+                            .executes { regionDownload(it, unexploredOnly = true) }
+                            .then(ClientCommands.literal("all").executes { regionDownload(it, unexploredOnly = false) })
+                    )
+                ))
+                .then(ClientCommands.literal("cancel").executes {
+                    it.source.sendFeedback(Component.literal(if (JourneyMapDownload.cancel()) "Stopping the download after the region it is on" else "No download into JourneyMap's map is running"))
+                    1
+                })
+                .then(ClientCommands.literal("undo").executes { it.source.sendFeedback(Component.literal(JourneyMapDownload.undo())); 1 })
+        )
+    }
+
+    /** `download region <x> <z>`: the region holding block ([x], [z]). */
+    private fun regionDownload(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean): Int {
+        val x = IntegerArgumentType.getInteger(context, "x")
+        val z = IntegerArgumentType.getInteger(context, "z")
+        val region = Math.floorDiv(x, JourneyMapFiles.REGION) to Math.floorDiv(z, JourneyMapFiles.REGION)
+        context.source.sendFeedback(Component.literal(JourneyMapDownload.start(unexploredOnly, region)))
+        return 1
+    }
 
     override fun status(say: (String) -> Unit) {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
@@ -101,6 +134,10 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
         JourneyMapMenus.goTo(dimension, x, z, from)
+
+    override fun downloadStatus(): String? = JourneyMapDownload.status()?.takeIf { JourneyMapDownload.running }
+
+    override fun cancelDownload(): Boolean = JourneyMapDownload.cancel()
 
     override fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = api?.let(JourneyMapWaypoints::mine)
 

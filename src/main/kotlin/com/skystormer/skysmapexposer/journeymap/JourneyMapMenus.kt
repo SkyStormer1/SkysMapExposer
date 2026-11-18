@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.mojang.blaze3d.platform.InputConstants
+import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.OtherDimensionCoords
@@ -18,6 +19,7 @@ import journeymap.api.v2.common.event.FullscreenEventRegistry
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.network.chat.Component
 
 /**
  * This mod's parts of JourneyMap's full-screen map, the same as on Xaero's: the right-click entries
@@ -99,8 +101,11 @@ internal object JourneyMapMenus {
                 menu.addMenuItem("$other temp waypoint") { block -> Ui.say(JourneyMapWaypoints.counterpart(api, block.x, block.z, dimension)) }
             }
         }
-        // The list reads BlueMap, so it is only worth offering on a server that has one.
-        if (Session.current != null) menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
+        // The list and downloads read BlueMap, so they are only worth offering on a server that has one.
+        if (Session.current != null) {
+            menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
+            if (!JourneyMapDownload.running) menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z) }
+        }
     }
 
     private fun render(event: FullscreenRenderEvent) {
@@ -118,7 +123,7 @@ internal object JourneyMapMenus {
         }
         val lines = listOfNotNull(
             blockUnder(map, event.mouseX, event.mouseY)?.let { (x, z) -> OtherDimensionCoords.forWorldMap(x, z) },
-            MapPrep.status(),
+            JourneyMapDownload.status() ?: MapPrep.status(),
         )
         if (lines.isEmpty()) return
         val graphics = event.graphics
@@ -131,6 +136,22 @@ internal object JourneyMapMenus {
             graphics.centeredText(font, line, middle, top + 2, 0xFFFFFFFF.toInt())
             top += 13
         }
+    }
+
+    /**
+     * "Download BlueMap…": closes the map and asks in chat, where the buttons to go ahead are, as on
+     * Xaero's map; nothing is written from here. Into the dimension you are in, which is the map
+     * JourneyMap keeps for this world.
+     */
+    private fun offerDownload(x: Int, z: Int) {
+        Ui.open(null)
+        val message = Component.literal("Download BlueMap into JourneyMap's map, backing up each region first: ")
+            .append(ChatButton.of("[This region, unexplored]", "/mapexposer download region $x $z", "Only where JourneyMap has nothing, in the 512-block region you clicked."))
+            .append(" ")
+            .append(ChatButton.of("[Everything, unexplored]", "/mapexposer download unexplored", "Only where JourneyMap has nothing, everywhere BlueMap has the map."))
+            .append(" ")
+            .append(ChatButton.of("[Everything]", "/mapexposer download all", "Everywhere BlueMap has the map, over your own map too."))
+        Minecraft.getInstance().player?.sendSystemMessage(message)
     }
 
     /**
