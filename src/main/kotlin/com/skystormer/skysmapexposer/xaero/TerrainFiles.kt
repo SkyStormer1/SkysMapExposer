@@ -3,7 +3,6 @@ package com.skystormer.skysmapexposer.xaero
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SharedTerrain
-import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.xaero.BlueMapDownload
 import com.skystormer.skysmapexposer.xaero.XaeroWriter
@@ -42,8 +41,6 @@ import java.time.format.DateTimeFormatter
 object TerrainFiles {
 
     private val EXTENSION = SharedTerrain.EXTENSION
-    private val MAGIC = SharedTerrain.MAGIC
-    private const val VERSION = SharedTerrain.VERSION
     /** Regions packed but not yet in the file; reading waits while this many are. */
     private const val QUEUED = 2
     /** Regions of an opened file read ahead of the one being written into your map. */
@@ -89,13 +86,7 @@ object TerrainFiles {
             val file = folder.resolve(base + EXTENSION)
             val part = folder.resolve("$base$EXTENSION.part")
             val out = DataOutputStream(BufferedOutputStream(Files.newOutputStream(part)))
-            out.write(MAGIC)
-            out.writeInt(VERSION)
-            out.writeUTF(me)
-            out.writeUTF(reader.dimensionId)
-            out.writeInt(reader.layer)
-            ShareFormat.writeArea(out, area)
-            out.writeLong(System.currentTimeMillis())
+            SharedTerrain.startFile(out, me, reader.dimensionId, reader.layer, area)
             saving = Saving(reader, part, file, out)
             Log.info("Saving the terrain of {} regions (cave layer {}) to {}", reader.batches, reader.layer, file)
             "Saving the terrain of ${area.width} × ${area.height} chunks to a file…"
@@ -146,12 +137,7 @@ object TerrainFiles {
                 worker.execute {
                     try {
                         if (current.error == null && !current.cancelled) {
-                            val bytes = step.bytes
-                            current.out.writeInt(rx)
-                            current.out.writeInt(rz)
-                            current.out.writeInt(step.count)
-                            current.out.writeInt(bytes.size)
-                            current.out.write(bytes)
+                            SharedTerrain.writeRegion(current.out, rx, rz, step.count, step.bytes)
                             current.regions.incrementAndGet()
                         }
                     } catch (e: Exception) {

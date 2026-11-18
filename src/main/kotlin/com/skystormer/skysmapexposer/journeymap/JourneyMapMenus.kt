@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer.journeymap
 
-import com.mojang.blaze3d.platform.InputConstants
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
@@ -18,9 +17,10 @@ import journeymap.api.v2.client.event.PopupMenuEvent
 import journeymap.api.v2.client.fullscreen.IFullscreen
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.event.FullscreenEventRegistry
+import journeymap.client.ui.UIManager
 import journeymap.client.ui.fullscreen.Fullscreen
+import net.minecraft.core.BlockPos
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
-import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -42,9 +42,6 @@ internal object JourneyMapMenus {
     /** A Go to waiting for the full-screen map to open, and the dimension it is for. */
     private var pending: Pair<Int, Int>? = null
     private var pendingDimension: String? = null
-
-    /** The block under the mouse when the map was last drawn: where a right-click opens the menu. */
-    private var mouseBlock: Pair<Int, Int>? = null
 
     /** Switches [map] to [dimension] if it is showing another ([JourneyMapDimension]). */
     private fun showIfOther(map: IFullscreen, dimension: String) {
@@ -71,7 +68,6 @@ internal object JourneyMapMenus {
     fun forget() {
         fullscreen = null
         pending = null
-        mouseBlock = null
         JourneyMapDimension.forget()
     }
 
@@ -108,13 +104,21 @@ internal object JourneyMapMenus {
                 if (mine == null || mine.second.isEmpty()) Ui.say("You have no saved waypoints here to share")
                 else Ui.open(WaypointShareScreen(map.screen, mine.first, mine.second))
             }
+            // Xaero's map saves the chunks dragged over; JourneyMap's has no picking, so the region clicked.
+            if (dimension != null && !JourneyMapTerrainSave.busy) {
+                menu.addMenuItem("Save terrain file (this region)") { block ->
+                    val rx = Math.floorDiv(block.x, JourneyMapFiles.REGION)
+                    val rz = Math.floorDiv(block.z, JourneyMapFiles.REGION)
+                    Ui.say(JourneyMapTerrainSave.save(dimension, rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31))
+                }
+            }
             val other = dimension?.let(WaypointRules::counterpartName)
             if (other != null) {
                 menu.addMenuItem("$other temp waypoint") { block -> Ui.say(JourneyMapWaypoints.counterpart(api, block.x, block.z, dimension)) }
             }
         }
         // Biome highlight, as Xaero's map bar picks them: the biome JourneyMap knows under the click.
-        val biome = mouseBlock?.let { (x, z) -> JourneyMapBiomes.biomeAt(map.uiState, x, z) }
+        val biome = blockAtMouse(map)?.let { JourneyMapBiomes.biomeAt(map.uiState, it.x, it.z) }
         if (biome != null) {
             val name = BiomePicks.nameOf(biome)
             menu.addMenuItem(if (BiomePicks.isPicked(biome)) "Stop highlighting $name" else "Highlight $name") { BiomePicks.toggle(biome) }
@@ -145,9 +149,8 @@ internal object JourneyMapMenus {
             pendingDimension = null
             map.centerOn(x.toDouble(), z.toDouble())
         }
-        mouseBlock = blockUnder(map, event.mouseX, event.mouseY)
         val lines = listOfNotNull(
-            mouseBlock?.let { (x, z) -> OtherDimensionCoords.forWorldMap(x, z) },
+            blockAtMouse(map)?.let { OtherDimensionCoords.forWorldMap(it.x, it.z) },
             JourneyMapEdits.status() ?: MapPrep.status(),
             BiomePicks.all.keys.takeIf { it.isNotEmpty() }?.joinToString(", ", "Highlighted: ") { BiomePicks.nameOf(it) },
         ).filter { it.isNotBlank() }
@@ -202,23 +205,16 @@ internal object JourneyMapMenus {
         return doubleArrayOf(x - halfWide, z - halfHigh, x + halfWide, z + halfHigh)
     }
 
-    /**
-     * The block under the mouse at ([mouseX], [mouseY]), in GUI pixels: the map's own centre, plus
-     * the mouse's distance from the middle of the window over JourneyMap's [UIState.blockSize]
-     * (window pixels a block, at its zoom). The view's block area lags a moved map, so is not used.
-     */
-    private fun blockUnder(map: IFullscreen, mouseX: Int, mouseY: Int): Pair<Int, Int>? {
-        val pixelsPerBlock = map.uiState?.blockSize?.takeIf { it > 0 } ?: return null
-        val window = Minecraft.getInstance().window
-        val scale = window.guiScale.toDouble()
-        val x = map.getCenterBlockX(false) + (mouseX * scale - window.width / 2.0) / pixelsPerBlock
-        val z = map.getCenterBlockZ(false) + (mouseY * scale - window.height / 2.0) / pixelsPerBlock
-        return kotlin.math.floor(x).toInt() to kotlin.math.floor(z).toInt()
+    /** The block under the mouse on JourneyMap's full-screen map, as JourneyMap itself works it out. */
+    private fun blockAtMouse(map: IFullscreen): BlockPos? = try {
+        (map as? Fullscreen)?.blockAtMouse
+    } catch (e: LinkageError) {
+        null
     }
 
     /**
      * Moves the full-screen map to ([x], [z]) of [dimension]: back to the open map [from] if that
-     * is it, otherwise opened with JourneyMap's own key and moved once it is up.
+     * is it, otherwise opened (JourneyMap's own way of opening it) and moved once it is up.
      */
     fun goTo(dimension: String, x: Int, z: Int, from: Screen?): Boolean {
         val map = fullscreen
@@ -228,13 +224,15 @@ internal object JourneyMapMenus {
             map.centerOn(x.toDouble(), z.toDouble())
             return true
         }
-        val mappings = Minecraft.getInstance().options.keyMappings
-        val key = FULLSCREEN_KEYS.firstNotNullOfOrNull { name -> mappings.firstOrNull { it.name == name && !it.isUnbound } } ?: return false
         pending = x to z
         pendingDimension = dimension
-        Ui.open(null)
-        KeyMapping.click(InputConstants.getKey(key.saveString()))
-        return true
+        return try {
+            UIManager.INSTANCE.getOrOpenFullscreenMap()
+            true
+        } catch (e: LinkageError) {
+            pending = null
+            false
+        }
     }
 
     private inline fun guard(block: () -> Unit) {
@@ -242,11 +240,10 @@ internal object JourneyMapMenus {
             block()
         } catch (e: Exception) {
             Log.error("Something of this mod's on JourneyMap's map failed", e)
+        } catch (e: LinkageError) {
+            Log.error("Something of this mod's on JourneyMap's map failed", e)
         }
     }
-
-    /** JourneyMap's keys for its full-screen map, the one it binds (J) first. */
-    private val FULLSCREEN_KEYS = listOf("key.journeymap.map_toggle_alt", "key.journeymap.map_toggle")
 
     /** The dimension button's picture: an eye of ender, from the game's own items. */
     private val DIMENSION_ICON = net.minecraft.resources.Identifier.withDefaultNamespace("textures/item/ender_eye.png")

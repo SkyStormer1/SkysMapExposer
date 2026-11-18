@@ -7,21 +7,12 @@ import com.skystormer.skysmapexposer.ShareFormat.Header
 import com.skystormer.skysmapexposer.ShareFormat.MAX_SIDE
 import com.skystormer.skysmapexposer.ShareFormat.Source
 import com.skystormer.skysmapexposer.ShareFormat.Step
-import com.skystormer.skysmapexposer.ShareFormat.TERRAIN
 import com.skystormer.skysmapexposer.ShareFormat.pack
-import com.skystormer.skysmapexposer.ShareFormat.varint
-import com.skystormer.skysmapexposer.ShareFormat.zigzag
 import com.skystormer.skysmapexposer.mixin.MapPixelAccess
-import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ThreadLocalRandom
-import net.minecraft.commands.arguments.blocks.BlockStateParser
-import net.minecraft.resources.ResourceKey
-import net.minecraft.world.level.biome.Biome
 import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.block.state.BlockState
 import xaero.map.MapProcessor
 import xaero.map.WorldMapSession
 import xaero.map.region.MapBlock
@@ -79,41 +70,30 @@ object TerrainFormat {
         abstract fun pack(header: Header): ByteArray
     }
 
-    /** Terrain: per chunk its position and 256 blocks (x * 16 + z), each as Xaero keeps it. */
+    /** Terrain: per chunk its position and 256 blocks (x * 16 + z), each as Xaero keeps it, through the one writer. */
     class TerrainBody(part: Area) : Collector(part) {
-        private val states = LinkedHashMap<BlockState, Int>()
-        private val biomes = LinkedHashMap<ResourceKey<Biome>, Int>()
-        private val body = ByteArrayOutputStream()
-        private val data = DataOutputStream(body)
+        private val writer = SharedTerrain.Writer()
 
         override fun chunk(cx: Int, cz: Int, blocks: Array<MapBlock?>) {
-            data.writeInt(cx)
-            data.writeInt(cz)
-            for (block in blocks) {
+            val chunk = SharedTerrain.SharedChunk()
+            for ((i, block) in blocks.withIndex()) {
                 block!!
-                val state = block.state ?: Blocks.AIR.defaultBlockState()
-                varint(data, states.getOrPut(state) { states.size })
-                data.writeShort(block.height)
-                varint(data, zigzag(block.topHeight - block.height))
-                varint(data, block.biome?.let { biomes.getOrPut(it) { biomes.size } + 1 } ?: 0)
-                data.writeByte(lightAndGlow(block))
-                val overlays = block.overlays.orEmpty().take(MAX_OVERLAYS)
-                varint(data, overlays.size)
-                for (overlay in overlays) {
-                    varint(data, states.getOrPut(overlay.state ?: Blocks.AIR.defaultBlockState()) { states.size })
-                    data.writeByte(lightAndGlow(overlay))
-                    data.writeByte(overlay.opacity)
-                }
+                chunk.state[i] = block.state
+                chunk.height[i] = block.height.toShort()
+                chunk.top[i] = block.topHeight.toShort()
+                chunk.biome[i] = block.biome
+                val bits = lightAndGlow(block)
+                chunk.light[i] = (bits and 15).toByte()
+                chunk.glowing[i] = bits and 16 != 0
+                chunk.overlays[i] = block.overlays.orEmpty().take(MAX_OVERLAYS).map { overlay ->
+                    val overlayBits = lightAndGlow(overlay)
+                    SharedTerrain.SharedOverlay(overlay.state ?: Blocks.AIR.defaultBlockState(), (overlayBits and 15).toByte(), overlayBits and 16 != 0, overlay.opacity)
+                }.ifEmpty { null }
             }
+            writer.chunk(cx, cz, chunk)
         }
 
-        override fun pack(header: Header): ByteArray = pack(TERRAIN, header, chunks) { out ->
-            varint(out, states.size)
-            for (state in states.keys) out.writeUTF(BlockStateParser.serialize(state))
-            varint(out, biomes.size)
-            for (biome in biomes.keys) out.writeUTF(biome.identifier().toString())
-            body.writeTo(out)
-        }
+        override fun pack(header: Header): ByteArray = writer.pack(header)
     }
 
     /**

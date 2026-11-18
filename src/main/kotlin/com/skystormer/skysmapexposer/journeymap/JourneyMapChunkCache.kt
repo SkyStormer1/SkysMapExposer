@@ -2,13 +2,18 @@ package com.skystormer.skysmapexposer.journeymap
 
 import net.minecraft.core.Holder
 import net.minecraft.core.RegistryAccess
+import net.minecraft.core.registries.Registries
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
 import net.minecraft.nbt.LongArrayTag
 import net.minecraft.nbt.NbtOps
+import net.minecraft.nbt.NbtUtils
 import net.minecraft.nbt.StringTag
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.biome.Biome
+import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.chunk.DataLayer
 import net.minecraft.world.level.chunk.PalettedContainerFactory
 import net.minecraft.world.level.chunk.PalettedContainerRO
 import net.minecraft.world.level.levelgen.Heightmap
@@ -21,15 +26,21 @@ import java.nio.file.Path
 import java.util.zip.InflaterInputStream
 
 /**
- * Reads the biomes out of JourneyMap's chunk cache files, for any dimension, whether or not
- * JourneyMap has that dimension's cache open: JourneyMap keeps only the one you are in open, and
- * its own reader opens files for writing. This only ever reads, never writes.
+ * Reads JourneyMap's chunk cache files, for any dimension, whether or not JourneyMap has that
+ * dimension's cache open: JourneyMap keeps only the one you are in open, and its own reader opens
+ * files for writing. This only ever reads, never writes.
+ *
+ * JourneyMap's cache is what Xaero's map keeps for itself and JourneyMap's map does not: every
+ * chunk it has mapped, blocks, biomes, heights and light. The biome tint reads it
+ * ([JourneyMapBiomes]), and so does saving terrain files ([JourneyMapTerrainSave]).
  *
  * A file (`c.<regionX>.<regionZ>.jmc`) holds a region's 32 by 32 chunks: a 16-byte header ("JMCA",
  * format 1, deflate), then where each chunk is and how long, then each chunk deflated. A chunk
- * ("JMCS", format 1) holds its sections (blocks, which are skipped, and biomes, a palette of names
- * and the packed indices the game itself uses, decoded with the game's own codec), then its
- * height maps. Any other format is refused as a whole ([knownFormat] goes false), not guessed at.
+ * ("JMCS", format 1) holds its sections (blocks: a palette of block names and properties, then an
+ * index per block, y by z by x; and biomes: a palette of names and the packed indices the game
+ * itself uses, decoded with the game's own codec), then its height maps, then its block light.
+ * Blocks and light are only decoded when asked for, as the biome tint needs neither. Any other
+ * format is refused as a whole ([knownFormat] goes false), not guessed at.
  *
  * Sizes are checked before anything is allocated, so a damaged file costs that chunk, not memory.
  */
@@ -40,30 +51,51 @@ internal object JourneyMapChunkCache {
     var knownFormat = true
         private set
 
-    /** A chunk's biomes: each section's, by section from [minSectionY], and the top block's height per column. */
+    /** A section's blocks: its palette, and an index into it per block (`y * 256 + z * 16 + x`). */
+    class SectionBlocks(val palette: Array<BlockState>, val indices: ShortArray)
+
+    /**
+     * A chunk: each section's biomes (and blocks and block light, when read), by section from
+     * [minSectionY], and the height just above the top block of each column (`x + z * 16`).
+     */
     class Chunk(
         private val minSectionY: Int,
-        private val minBuild: Int,
-        private val maxBuild: Int,
-        private val sections: Array<PalettedContainerRO<Holder<Biome>>?>,
-        private val surface: IntArray?,
+        val minBuild: Int,
+        val maxBuild: Int,
+        private val biomes: Array<PalettedContainerRO<Holder<Biome>>?>,
+        val surface: IntArray?,
+        private val blocks: Array<SectionBlocks?>?,
+        private val light: Array<DataLayer?>?,
     ) {
         /** The biome at column ([x], [z]) of the chunk: at its top block, or at height [y] when given. */
         fun biomeAt(x: Int, z: Int, y: Int?): ResourceKey<Biome>? {
             val at = y ?: ((surface ?: return null)[x + z * 16] - 1)
             if (at < minBuild || at >= maxBuild) return null
-            val section = sections.getOrNull((at shr 4) - minSectionY) ?: return null
+            val section = biomes.getOrNull((at shr 4) - minSectionY) ?: return null
             return section.get(x shr 2, (at and 15) shr 2, z shr 2).unwrapKey().orElse(null)
         }
+
+        /** The block at ([x], [y], [z]) of the chunk; air where it has none. Only when read with blocks. */
+        fun blockAt(x: Int, y: Int, z: Int): BlockState {
+            val section = blocks?.getOrNull((y shr 4) - minSectionY) ?: return AIR
+            val index = section.indices[((y and 15) shl 8) or (z shl 4) or x].toInt() and 0xFFFF
+            return section.palette.getOrElse(index) { AIR }
+        }
+
+        /** The block light at ([x], [y], [z]), 0 to 15. */
+        fun lightAt(x: Int, y: Int, z: Int): Int = light?.getOrNull((y shr 4) - minSectionY)?.get(x, y and 15, z) ?: 0
     }
 
-    /** Every chunk of the region file [file] (index `z * 32 + x` within it), null where it has none. Off the client thread. */
-    fun readRegion(file: Path, registries: RegistryAccess): Array<Chunk?> {
+    /**
+     * Every chunk of the region file [file] (index `z * 32 + x` within it), null where it has none;
+     * [withBlocks] to read blocks and light too. Off the client thread.
+     */
+    fun readRegion(file: Path, registries: RegistryAccess, withBlocks: Boolean = false): Array<Chunk?> {
         val chunks = arrayOfNulls<Chunk>(CHUNKS)
         if (!Files.isRegularFile(file)) return chunks
         val bytes = Files.readAllBytes(file)
         val (offsets, lengths) = index(ByteBuffer.wrap(bytes), bytes.size.toLong()) ?: return chunks
-        val decoder = Decoder(registries)
+        val decoder = Decoder(registries, withBlocks)
         for (i in 0 until CHUNKS) {
             if (lengths[i] == 0) continue
             chunks[i] = try {
@@ -75,7 +107,7 @@ internal object JourneyMapChunkCache {
         return chunks
     }
 
-    /** Chunk [index] (`z * 32 + x` within its region) of [file] alone, reading only that much. */
+    /** Chunk [index] (`z * 32 + x` within its region) of [file] alone, reading only that much; biomes only. */
     fun readChunk(file: Path, index: Int, registries: RegistryAccess): Chunk? {
         if (!Files.isRegularFile(file)) return null
         Files.newByteChannel(file).use { channel ->
@@ -88,7 +120,7 @@ internal object JourneyMapChunkCache {
             channel.position(offsets[index].toLong())
             while (data.hasRemaining() && channel.read(data) > 0) { /* fill */ }
             if (data.hasRemaining()) return null
-            return Decoder(registries).chunk(inflate(data.array(), 0, data.capacity()))
+            return Decoder(registries, false).chunk(inflate(data.array(), 0, data.capacity()))
         }
     }
 
@@ -106,7 +138,8 @@ internal object JourneyMapChunkCache {
         val offsets = IntArray(CHUNKS) { buffer.int }
         val lengths = IntArray(CHUNKS) { buffer.int }
         for (i in 0 until CHUNKS) {
-            val bad = lengths[i] < 0 || lengths[i] > MAX_CHUNK || (lengths[i] > 0 && (offsets[i] < DATA_START || offsets[i].toLong() + lengths[i] > fileSize))
+            val bad = lengths[i] < 0 || lengths[i] > MAX_CHUNK ||
+                (lengths[i] > 0 && (offsets[i] < DATA_START || offsets[i].toLong() + lengths[i] > fileSize))
             if (bad) lengths[i] = 0
         }
         return offsets to lengths
@@ -118,9 +151,10 @@ internal object JourneyMapChunkCache {
         return DataInputStream(ByteArrayInputStream(inflated))
     }
 
-    /** Decodes chunks with the game's biome codec, made once per batch. */
-    private class Decoder(registries: RegistryAccess) {
+    /** Decodes chunks with the game's own readers (biome codec, block states), made once per batch. */
+    private class Decoder(registries: RegistryAccess, private val withBlocks: Boolean) {
         private val codec = PalettedContainerFactory.create(registries).biomeContainerCodec()
+        private val blockLookup = registries.lookupOrThrow(Registries.BLOCK)
 
         fun chunk(input: DataInputStream): Chunk? {
             if (input.readInt() != CHUNK_MAGIC || input.readByte() != CHUNK_VERSION) {
@@ -131,12 +165,16 @@ internal object JourneyMapChunkCache {
             val minBuild = input.readInt()
             val maxBuild = input.readInt()
             val sectionCount = ((maxBuild - minBuild) shr 4).coerceIn(0, MAX_SECTIONS)
-            val sections = arrayOfNulls<PalettedContainerRO<Holder<Biome>>>(sectionCount)
+            val biomes = arrayOfNulls<PalettedContainerRO<Holder<Biome>>>(sectionCount)
+            val blocks = if (withBlocks) arrayOfNulls<SectionBlocks>(sectionCount) else null
             repeat(input.readUnsignedByte()) {
                 val index = input.readUnsignedByte()
-                skipBlocks(input)
-                val biomes = biomes(input)
-                if (index < sectionCount) sections[index] = biomes
+                val sectionBlocks = blocks(input)
+                val sectionBiomes = biomes(input)
+                if (index < sectionCount) {
+                    biomes[index] = sectionBiomes
+                    blocks?.set(index, sectionBlocks)
+                }
             }
             var surface: IntArray? = null
             repeat(input.readUnsignedByte()) {
@@ -144,16 +182,43 @@ internal object JourneyMapChunkCache {
                 val heights = IntArray(256) { input.readShort().toInt() }
                 if (Heightmap.Types.entries.getOrNull(type) == Heightmap.Types.WORLD_SURFACE) surface = heights
             }
-            return Chunk(minSectionY, minBuild, maxBuild, sections, surface)
+            val light = if (withBlocks) arrayOfNulls<DataLayer>(sectionCount) else null
+            if (light != null) {
+                repeat(input.readUnsignedByte()) {
+                    val index = input.readUnsignedByte()
+                    val bytes = ByteArray(2048).also(input::readFully)
+                    if (index < sectionCount) light[index] = DataLayer(bytes)
+                }
+            }
+            return Chunk(minSectionY, minBuild, maxBuild, biomes, surface, blocks, light)
         }
 
-        /** A section's blocks: a palette of block names with their properties, then 4096 indices. */
-        private fun skipBlocks(input: DataInputStream) {
+        /**
+         * A section's blocks: a palette of block names with their properties, then 4096 indices.
+         * Decoded only [withBlocks], else skipped. A block this game does not know is air.
+         */
+        private fun blocks(input: DataInputStream): SectionBlocks? {
+            val palette = ArrayList<BlockState>()
             repeat(count(input, MAX_PALETTE)) {
-                input.readUTF()
-                repeat(input.readUnsignedByte()) { input.readUTF(); input.readUTF() }
+                val name = input.readUTF()
+                val properties = CompoundTag()
+                repeat(input.readUnsignedByte()) { properties.putString(input.readUTF(), input.readUTF()) }
+                if (withBlocks) palette.add(blockState(name, properties))
             }
-            input.skipNBytes(4096L * 2)
+            if (!withBlocks) {
+                input.skipNBytes(4096L * 2)
+                return null
+            }
+            return SectionBlocks(palette.toTypedArray(), ShortArray(4096) { input.readShort() })
+        }
+
+        private fun blockState(name: String, properties: CompoundTag): BlockState = try {
+            val tag = CompoundTag()
+            tag.putString("Name", name)
+            if (!properties.isEmpty) tag.put("Properties", properties)
+            NbtUtils.readBlockState(blockLookup, tag)
+        } catch (e: Exception) {
+            AIR
         }
 
         /** A section's biomes, as the game keeps them: a palette of names and the packed indices into it. */
@@ -173,6 +238,8 @@ internal object JourneyMapChunkCache {
             return count
         }
     }
+
+    private val AIR: BlockState = Blocks.AIR.defaultBlockState()
 
     private val FILE_MAGIC = "JMCA".toByteArray(Charsets.US_ASCII)
     private const val FILE_VERSION: Byte = 1

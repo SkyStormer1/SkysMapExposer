@@ -57,6 +57,30 @@ object JourneyMapAdapter : MapAdapter {
     override fun checkHooks() {
         if (!dimensionHooked()) Log.warn("Could not hook JourneyMap's full-screen map; its dimension button will snap back to yours")
         if (!minimapHooked()) Log.warn("Could not hook JourneyMap's minimap; BlueMap's terrain and the biome tint will not show on it")
+        missingInternals.forEach { Log.warn("This JourneyMap has no {}; {}", it.first, it.second) }
+    }
+
+    /**
+     * JourneyMap's own classes and methods this mod calls beyond its API, each with what goes without
+     * it; those this JourneyMap lacks. Looked up once: a JourneyMap update that renames one costs
+     * that part, says so, and never crashes the game.
+     */
+    val missingInternals: List<Pair<String, String>> by lazy {
+        listOf(
+            Triple("journeymap.client.ui.fullscreen.Fullscreen", "getBlockAtMouse", "the block under the mouse (right-click biome entry, other dimension's coordinates)"),
+            Triple("journeymap.client.ui.UIManager", "getOrOpenFullscreenMap", "Go to from the player list"),
+            Triple("journeymap.client.io.FileHandler", "getJMWorldDir", "downloads, clearing, imports, saving and the biome tint (its folders)"),
+            Triple("journeymap.client.model.region.RegionImageCache", "getRegionImageSets", "downloads, clearing and imports (which regions it holds)"),
+            Triple("journeymap.client.model.block.BlockMD", "get", "shared terrain added in its colours"),
+            Triple("journeymap.client.render.JmRenderRouter", "addGuiElement", "BlueMap's terrain and the biome tint on the minimap"),
+            Triple("journeymap.client.render.map.Renderer", "markOverlaySurfaceDirty", "the minimap redrawing when this mod's pictures change"),
+        ).filter { (type, method, _) ->
+            try {
+                Class.forName(type).methods.none { it.name == method }
+            } catch (e: Throwable) {
+                true
+            }
+        }.map { (type, method, what) -> "${type.substringAfterLast('.')}.$method" to "$what will not work" }
     }
 
     private fun dimensionHooked() = MapExposerClient.injected("journeymap.client.model.map.MapState", "keepDimension")
@@ -135,6 +159,19 @@ object JourneyMapAdapter : MapAdapter {
         }
         root.then(clear)
         root.then(biomeCommand())
+        // The same as Xaero's: the chunks between two block positions, from the map shown.
+        root.then(ClientCommands.literal("terrain").then(ClientCommands.literal("save")
+            .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
+                .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
+                    .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
+                        .then(ClientCommands.argument("z2", IntegerArgumentType.integer()).executes { context ->
+                            fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
+                            val dimension = shownDimension() ?: return@executes say(context, "Not in a world")
+                            say(context, JourneyMapTerrainSave.save(
+                                dimension, minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")),
+                                maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")),
+                            ))
+                        }))))))
     }
 
     /**
@@ -186,7 +223,8 @@ object JourneyMapAdapter : MapAdapter {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
         if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}" + (JourneyMapBiomes.summary()?.let { ", $it" } ?: ""))
         fun mark(ok: Boolean) = if (ok) "§aok§r" else "§cmissing§r"
-        say("JourneyMap hooks: dimension ${mark(dimensionHooked())}, minimap ${mark(minimapHooked() && JourneyMapMinimap.working)}, chunk cache ${mark(JourneyMapChunkCache.knownFormat)}")
+        say("JourneyMap hooks: dimension ${mark(dimensionHooked())}, minimap ${mark(minimapHooked() && JourneyMapMinimap.working)}, chunk cache ${mark(JourneyMapChunkCache.knownFormat)}, " +
+            "internals " + if (missingInternals.isEmpty()) mark(true) else "§c${missingInternals.joinToString { it.first }} missing§r")
     }
 
     /** The full-screen map's dimension while it is open; otherwise yours, which it opens on. */

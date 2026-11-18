@@ -424,8 +424,10 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
   show where JourneyMap has mapped, in whichever dimension the map shows.
 - **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
   map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
-  map, with the same backups and undo. Saving one needs Xaero's map, which is what keeps every
-  block; a file of a cave layer only goes into Xaero's.
+  map, with the same backups and undo. Save one from JourneyMap with "Save terrain file (this
+  region)" on the right-click menu or `/mapexposer terrain save <x1> <z1> <x2> <z2>`: it is read from
+  JourneyMap's chunk cache, so it holds the chunks JourneyMap has cached, and either map can add it.
+  A file of a cave layer only goes into Xaero's.
 
 ## Limits
 

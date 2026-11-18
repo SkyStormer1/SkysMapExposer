@@ -25,7 +25,7 @@ import java.util.concurrent.ThreadLocalRandom
 /**
  * Terrain shared by file (`.smemap`, in the game folder's `shared maps` folder), for either map:
  * opening one dropped onto the game ([dropped], [open]), and reading it back a region at a time
- * ([region]). Saving one is Xaero's (`xaero.TerrainFiles`), as its map is what keeps every block;
+ * ([region]), and the format they are written in ([startFile], [Writer]), for either map's saving;
  * adding one goes to the map in use ([MapAdapter.addSharedTerrain]).
  *
  * The file: [MAGIC], [VERSION], who saved it, the dimension, Xaero's cave layer it was read from
@@ -66,6 +66,75 @@ object SharedTerrain {
     class Region(val regionX: Int, val regionZ: Int) {
         val chunks = arrayOfNulls<SharedChunk>(32 * 32)
     }
+
+    // ---- writing ----
+
+    /** Starts a terrain file: everything before the regions. */
+    fun startFile(out: DataOutputStream, from: String, dimensionId: String, layer: Int, area: ShareFormat.Area) {
+        out.write(MAGIC)
+        out.writeInt(VERSION)
+        out.writeUTF(from)
+        out.writeUTF(dimensionId)
+        out.writeInt(layer)
+        ShareFormat.writeArea(out, area)
+        out.writeLong(System.currentTimeMillis())
+    }
+
+    /** One region of a terrain file: where it is, its chunk count, then its batch. */
+    fun writeRegion(out: DataOutputStream, regionX: Int, regionZ: Int, chunks: Int, batch: ByteArray) {
+        out.writeInt(regionX)
+        out.writeInt(regionZ)
+        out.writeInt(chunks)
+        out.writeInt(batch.size)
+        out.write(batch)
+    }
+
+    /**
+     * Packs chunks into one [ShareFormat.TERRAIN] batch: the blocks and biomes used, then per chunk
+     * its position and its 256 columns (`x * 16 + z`). The one writer of the format, for either map.
+     */
+    class Writer {
+        var chunks = 0
+            private set
+        private val states = LinkedHashMap<BlockState, Int>()
+        private val biomes = LinkedHashMap<ResourceKey<Biome>, Int>()
+        private val body = ByteArrayOutputStream()
+        private val data = DataOutputStream(body)
+
+        fun chunk(cx: Int, cz: Int, chunk: SharedChunk) {
+            data.writeInt(cx)
+            data.writeInt(cz)
+            for (i in 0 until 256) {
+                varint(data, stateIndex(chunk.state[i]))
+                data.writeShort(chunk.height[i].toInt())
+                varint(data, ShareFormat.zigzag(chunk.top[i] - chunk.height[i]))
+                varint(data, chunk.biome[i]?.let { biomes.getOrPut(it) { biomes.size } + 1 } ?: 0)
+                data.writeByte(lightAndGlow(chunk.light[i], chunk.glowing[i]))
+                val overlays = chunk.overlays[i].orEmpty().take(MAX_OVERLAYS)
+                varint(data, overlays.size)
+                for (overlay in overlays) {
+                    varint(data, stateIndex(overlay.state))
+                    data.writeByte(lightAndGlow(overlay.light, overlay.glowing))
+                    data.writeByte(overlay.opacity)
+                }
+            }
+            chunks++
+        }
+
+        fun pack(header: ShareFormat.Header): ByteArray = ShareFormat.pack(ShareFormat.TERRAIN, header, chunks) { out ->
+            varint(out, states.size)
+            for (state in states.keys) out.writeUTF(BlockStateParser.serialize(state))
+            varint(out, biomes.size)
+            for (biome in biomes.keys) out.writeUTF(biome.identifier().toString())
+            body.writeTo(out)
+        }
+
+        private fun stateIndex(state: BlockState?): Int = states.getOrPut(state ?: Blocks.AIR.defaultBlockState()) { states.size }
+
+        private fun lightAndGlow(light: Byte, glowing: Boolean): Int = (light.toInt() and 15) or (if (glowing) 16 else 0)
+    }
+
+    // ---- opening ----
 
     private val opened = LinkedHashMap<Int, Opened>()
 
