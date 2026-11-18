@@ -2,15 +2,11 @@ package com.skystormer.skysmapexposer
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
 import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
 import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.util.concurrent.Executor
 import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPOutputStream
 
 /**
  * When you last had each chunk loaded, per dimension, for one server.
@@ -75,9 +71,7 @@ class VisitLog(private val folder: Path, private val io: Executor) {
 
     private fun write(path: Path, visits: Long2IntOpenHashMap) {
         try {
-            Files.createDirectories(path.parent)
-            val temporary = path.resolveSibling(path.fileName.toString() + ".tmp")
-            DataOutputStream(BufferedOutputStream(GZIPOutputStream(Files.newOutputStream(temporary)))).use { output ->
+            SafeFiles.writeGzip(path) { output ->
                 output.writeInt(MAGIC)
                 output.writeInt(1)
                 output.writeInt(visits.size)
@@ -88,8 +82,6 @@ class VisitLog(private val folder: Path, private val io: Executor) {
                     output.writeInt(entry.intValue)
                 }
             }
-            // Written aside and moved into place so a crash mid-write cannot lose the old record.
-            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (e: Exception) {
             Log.error("Could not save $path", e)
         }

@@ -20,6 +20,16 @@ object HookErrors {
     @JvmStatic
     fun isOff(feature: String): Boolean = feature in off
 
+    /** Runs [block] unless [feature] is off; an error in it switches [feature] off ([failed]). */
+    inline fun guard(feature: String, block: () -> Unit) {
+        if (isOff(feature)) return
+        try {
+            block()
+        } catch (e: Throwable) {
+            failed(feature, e)
+        }
+    }
+
     @JvmStatic
     fun failed(feature: String, e: Throwable) {
         if (!off.add(feature)) return

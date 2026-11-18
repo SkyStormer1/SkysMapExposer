@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.journeymap.JourneyMapFiles.REGION
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
@@ -149,7 +150,7 @@ internal object JourneyMapBiomes {
         }
     }
 
-    private fun cacheFile(folder: Path, area: Area): Path = folder.resolve("c.${area.x}.${area.z}.jmc")
+    private fun cacheFile(folder: Path, area: Area): Path = JourneyMapChunkCache.file(folder, area.x, area.z)
 
     /** The height a cave slice is read at: its middle. */
     private fun sliceY(layer: Int?): Int? = layer?.let { it * 16 + 8 }
@@ -253,7 +254,6 @@ internal object JourneyMapBiomes {
 
     private fun cellIndex(x: Int, z: Int) = z * CELLS + x
 
-    private const val REGION = 512
     private const val CHUNKS = REGION / 16
     private const val CELLS = REGION / 4
 

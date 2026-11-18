@@ -1,5 +1,7 @@
 package com.skystormer.skysmapexposer
 
+import com.mojang.brigadier.context.CommandContext
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -11,6 +13,12 @@ object Ui {
     /** True while [say] is showing a line, which passes through the same chat events as the server's. */
     var saying = false
         private set
+
+    /** [text] in chat as a command's reply; 1, the command's result. */
+    fun reply(context: CommandContext<FabricClientCommandSource>, text: String): Int {
+        context.source.sendFeedback(Component.literal(text))
+        return 1
+    }
 
     /** A message on the action bar, which only this client sees. */
     fun say(message: String) {

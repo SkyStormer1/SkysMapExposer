@@ -62,11 +62,7 @@ internal object JourneyMapMinimap {
     var area: DoubleArray? = null
         private set
 
-    /**
-     * While JourneyMap draws a map into its own picture, just before its outlines: on the minimap,
-     * the terrain and then the biome tint of [renderer]'s dimension, each block's pixel taken from
-     * JourneyMap's grid and moved by [xOffset], [yOffset], with [pose]. Render thread.
-     */
+    /** Works out [area] from [renderer]: the blocks to [MEASURE] east of you, in its pixels, give its zoom. */
     private fun measure(renderer: Renderer) {
         val player = Minecraft.getInstance().player ?: return
         val here = renderer.getBlockPixelInGridExact(player.x, player.z)
@@ -79,6 +75,11 @@ internal object JourneyMapMinimap {
 
     private const val MEASURE = 64.0
 
+    /**
+     * While JourneyMap draws a map into its own picture, just before its outlines: on the minimap,
+     * the terrain and then the biome tint of [renderer]'s dimension, each block's pixel taken from
+     * JourneyMap's grid and moved by [xOffset], [yOffset], with [pose]. Render thread.
+     */
     @JvmStatic
     fun draw(graphics: GuiGraphicsExtractor, pose: Matrix3x2fStack, xOffset: Double, yOffset: Double, renderer: Renderer) {
         if (failed) return

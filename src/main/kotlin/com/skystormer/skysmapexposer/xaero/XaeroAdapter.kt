@@ -143,8 +143,7 @@ object XaeroAdapter : MapAdapter {
      * [unexploredOnly], only into chunks you have never mapped.
      */
     private fun download(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean): Int {
-        context.source.sendFeedback(Component.literal(BlueMapDownload.start(null, unexploredOnly)))
-        return 1
+        return Ui.reply(context, BlueMapDownload.start(null, unexploredOnly))
     }
 
     /** The chunks between two block positions of a command, inclusive: left, top, right, bottom. */
@@ -158,8 +157,7 @@ object XaeroAdapter : MapAdapter {
     /** The terrain of the chunks between two block positions, inclusive, to a file in the shared maps folder. */
     private fun saveTerrain(context: CommandContext<FabricClientCommandSource>): Int {
         val (left, top, right, bottom) = chunks(context)
-        context.source.sendFeedback(Component.literal(TerrainFiles.save(left, top, right, bottom)))
-        return 1
+        return Ui.reply(context, TerrainFiles.save(left, top, right, bottom))
     }
 
     override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
@@ -179,7 +177,7 @@ object XaeroAdapter : MapAdapter {
         val now = MapBackup.snapshot { done ->
             Minecraft.getInstance().player?.sendSystemMessage(Component.literal(done))
         }
-        if (now.isNotEmpty()) context.source.sendFeedback(Component.literal(now))
+        if (now.isNotEmpty()) Ui.reply(context, now)
         return 1
     }
 
@@ -198,12 +196,11 @@ object XaeroAdapter : MapAdapter {
     private fun backups(context: CommandContext<FabricClientCommandSource>): Int {
         val all = MapBackup.names()
         if (all.isEmpty()) {
-            context.source.sendFeedback(Component.literal("No copies of the map yet; /mapexposer backup takes one"))
-            return 1
+            return Ui.reply(context, "No copies of the map yet; /mapexposer backup takes one")
         }
         context.source.sendFeedback(Component.literal("Copies of the map, newest first:"))
         all.take(10).forEach { context.source.sendFeedback(Component.literal("  §b$it")) }
-        if (all.size > 10) context.source.sendFeedback(Component.literal("  §7and ${all.size - 10} more"))
+        if (all.size > 10) Ui.reply(context, "  §7and ${all.size - 10} more")
         return 1
     }
 
@@ -259,8 +256,7 @@ object XaeroAdapter : MapAdapter {
                     "they show as put back once you move a few regions away, or after a restart"
             ))
         }
-        context.source.sendFeedback(Component.literal("§7Zoom in over them to have Xaero read them again"))
-        return 1
+        return Ui.reply(context, "§7Zoom in over them to have Xaero read them again")
     }
 
     /** `clear <kind>` says what would go; `clear <kind> confirm` takes it off the map. */
@@ -271,8 +267,7 @@ object XaeroAdapter : MapAdapter {
                 1
             }
             .then(confirmClear { context, previewed ->
-                context.source.sendFeedback(Component.literal(MapClear.confirm(kind, previewed = previewed)))
-                1
+                Ui.reply(context, MapClear.confirm(kind, previewed = previewed))
             })
             .also { if (kind == MapClear.Kind.BORDER) it.then(borderBox()) }
 
@@ -317,23 +312,24 @@ object XaeroAdapter : MapAdapter {
         if (!MapExposerClient.injected("xaero.map.gui.GuiMap", "drawBiomeHighlight")) {
             Log.warn("Could not hook Xaero's map drawing for biome highlights; picking a biome will show nothing")
         }
-        if (!MapExposerClient.injected("xaero.map.gui.GuiMap", "hideArrowInOtherDimension")) {
-            Log.warn("Could not hook Xaero's player arrow; it will show on another dimension's map")
-        }
+        if (!arrowHooked()) Log.warn("Could not hook Xaero's player arrow; it will show on another dimension's map")
+        if (!elementsHooked()) Log.warn("Could not hook the minimap's elements on Xaero's map; they will show on another dimension's map")
         if (MapMods.xaeroMinimap) {
-            val radar = "xaero.hud.minimap.radar.render.element.RadarRenderer"
             // The drawing gate is the one that has to hold; the other is only a shortcut.
-            if (!MapExposerClient.injected(radar, "hideRadarDot")) {
+            if (!radarHooked()) {
                 Log.warn("Could not hook Xaero's entity radar; entities will show on another dimension's map")
-            } else if (!MapExposerClient.injected(radar, "hideRadarInOtherDimension")) {
+            } else if (!MapExposerClient.injected(RADAR, "hideRadarInOtherDimension")) {
                 Log.warn("Only half of the entity radar hook applied; entities are still hidden, less cheaply")
             }
-            val tracker = "xaero.hud.minimap.player.tracker.PlayerTrackerMinimapElementRenderer"
-            if (!MapExposerClient.injected(tracker, "hideTrackerDot")) {
-                Log.warn("Could not hook Xaero's tracked players; they will show on another dimension's map")
-            }
+            if (!trackerHooked()) Log.warn("Could not hook Xaero's tracked players; they will show on another dimension's map")
         }
     }
+
+    private fun arrowHooked() = MapExposerClient.injected("xaero.map.gui.GuiMap", "hideArrowInOtherDimension")
+    private fun elementsHooked() = MapExposerClient.injected("xaero.map.mods.minimap.element.MinimapElementRendererWrapper", "hideMinimapElementsInOtherDimension")
+    private fun radarHooked() = MapExposerClient.injected(RADAR, "hideRadarDot")
+    private fun trackerHooked() = MapExposerClient.injected("xaero.hud.minimap.player.tracker.PlayerTrackerMinimapElementRenderer", "hideTrackerDot")
+    private const val RADAR = "xaero.hud.minimap.radar.render.element.RadarRenderer"
 
     // Xaero's config is up by now; this is a one-off nudge to one of its own options.
     override fun join() = WaypointScope.matchToMapDimension()
@@ -370,8 +366,7 @@ object XaeroAdapter : MapAdapter {
                                 .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
                                     .then(ClientCommands.argument("z2", IntegerArgumentType.integer()).executes(::saveTerrain))))))
                     .then(ClientCommands.literal("cancel").executes {
-                        it.source.sendFeedback(Component.literal(if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved"))
-                        1
+                        Ui.reply(it, if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved")
                     })
             )
             .then(
@@ -399,24 +394,16 @@ object XaeroAdapter : MapAdapter {
             .then(ClientCommands.literal("skipped").executes(::skipped))
             .then(ClientCommands.literal("debug").then(ClientCommands.literal("regions").executes {
                 Overlay.debugRegions = true
-                it.source.sendFeedback(Component.literal("Open the world map where it shows black; the next frame writes what Xaero has of each region there to the log"))
-                1
+                Ui.reply(it, "Open the world map where it shows black; the next frame writes what Xaero has of each region there to the log")
             }))
     }
 
     override fun status(say: (String) -> Unit) {
-        val hook = when {
-            Overlay.hookRan -> "§aworking"
-            hookInstalled() -> "§einstalled; open the world map"
-            else -> "§cmissing: this Xaero's World Map version is not supported"
-        }
-        say("Xaero hook: $hook")
-        fun ran(hook: Boolean) = if (hook) "§aworking§r" else "§enot seen yet§r"
+        say("Xaero hook: " + if (hookInstalled()) "§aok" else "§cmissing: this Xaero's World Map version is not supported")
+        fun mark(ok: Boolean) = if (ok) "§aok§r" else "§cmissing§r"
         say(
-            "On another dimension's map — arrow: ${ran(MapView.arrowHookRan)}, " +
-                "minimap elements: ${ran(MapView.wrapperHookRan)}, " +
-                "entities: ${ran(MapView.radarHookRan)}, " +
-                "tracked players: ${ran(MapView.trackerHookRan)} (open one to check)"
+            "Hidden on another dimension's map — arrow: ${mark(arrowHooked())}, minimap elements: ${mark(elementsHooked())}" +
+                if (MapMods.xaeroMinimap) ", entities: ${mark(radarHooked())}, tracked players: ${mark(trackerHooked())}" else ""
         )
         val session = Session.current ?: return
         say("Xaero region files: ${session.regionAges.count()}")

@@ -3,11 +3,14 @@ package com.skystormer.skysmapexposer
 import com.skystormer.skysmapexposer.ShareFormat.unzigzag
 import com.skystormer.skysmapexposer.ShareFormat.varint
 import net.fabricmc.loader.api.FabricLoader
+import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.commands.arguments.blocks.BlockStateParser
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
+import net.minecraft.network.chat.ClickEvent
 import net.minecraft.network.chat.Component
+import net.minecraft.network.chat.HoverEvent
 import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.biome.Biome
@@ -20,6 +23,8 @@ import java.io.EOFException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ThreadLocalRandom
 
 /**
@@ -38,8 +43,15 @@ object SharedTerrain {
     val MAGIC = "SMEMAP".toByteArray(Charsets.US_ASCII)
     const val VERSION = 2
     private const val MAX_ENTRY = 64 shl 20
+
+    /**
+     * The most a region may unpack to: far more than a full region of the busiest terrain needs, so
+     * a file made to unpack into gigabytes is refused rather than freezing the game.
+     */
+    private const val MAX_UNPACKED = 64 shl 20
     private const val MAX_OVERLAYS = 16
     private const val KEEP_OPENED = 5
+    private val FILE_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss")
 
     val folder: Path get() = FabricLoader.getInstance().gameDir.resolve("shared maps")
 
@@ -68,6 +80,38 @@ object SharedTerrain {
     }
 
     // ---- writing ----
+
+    /**
+     * A new file in the shared maps folder for terrain of [dimensionId] near [area], named for where
+     * and when, and the `.part` file it is written to first and moved over it once whole.
+     */
+    fun newFile(dimensionId: String, area: ShareFormat.Area): Pair<Path, Path> {
+        val name = Ui.dimensionName(dimensionId) ?: dimensionId.substringAfter(':')
+        val base = "$name near ${area.x} ${area.z} ${LocalDateTime.now().format(FILE_STAMP)}".replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        Files.createDirectories(folder)
+        return folder.resolve(base + EXTENSION) to folder.resolve("$base$EXTENSION.part")
+    }
+
+    /**
+     * The chat line for a saved [file] of [chunks] chunks and [size] bytes, with how many old-season
+     * chunks were left out, anything else to say ([extra]), and a button that opens the folder.
+     */
+    fun savedMessage(chunks: Int, file: Path, size: Long, oldLeftOut: Int, extra: String = ""): Component {
+        val note = extra + if (oldLeftOut > 0) " ($oldLeftOut chunks from before the season began were left out)" else ""
+        val shown = if (size < 1 shl 20) "${(size + 1023) / 1024} KB" else "%.1f MB".format(size / (1024.0 * 1024.0))
+        return Component.literal("Saved the terrain of $chunks chunks to §b${file.fileName}§r ($shown)$note  ")
+            .append(Component.literal("[Open folder]").withStyle { style ->
+                style.withColor(ChatFormatting.GREEN)
+                    .withClickEvent(ClickEvent.OpenFile(folder))
+                    .withHoverEvent(HoverEvent.ShowText(Component.literal(
+                        "Opens the shared maps folder. Send the file to whoever you like; they drop it onto their game window to add it."
+                    )))
+            })
+    }
+
+    /** What to say when a save found nothing: all [oldLeftOut] chunks there were old-season, else [none]. */
+    fun nothingSaved(oldLeftOut: Int, none: String): String =
+        if (oldLeftOut > 0) "Nothing of your map there to save: all $oldLeftOut chunks you have there are from before the season began" else none
 
     /** Starts a terrain file: everything before the regions. */
     fun startFile(out: DataOutputStream, from: String, dimensionId: String, layer: Int, area: ShareFormat.Area) {
@@ -238,7 +282,7 @@ object SharedTerrain {
             input.readFully(bytes)
         }
         val regions = HashMap<Pair<Int, Int>, Region>()
-        ShareFormat.open(bytes) { batch ->
+        ShareFormat.open(bytes, MAX_UNPACKED) { batch ->
             if (batch.format != ShareFormat.TERRAIN) error("not terrain")
             readBatch(batch.input, batch.count, regions)
         }

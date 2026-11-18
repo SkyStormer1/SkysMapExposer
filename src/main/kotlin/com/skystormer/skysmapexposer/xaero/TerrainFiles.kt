@@ -4,49 +4,34 @@ import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.Ui
-import com.skystormer.skysmapexposer.xaero.BlueMapDownload
-import com.skystormer.skysmapexposer.xaero.XaeroWriter
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicInteger
 import com.skystormer.skysmapexposer.ShareFormat.Step
-import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
-import net.minecraft.network.chat.ClickEvent
 import net.minecraft.network.chat.Component
-import net.minecraft.network.chat.HoverEvent
 import java.io.BufferedOutputStream
 import java.io.DataOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 /**
- * Sharing terrain by file, which is far too big for chat ([ChatShare]): the chunks picked on the
- * world map are saved, every block exactly as Xaero keeps it, to a `.smemap` file in the game
- * folder's `shared maps` folder (next to `screenshots`), for you to send however you like. Whoever
- * gets it drops it onto their game window, and picks whether it fills only the chunks they have
- * never mapped or replaces their own map there too; each region is backed up just before it is
- * changed ([BlueMapDownload.startShared]).
- *
- * The file: [MAGIC], [VERSION], who saved it, the dimension, Xaero's cave layer it was read from
- * (version 2 on; version 1 files are the surface), the area and when; then one entry per
- * region — its position, chunk count and byte length, then the batch itself ([ShareFormat],
- * checksummed). Regions are read back one at a time as they are written into the map, so a big
- * file is never all in memory.
+ * Sharing terrain by file on Xaero's map, as chat ([com.skystormer.skysmapexposer.ChatShare]) is far
+ * too small for it: the chunks picked on the world map are saved, every block exactly as Xaero keeps
+ * it, to a [SharedTerrain] file for you to send however you like. Whoever gets it drops it onto
+ * their game window, and picks whether it fills only the chunks they have never mapped or replaces
+ * their own map there too; each region is backed up just before it is changed
+ * ([BlueMapDownload.startShared]). Regions are read back one at a time as they are written into the
+ * map, so a big file is never all in memory.
  */
 object TerrainFiles {
 
-    private val EXTENSION = SharedTerrain.EXTENSION
     /** Regions packed but not yet in the file; reading waits while this many are. */
     private const val QUEUED = 2
     /** Regions of an opened file read ahead of the one being written into your map. */
     private const val AHEAD = 2
-
-    val folder: Path get() = SharedTerrain.folder
 
     // ---- saving ----
 
@@ -78,13 +63,8 @@ object TerrainFiles {
         val (reader, why) = TerrainFormat.RegionReader.plan(me, left, top, right, bottom)
         reader ?: return why!!
         val area = reader.area
-        val name = Ui.dimensionName(reader.dimensionId) ?: reader.dimensionId.substringAfter(':')
-        val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss"))
-        val base = "$name near ${area.x} ${area.z} $stamp".replace(Regex("[\\\\/:*?\"<>|]"), "_")
         return try {
-            Files.createDirectories(folder)
-            val file = folder.resolve(base + EXTENSION)
-            val part = folder.resolve("$base$EXTENSION.part")
+            val (file, part) = SharedTerrain.newFile(reader.dimensionId, area)
             val out = DataOutputStream(BufferedOutputStream(Files.newOutputStream(part)))
             SharedTerrain.startFile(out, me, reader.dimensionId, reader.layer, area)
             saving = Saving(reader, part, file, out)
@@ -178,29 +158,13 @@ object TerrainFiles {
 
     private fun saved(current: Saving, chunks: Int, skipped: Int, old: Int, size: Long) {
         if (size < 0) {
-            Ui.say(
-                if (old > 0) "Nothing of your map there to save: all $old chunks you have there are from before the season began"
-                else "Nothing of your map there to save: you have not mapped those chunks"
-            )
+            Ui.say(SharedTerrain.nothingSaved(old, "Nothing of your map there to save: you have not mapped those chunks"))
             return
         }
         Log.info("Saved the terrain of {} chunks ({} regions, {} bytes, {} old-season chunks left out) to {}", chunks, current.regions.get(), size, old, current.file)
-        val note = (if (skipped > 0) " ($skipped regions Xaero did not load were left out — see the log)" else "") +
-            (if (old > 0) " ($old chunks from before the season began were left out)" else "")
-        Minecraft.getInstance().player?.sendSystemMessage(
-            Component.literal("Saved the terrain of $chunks chunks to §b${current.file.fileName}§r (${megabytes(size)})$note  ")
-                .append(Component.literal("[Open folder]").withStyle { style ->
-                    style.withColor(ChatFormatting.GREEN)
-                        .withClickEvent(ClickEvent.OpenFile(folder))
-                        .withHoverEvent(HoverEvent.ShowText(Component.literal(
-                            "Opens the shared maps folder. Send the file to whoever you like; they drop it onto their game window to add it."
-                        )))
-                })
-        )
+        val skippedNote = if (skipped > 0) " ($skipped regions Xaero did not load were left out — see the log)" else ""
+        Minecraft.getInstance().player?.sendSystemMessage(SharedTerrain.savedMessage(chunks, current.file, size, old, skippedNote))
     }
-
-    private fun megabytes(bytes: Long): String =
-        if (bytes < 1 shl 20) "${(bytes + 1023) / 1024} KB" else "%.1f MB".format(bytes / (1024.0 * 1024.0))
 
     // ---- adding ----
 
@@ -218,9 +182,9 @@ object TerrainFiles {
             val name = Ui.dimensionName(file.dimensionId) ?: file.dimensionId
             val command = "/mapexposer shared $id ${if (unexploredOnly) "blank" else "all"} confirm"
             Minecraft.getInstance().player?.sendSystemMessage(
-                Component.literal("§eThis map is of ${layerName(file.layer)} of the $name, but the world map is showing ${layerName(shown.layer)}. " +
-                    "It goes into ${layerName(file.layer)}, so you won't see it until the map shows that.§r  ")
-                    .append(ChatButton.of("[Add anyway]", command, "Adds it to ${layerName(file.layer)}."))
+                Component.literal("§eThis map is of ${SharedTerrain.layerName(file.layer)} of the $name, but the world map is showing ${SharedTerrain.layerName(shown.layer)}. " +
+                    "It goes into ${SharedTerrain.layerName(file.layer)}, so you won't see it until the map shows that.§r  ")
+                    .append(ChatButton.of("[Add anyway]", command, "Adds it to ${SharedTerrain.layerName(file.layer)}."))
             )
             return null
         }
@@ -232,8 +196,6 @@ object TerrainFiles {
             if (count == 0) "" else ", $count region${if (count == 1) "" else "s"} could not be read (the file may be damaged)"
         }
     }
-
-    private fun layerName(layer: Int) = SharedTerrain.layerName(layer)
 
     /**
      * Reads [file]'s regions on [worker], a few ahead of the one being written, so that the

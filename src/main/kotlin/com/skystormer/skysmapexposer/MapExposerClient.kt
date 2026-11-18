@@ -160,7 +160,7 @@ object MapExposerClient : ClientModInitializer {
                     .then(ClientCommands.literal("players").executes(::players))
                     .then(
                         ClientCommands.literal("ping")
-                            .executes { say(it, PlayerPings.sendLookedAt()) }
+                            .executes { Ui.reply(it, PlayerPings.sendLookedAt()) }
                             .then(ClientCommands.argument("x", IntegerArgumentType.integer())
                                 .then(ClientCommands.argument("z", IntegerArgumentType.integer()).executes(::ping)))
                     )
@@ -201,31 +201,26 @@ object MapExposerClient : ClientModInitializer {
                                     .then(ClientCommands.literal("waypoints").executes(::shareWaypoints))
                             )
                     )
+                    // What was shared with you, by the id its chat message gives: waypoints, or a terrain file.
                     .then(
                         ClientCommands.literal("shared").then(
                             ClientCommands.argument("id", IntegerArgumentType.integer(0))
                                 .then(ClientCommands.literal("waypoints").executes {
-                                    it.source.sendFeedback(Component.literal(ChatShare.addWaypoints(IntegerArgumentType.getInteger(it, "id"))))
-                                    1
+                                    Ui.reply(it, ChatShare.addWaypoints(IntegerArgumentType.getInteger(it, "id")))
                                 })
-                        )
-                    )
-                    .then(
-                        ClientCommands.literal("season")
-                            .executes { say(it, Seasons.list()) }
-                            .then(ClientCommands.literal("set").then(
-                                ClientCommands.argument("time", StringArgumentType.greedyString()).executes { say(it, setSeason(StringArgumentType.getString(it, "time"))) }
-                            ))
-                            .then(ClientCommands.literal("remove").executes { say(it, setSeason(null)) })
-                    )
-                    .then(
-                        ClientCommands.literal("shared").then(
-                            ClientCommands.argument("id", IntegerArgumentType.integer(0))
                                 .then(ClientCommands.literal("blank").executes { addShared(it, unexploredOnly = true) }
                                     .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = true, confirmed = true) }))
                                 .then(ClientCommands.literal("all").executes { addShared(it, unexploredOnly = false) }
                                     .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = false, confirmed = true) }))
                         )
+                    )
+                    .then(
+                        ClientCommands.literal("season")
+                            .executes { Ui.reply(it, Seasons.list()) }
+                            .then(ClientCommands.literal("set").then(
+                                ClientCommands.argument("time", StringArgumentType.greedyString()).executes { Ui.reply(it, setSeason(StringArgumentType.getString(it, "time"))) }
+                            ))
+                            .then(ClientCommands.literal("remove").executes { Ui.reply(it, setSeason(null)) })
                     )
                     .then(
                         ClientCommands.literal("terrain").then(ClientCommands.literal("open")
@@ -238,8 +233,7 @@ object MapExposerClient : ClientModInitializer {
                         ClientCommands.literal("prepare")
                             .executes(::prepare)
                             .then(ClientCommands.literal("cancel").executes {
-                                it.source.sendFeedback(Component.literal(if (MapPrep.cancel()) "Stopped preparing the map; what is done stays" else "The map is not being prepared"))
-                                1
+                                Ui.reply(it, if (MapPrep.cancel()) "Stopped preparing the map; what is done stays" else "The map is not being prepared")
                             })
                     )
                     .then(
@@ -345,46 +339,40 @@ object MapExposerClient : ClientModInitializer {
             adapter == null -> "Shared terrain goes into Xaero's World Map or JourneyMap; neither is installed"
             else -> adapter.addSharedTerrain(file, id, unexploredOnly, confirmed) ?: return 1
         }
-        context.source.sendFeedback(Component.literal(text))
-        return 1
-    }
-
-    private fun say(context: CommandContext<FabricClientCommandSource>, message: String): Int {
-        context.source.sendFeedback(Component.literal(message))
-        return 1
+        return Ui.reply(context, text)
     }
 
     /** Pings a block of the dimension you are in. */
     private fun ping(context: CommandContext<FabricClientCommandSource>): Int {
         val dimension = dimensionOf(context.source.level)
-        return say(context, PlayerPings.send(dimension, IntegerArgumentType.getInteger(context, "x"), IntegerArgumentType.getInteger(context, "z")))
+        return Ui.reply(context, PlayerPings.send(dimension, IntegerArgumentType.getInteger(context, "x"), IntegerArgumentType.getInteger(context, "z")))
     }
 
     /** Who you trust among those online. Anyone else stays trusted, but only shows here once they are on. */
     private fun trusted(context: CommandContext<FabricClientCommandSource>): Int {
         val online = PlayerPings.trustedOnline()
-        return say(context, if (online.isEmpty()) "Nobody you trust is online; /mapexposer trust <player> adds someone" else "Trusted and online: ${online.joinToString()}")
+        return Ui.reply(context, if (online.isEmpty()) "Nobody you trust is online; /mapexposer trust <player> adds someone" else "Trusted and online: ${online.joinToString()}")
     }
 
     private fun setTrusted(context: CommandContext<FabricClientCommandSource>, trusted: Boolean): Int {
         val wanted = StringArgumentType.getString(context, "player")
-        val (uuid, name) = PlayerPings.online(wanted) ?: return say(context, "$wanted is not on the server")
+        val (uuid, name) = PlayerPings.online(wanted) ?: return Ui.reply(context, "$wanted is not on the server")
         PlayerPings.setTrusted(uuid, trusted)
-        return say(context, if (trusted) "Taking pings from $name; /mapexposer pingto add $name sends yours to them" else "No longer trusting $name")
+        return Ui.reply(context, if (trusted) "Taking pings from $name; /mapexposer pingto add $name sends yours to them" else "No longer trusting $name")
     }
 
     /** Who online gets your pings. */
     private fun pingTo(context: CommandContext<FabricClientCommandSource>): Int {
         val online = PlayerPings.recipients()
-        return say(context, if (online.isEmpty()) "Nobody you ping is online; /mapexposer pingto add <player> picks someone you trust" else "Your pings go to: ${online.joinToString()}")
+        return Ui.reply(context, if (online.isEmpty()) "Nobody you ping is online; /mapexposer pingto add <player> picks someone you trust" else "Your pings go to: ${online.joinToString()}")
     }
 
     private fun setPingedTo(context: CommandContext<FabricClientCommandSource>, on: Boolean): Int {
         val wanted = StringArgumentType.getString(context, "player")
-        val (uuid, name) = PlayerPings.online(wanted) ?: return say(context, "$wanted is not on the server")
-        if (on && !PlayerPings.isTrusted(uuid)) return say(context, "Trust $name first: /mapexposer trust $name")
+        val (uuid, name) = PlayerPings.online(wanted) ?: return Ui.reply(context, "$wanted is not on the server")
+        if (on && !PlayerPings.isTrusted(uuid)) return Ui.reply(context, "Trust $name first: /mapexposer trust $name")
         PlayerPings.setPingedTo(uuid, on)
-        return say(context, if (on) "Your pings go to $name, once they trust you too" else "No longer pinging $name")
+        return Ui.reply(context, if (on) "Your pings go to $name, once they trust you too" else "No longer pinging $name")
     }
 
     /** Every waypoint of the dimension you are in, to one player; the map's menu picks some. */
@@ -393,34 +381,29 @@ object MapExposerClient : ClientModInitializer {
         val mine = MapMods.adapter?.myWaypoints()
         val said = if (mine == null) "No waypoints to share: your map has no waypoint world open"
         else ChatShare.shareWaypoints(to, mine.first, mine.second.map { it.waypoint })
-        context.source.sendFeedback(Component.literal(said))
-        return 1
+        return Ui.reply(context, said)
     }
 
     private fun cancelShare(context: CommandContext<FabricClientCommandSource>): Int {
-        context.source.sendFeedback(Component.literal(if (ChatShare.cancel()) "Stopped sharing your map" else "No map is being shared"))
-        return 1
+        return Ui.reply(context, if (ChatShare.cancel()) "Stopped sharing your map" else "No map is being shared")
     }
 
     private fun setEnabled(context: CommandContext<FabricClientCommandSource>, enabled: Boolean): Int {
         Config.enabled = enabled
         Config.save()
-        context.source.sendFeedback(Component.literal("Sky's Map Exposer ${if (enabled) "§aon" else "§coff"}"))
-        return 1
+        return Ui.reply(context, "Sky's Map Exposer ${if (enabled) "§aon" else "§coff"}")
     }
 
     private fun setStale(context: CommandContext<FabricClientCommandSource>): Int {
         Config.staleDays = DoubleArgumentType.getDouble(context, "days")
         Config.save()
-        context.source.sendFeedback(Component.literal("Your map now counts as out of date after ${Config.staleDays} day(s)"))
-        return 1
+        return Ui.reply(context, "Your map now counts as out of date after ${Config.staleDays} day(s)")
     }
 
     private fun reload(context: CommandContext<FabricClientCommandSource>): Int {
         Config.load()
         Session.start(addressOf(Minecraft.getInstance()))
-        context.source.sendFeedback(Component.literal("Reloaded config/skysmapexposer.json"))
-        return 1
+        return Ui.reply(context, "Reloaded config/skysmapexposer.json")
     }
 
     private fun refresh(context: CommandContext<FabricClientCommandSource>): Int {
@@ -430,8 +413,7 @@ object MapExposerClient : ClientModInitializer {
             return 0
         }
         session.tiles.refetchBefore = System.currentTimeMillis()
-        context.source.sendFeedback(Component.literal("Downloading BlueMap's tiles again as they are shown"))
-        return 1
+        return Ui.reply(context, "Downloading BlueMap's tiles again as they are shown")
     }
 
     private fun prepare(context: CommandContext<FabricClientCommandSource>): Int {
@@ -440,7 +422,6 @@ object MapExposerClient : ClientModInitializer {
             context.source.sendError(Component.literal("This server has no BlueMap in config/skysmapexposer.json"))
             return 0
         }
-        context.source.sendFeedback(Component.literal(MapPrep.status()?.takeIf { MapPrep.running } ?: MapPrep.start(session, MapMods.adapter?.shownDimension())))
-        return 1
+        return Ui.reply(context, MapPrep.status()?.takeIf { MapPrep.running } ?: MapPrep.start(session, MapMods.adapter?.shownDimension()))
     }
 }

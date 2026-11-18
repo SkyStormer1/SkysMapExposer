@@ -6,21 +6,16 @@ import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.SharedTerrain
-import com.skystormer.skysmapexposer.Ui
-import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.core.RegistryAccess
-import net.minecraft.network.chat.ClickEvent
 import net.minecraft.network.chat.Component
-import net.minecraft.network.chat.HoverEvent
-import net.minecraft.tags.FluidTags
+import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import java.io.BufferedOutputStream
 import java.io.DataOutputStream
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.BitSet
 import java.util.concurrent.ThreadLocalRandom
 
@@ -85,15 +80,9 @@ internal object JourneyMapTerrainSave {
     }
 
     private fun write(
-        me: String, dimension: String, area: ShareFormat.Area, cacheFolder: java.nio.file.Path, registries: RegistryAccess, old: BitSet?,
+        me: String, dimension: String, area: ShareFormat.Area, cacheFolder: Path, registries: RegistryAccess, old: BitSet?,
     ): Component {
-        val name = Ui.dimensionName(dimension) ?: dimension.substringAfter(':')
-        val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss"))
-        val base = "$name near ${area.x} ${area.z} $stamp".replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        val folder = SharedTerrain.folder
-        Files.createDirectories(folder)
-        val file = folder.resolve(base + SharedTerrain.EXTENSION)
-        val part = folder.resolve("$base${SharedTerrain.EXTENSION}.part")
+        val (file, part) = SharedTerrain.newFile(dimension, area)
         val regions = buildList {
             for (rz in Math.floorDiv(area.top, 32)..Math.floorDiv(area.bottom, 32)) {
                 for (rx in Math.floorDiv(area.left, 32)..Math.floorDiv(area.right, 32)) add(rx to rz)
@@ -107,7 +96,7 @@ internal object JourneyMapTerrainSave {
                 SharedTerrain.startFile(out, me, dimension, MapLayers.SURFACE, area)
                 for ((index, region) in regions.withIndex()) {
                     val (rx, rz) = region
-                    val cache = JourneyMapChunkCache.readRegion(cacheFolder.resolve("c.$rx.$rz.jmc"), registries, withBlocks = true)
+                    val cache = JourneyMapChunkCache.readRegion(JourneyMapChunkCache.file(cacheFolder, rx, rz), registries, withBlocks = true)
                     val writer = SharedTerrain.Writer()
                     for (cz in maxOf(area.top, rz * 32)..minOf(area.bottom, rz * 32 + 31)) {
                         for (cx in maxOf(area.left, rx * 32)..minOf(area.right, rx * 32 + 31)) {
@@ -124,28 +113,15 @@ internal object JourneyMapTerrainSave {
             }
             if (chunks == 0) {
                 Files.deleteIfExists(part)
-                return Component.literal(
-                    if (oldLeftOut > 0) "Nothing of your map there to save: all $oldLeftOut chunks there are from before the season began"
-                    else "Nothing of JourneyMap's there to save: it has no chunks cached there"
-                )
+                return Component.literal(SharedTerrain.nothingSaved(oldLeftOut, "Nothing of JourneyMap's there to save: it has no chunks cached there"))
             }
             Files.move(part, file, StandardCopyOption.REPLACE_EXISTING)
         } catch (e: Exception) {
             runCatching { Files.deleteIfExists(part) }
             throw e
         }
-        val size = Files.size(file)
         Log.info("Saved the terrain of {} chunks from JourneyMap ({} old-season chunks left out) to {}", chunks, oldLeftOut, file)
-        val note = if (oldLeftOut > 0) " ($oldLeftOut chunks from before the season began were left out)" else ""
-        val kilobytes = (size + 1023) / 1024
-        return Component.literal("Saved the terrain of $chunks chunks to §b${file.fileName}§r ($kilobytes KB)$note  ")
-            .append(Component.literal("[Open folder]").withStyle { style ->
-                style.withColor(ChatFormatting.GREEN)
-                    .withClickEvent(ClickEvent.OpenFile(folder))
-                    .withHoverEvent(HoverEvent.ShowText(Component.literal(
-                        "Opens the shared maps folder. Send the file to whoever you like; they drop it onto their game window to add it."
-                    )))
-            })
+        return SharedTerrain.savedMessage(chunks, file, Files.size(file), oldLeftOut)
     }
 
     /** [chunk]'s 256 columns as Xaero records them; null if JourneyMap cached no heights for it. */
@@ -174,7 +150,8 @@ internal object JourneyMapTerrainSave {
         return out
     }
 
-    private fun isWater(state: BlockState): Boolean = state.fluidState.`is`(FluidTags.WATER) && state.block == net.minecraft.world.level.block.Blocks.WATER
+    /** Water itself; a waterlogged block is the ground, as Xaero sees it. */
+    private fun isWater(state: BlockState): Boolean = state.block == Blocks.WATER
 
     /** The deepest a water layer is recorded, as a byte. */
     private const val MAX_DEPTH = 255

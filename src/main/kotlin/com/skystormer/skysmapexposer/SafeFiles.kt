@@ -1,9 +1,12 @@
 package com.skystormer.skysmapexposer
 
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.zip.GZIPOutputStream
 
 /**
  * Writing a file so that a crash or a full disk part-way through never leaves it half written: the
@@ -34,4 +37,11 @@ object SafeFiles {
     }
 
     fun writeString(path: Path, text: String) = write(path, text.toByteArray(Charsets.UTF_8))
+
+    /** A gzipped file of whatever [content] writes. */
+    fun writeGzip(path: Path, content: (DataOutputStream) -> Unit) {
+        val bytes = ByteArrayOutputStream()
+        DataOutputStream(GZIPOutputStream(bytes)).use(content)
+        write(path, bytes.toByteArray())
+    }
 }

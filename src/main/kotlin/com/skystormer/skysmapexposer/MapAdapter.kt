@@ -66,7 +66,6 @@ interface MapAdapter {
     fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =
         "This map can't take waypoints"
 
-    /** How a download into the map is going, while one runs. */
     /**
      * Adds shared terrain file [file] (opened as [id]) to this map; with [unexploredOnly], only where
      * it has nothing. What to tell the player, or null when it asked in chat instead.
@@ -74,6 +73,7 @@ interface MapAdapter {
     fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
         "This map mod cannot take shared terrain files"
 
+    /** How a download into the map is going, while one runs. */
     fun downloadStatus(): String? = null
 
     /** Stops a running download; false if none was running. */

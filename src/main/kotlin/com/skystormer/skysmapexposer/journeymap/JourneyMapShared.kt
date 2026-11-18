@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.skystormer.skysmapexposer.SharedTerrain
+import com.skystormer.skysmapexposer.journeymap.JourneyMapFiles.REGION
 import journeymap.client.model.block.BlockFlag
 import journeymap.client.model.block.BlockMD
 import net.minecraft.client.Minecraft
@@ -21,7 +22,6 @@ import net.minecraft.world.level.block.state.BlockState
  */
 internal object JourneyMapShared {
 
-    private const val REGION = JourneyMapFiles.REGION
 
     /** [region]'s picture, `REGION` square ARGB, see-through where the file has nothing. Off the client thread. */
     fun picture(region: SharedTerrain.Region): IntArray {

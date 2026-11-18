@@ -209,66 +209,62 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
             row(text)
 
             var x = left + textWidth
-            val go = Button.builder(Component.literal("Go to")) { goTo(entry) }
-                .bounds(x, y, buttonWidth, ROW)
-                .tooltip(SafeTooltip.of(
-                    (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
-                    else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
-                        "${player.label}. It switches back when you leave the map.") +
-                        " Their head gets a rainbow outline until you leave the map."
-                ))
-                .build()
-            row(go)
+            rowButton(
+                "Go to", x, y, buttonWidth,
+                (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
+                else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
+                    "${player.label}. It switches back when you leave the map.") +
+                    " Their head gets a rainbow outline until you leave the map.",
+                refresh = false,
+            ) { goTo(entry) }
             x += buttonWidth + GAP
 
             val trusted = PlayerPings.isTrusted(player.uuid)
-            row(
-                Button.builder(Component.literal(if (trusted) "Untrust" else "Trust")) {
-                    PlayerPings.setTrusted(player.uuid, !trusted)
-                    refreshRows(force = true)
-                }
-                    .bounds(x, y, buttonWidth, ROW)
-                    .tooltip(SafeTooltip.of(
-                        if (trusted) "Stop taking pings from ${player.label} and sending yours to them."
-                        else "Take pings from ${player.label}. Ping picks whether yours go to them."
-                    ))
-                    .build()
-            )
+            rowButton(
+                if (trusted) "Untrust" else "Trust", x, y, buttonWidth,
+                if (trusted) "Stop taking pings from ${player.label} and sending yours to them."
+                else "Take pings from ${player.label}. Ping picks whether yours go to them.",
+            ) { PlayerPings.setTrusted(player.uuid, !trusted) }
             x += buttonWidth + GAP
 
             val pinged = PlayerPings.isPingedTo(player.uuid)
-            row(
-                Button.builder(Component.literal(if (pinged) "Unping" else "Ping")) {
-                    PlayerPings.setPingedTo(player.uuid, !pinged)
-                    refreshRows(force = true)
-                }
-                    .bounds(x, y, buttonWidth, ROW)
-                    .tooltip(SafeTooltip.of(
-                        when {
-                            !trusted -> "Trust ${player.label} first to send them your pings."
-                            pinged -> "Stop sending your pings to ${player.label}."
-                            else -> "Send your pings to ${player.label}, by private message."
-                        }
-                    ))
-                    .build()
-                    .also { it.active = trusted }
-            )
+            rowButton(
+                if (pinged) "Unping" else "Ping", x, y, buttonWidth,
+                when {
+                    !trusted -> "Trust ${player.label} first to send them your pings."
+                    pinged -> "Stop sending your pings to ${player.label}."
+                    else -> "Send your pings to ${player.label}, by private message."
+                },
+                active = trusted,
+            ) { PlayerPings.setPingedTo(player.uuid, !pinged) }
             x += buttonWidth + GAP
 
-            val lock = Button.builder(Component.literal(if (locked) "Unlock" else "Lock")) {
-                LockedPlayers.set(player, !locked)
-                refreshRows(force = true)
-            }
-                .bounds(x, y, listWidth - (x - left), ROW)
-                .tooltip(SafeTooltip.of(
-                    if (locked) "Stop following ${player.label}."
-                    else "Follow ${player.label}: their pin keeps up with them and their head shows over them in the world."
-                ))
-                .build()
-            lock.active = Session.current != null
-            row(lock)
+            rowButton(
+                if (locked) "Unlock" else "Lock", x, y, listWidth - (x - left),
+                if (locked) "Stop following ${player.label}."
+                else "Follow ${player.label}: their pin keeps up with them and their head shows over them in the world.",
+                active = Session.current != null,
+            ) { LockedPlayers.set(player, !locked) }
             y += ROW + GAP
         }
+    }
+
+    /**
+     * One of a row's buttons, [width] wide at ([x], [y]); with [refresh], the rows are built again
+     * after it, as it changed something they show.
+     */
+    private fun rowButton(
+        label: String, x: Int, y: Int, width: Int, tooltip: String, active: Boolean = true, refresh: Boolean = true, onPress: () -> Unit,
+    ) {
+        val button = Button.builder(Component.literal(label)) {
+            onPress()
+            if (refresh) refreshRows(force = true)
+        }
+            .bounds(x, y, width, ROW)
+            .tooltip(SafeTooltip.of(tooltip))
+            .build()
+        button.active = active
+        row(button)
     }
 
     private fun row(widget: AbstractWidget) {

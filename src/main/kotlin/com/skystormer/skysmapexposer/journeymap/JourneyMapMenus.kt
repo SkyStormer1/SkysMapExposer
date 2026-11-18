@@ -31,8 +31,8 @@ import net.minecraft.network.chat.Component
  * of the map with the other dimension's coordinates of the block under the mouse and how preparing
  * the map is going.
  *
- * It keeps only the full-screen map last seen open and the block under the mouse, both let go of
- * on leaving a world ([forget]).
+ * It keeps only the full-screen map last seen open and a Go to waiting for it, let go of on leaving
+ * a world ([forget]).
  */
 internal object JourneyMapMenus {
 

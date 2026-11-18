@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
@@ -107,7 +108,7 @@ object BiomeHighlight {
     ) {
         val pixel = 1 shl level
         val square = SIDE shl level
-        val region = REGION shl level
+        val region = BlueMapPicture.REGION shl level
         // Far out, a pixel on screen covers many of the level's pixels, so they are read that coarsely.
         val step = Integer.highestOneBit((blocksPerUnit / pixel).toInt().coerceIn(1, MAX_STEP))
         val layer = processor.currentCaveLayer
@@ -141,7 +142,7 @@ object BiomeHighlight {
         val registry = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME) ?: return
         val view = MapViewport.of(matrix, cameraX, cameraZ)
         val level = processor.mapSaveLoad.mainTextureLevel.coerceIn(0, 3)
-        val region = REGION shl level
+        val region = BlueMapPicture.REGION shl level
         val layer = processor.currentCaveLayer
         val known = unknown.getOrPut(dimension) { HashSet() }
         val seen = HashSet<ResourceKey<Biome>>()
@@ -243,7 +244,6 @@ object BiomeHighlight {
         }
     }
 
-    private const val REGION = 512
     private const val SIDE = 64
     private const val MAX_STEP = 16
     private const val NOTICE_STEP = 16

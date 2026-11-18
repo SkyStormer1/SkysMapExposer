@@ -5,8 +5,8 @@ import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.Ui
 import net.minecraft.client.Minecraft
-import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import xaero.common.minimap.waypoints.Waypoint
@@ -29,7 +29,7 @@ object Waypoints {
     fun available(): Boolean = MapMods.xaeroMinimap
 
     fun save(pin: Markers.Pin) {
-        say(
+        Ui.say(
             try {
                 add(pin)
             } catch (e: Throwable) {
@@ -41,7 +41,7 @@ object Waypoints {
 
     /** A temporary waypoint on [pin], made by Xaero exactly as its own menu makes one: gone when you leave. */
     fun setTemporary(pin: Markers.Pin) {
-        say(
+        Ui.say(
             try {
                 temporary(pin)
             } catch (e: Throwable) {
@@ -70,7 +70,7 @@ object Waypoints {
      * unknown.
      */
     fun setCounterpart(x: Int, z: Int, dimension: String) {
-        say(
+        Ui.say(
             try {
                 counterpart(x, z, dimension)
             } catch (e: Throwable) {
@@ -133,9 +133,5 @@ object Waypoints {
         set.add(Waypoint(x, y, z, pin.label, WaypointRules.initials(pin.label), WaypointColor.values()[WaypointRules.colourFor(pin)]))
         session.worldManagerIO.saveWorld(world)
         return "Saved ${pin.label} as a waypoint"
-    }
-
-    private fun say(message: String) {
-        Minecraft.getInstance().player?.sendOverlayMessage(Component.literal(message))
     }
 }

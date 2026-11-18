@@ -9,10 +9,12 @@ import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.TilePixels
 import com.skystormer.skysmapexposer.TileStore
+import com.skystormer.skysmapexposer.journeymap.JourneyMapFiles.REGION
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.common.Context
 import net.minecraft.client.Minecraft
 import net.minecraft.world.level.ChunkPos
+import net.minecraft.world.phys.AABB
 import java.util.BitSet
 
 /**
@@ -38,13 +40,13 @@ internal object JourneyMapTerrain {
     private data class Region(val dimension: String, val x: Int, val z: Int, val ui: Context.UI)
 
     /**
-     * A picture on screen, with what it was made from: the chunks shown ([wanted]), and each tile's
-     * content date and sea floor, so a change to any of them rebuilds it. [checkedAt]: when
-     * JourneyMap was last asked what it has there.
+     * What a picture is made from: the chunks shown ([wanted]), and each tile's content date and sea
+     * floor, so a change to any of them rebuilds it.
      */
-    private class Shown(
-        val picture: RegionPicture, val wanted: BitSet, val contents: List<Int>, val floors: List<IntArray?>, var checkedAt: Long,
-    )
+    private class Made(val wanted: BitSet, val contents: List<Int>, val floors: List<IntArray?>)
+
+    /** A picture on screen and what it was [made] from. [checkedAt]: when JourneyMap was last asked what it has there. */
+    private class Shown(val picture: RegionPicture, val made: Made, var checkedAt: Long)
 
     private val shown = HashMap<Region, Shown>()
 
@@ -70,16 +72,16 @@ internal object JourneyMapTerrain {
         fun say(text: String) { if (fullscreen) note = text else minimapNote = text }
         val now = System.currentTimeMillis()
         val state = api.getUIState(ui)
-        say(when {
+        val off = when {
             session == null -> "this server has no BlueMap set up"
             !Config.enabled -> "switched off"
             state == null -> "JourneyMap has not said what it shows"
             !state.active -> if (fullscreen) "the full-screen map is closed" else "the minimap is hidden"
             state.mapType != Context.MapType.Day && state.mapType != Context.MapType.Underground -> "BlueMap shows on JourneyMap's day and cave maps"
-            else -> ""
-        })
-        if (session == null || !Config.enabled || state == null || !state.active ||
-            (state.mapType != Context.MapType.Day && state.mapType != Context.MapType.Underground)) {
+            else -> null
+        }
+        say(off ?: "")
+        if (off != null || session == null || state == null) {
             // Kept while the map is only closed for a moment, and let go once it has stayed closed;
             // switched off, no BlueMap, or another kind of map: gone at once, as on Xaero's map.
             val closedOnly = session != null && Config.enabled && state != null && !state.active
@@ -101,7 +103,7 @@ internal object JourneyMapTerrain {
         // map and is never kept up to date for the minimap.
         val area = (if (fullscreen) JourneyMapMenus.shownArea(state) else JourneyMapMinimap.area)
             ?: return say(if (fullscreen) "JourneyMap has not said what is on screen" else "waiting for the minimap to draw")
-        val bounds = net.minecraft.world.phys.AABB(area[0], 0.0, area[1], area[2], 0.0, area[3])
+        val bounds = AABB(area[0], 0.0, area[1], area[2], 0.0, area[3])
 
         val left = Math.floorDiv(bounds.minX.toInt(), REGION)
         val right = Math.floorDiv(bounds.maxX.toInt(), REGION)
@@ -132,7 +134,7 @@ internal object JourneyMapTerrain {
             val old = shown[region]
             val tiles = tilesFor(session, region, layout) ?: continue.also { say("waiting for BlueMap's tiles") }
             if (seaFloor) tiles.forEach { session.seaFloor.want(it, map, bounds.center.x, bounds.center.z, bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, closeUp = scale <= SeaFloor.CLOSE_UP) }
-            val changed = old != null && (tiles.map { it.floor } != old.floors || tiles.map { it.contentMinute } != old.contents)
+            val changed = old != null && (tiles.map { it.floor } != old.made.floors || tiles.map { it.contentMinute } != old.made.contents)
             if (old != null && !changed && now - old.checkedAt < RECHECK_MS) continue
             if (old == null && shown.size * bytesAt(scale) >= budget()) break
             busy.add(region)
@@ -202,7 +204,7 @@ internal object JourneyMapTerrain {
                 }
                 // The same chunks from the same tiles: the picture stands, as a mask rebuilt with
                 // the same rectangles leaves Xaero's map as it was.
-                if (old != null && !rebuild && old.wanted == wanted) {
+                if (old != null && !rebuild && old.made.wanted == wanted) {
                     old.checkedAt = System.currentTimeMillis()
                     busy.remove(region)
                     return@requestMapTile
@@ -254,10 +256,7 @@ internal object JourneyMapTerrain {
         Math.floorDiv(x, tile.tileSize) == tile.key.x && Math.floorDiv(z, tile.tileSize) == tile.key.z
     }
 
-    /** Off the client thread: the region's picture, BlueMap where [wanted], see-through elsewhere. */
-    /** What a picture is made from, kept with it to tell when it needs making again. */
-    private class Made(val wanted: BitSet, val contents: List<Int>, val floors: List<IntArray?>)
-
+    /** Off the client thread: the region's picture, BlueMap where [Made.wanted], see-through elsewhere. */
     private fun build(api: IClientAPI, session: Session, region: Region, tiles: List<TileStore.Tile>, scale: Int, generation: Int, made: Made) {
         val wanted = made.wanted
         // Rounded up: a tile size's factor need not divide the region; the last pixel runs a little past it.
@@ -306,7 +305,7 @@ internal object JourneyMapTerrain {
         remove(api, region)
         val fullscreen = region.ui == Context.UI.Fullscreen
         val picture = RegionPicture.show(api, "terrain", region.dimension, region.x * REGION, region.z * REGION, scale, image, fullscreen, TERRAIN_ORDER) ?: return
-        shown[region] = Shown(picture, made.wanted, made.contents, made.floors, System.currentTimeMillis())
+        shown[region] = Shown(picture, made, System.currentTimeMillis())
         if (!fullscreen) JourneyMapMinimap.changed()
     }
 
@@ -330,7 +329,6 @@ internal object JourneyMapTerrain {
 
     private fun bytesAt(scale: Int): Long = ((REGION + scale - 1) / scale).toLong().let { it * it * 4 }
 
-    private const val REGION = 512
     private const val CHUNKS = REGION / 16
     /** Regions asked about a tick at most: Xaero rebuilds up to 8 masks a frame. */
     private const val PER_TICK = 8

@@ -86,6 +86,9 @@ internal object JourneyMapChunkCache {
         fun lightAt(x: Int, y: Int, z: Int): Int = light?.getOrNull((y shr 4) - minSectionY)?.get(x, y and 15, z) ?: 0
     }
 
+    /** Region ([regionX], [regionZ])'s file in the chunk cache folder [folder]. */
+    fun file(folder: Path, regionX: Int, regionZ: Int): Path = folder.resolve("c.$regionX.$regionZ.jmc")
+
     /**
      * Every chunk of the region file [file] (index `z * 32 + x` within it), null where it has none;
      * [withBlocks] to read blocks and light too. Off the client thread.

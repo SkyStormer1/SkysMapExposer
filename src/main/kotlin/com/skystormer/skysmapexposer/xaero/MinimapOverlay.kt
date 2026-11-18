@@ -30,9 +30,6 @@ import java.util.function.Consumer
  */
 object MinimapOverlay {
 
-    var hookRan = false
-        private set
-
     var lastSummary = "The minimap has not been drawn yet."
         private set
 
@@ -51,93 +48,70 @@ object MinimapOverlay {
         mapRenderType: RenderType,
         finalizer: Consumer<GpuTextureView>?,
     ) {
-        if (HookErrors.isOff(HookErrors.MINIMAP)) return
-        try {
-            drawFrame(mapProcessor, pose, originX, originZ, minViewX, minViewZ, maxViewX, maxViewZ, overlayBuffer, rendererProvider, mapRenderType, finalizer)
-        } catch (e: Throwable) {
-            HookErrors.failed(HookErrors.MINIMAP, e)
-        }
-    }
+        HookErrors.guard(HookErrors.MINIMAP) {
+            FramePacer.game.frame()
+            val matrix: Matrix4f = pose.last().pose()
 
-    private fun drawFrame(
-        mapProcessor: MapProcessor,
-        pose: PoseStack,
-        originX: Int,
-        originZ: Int,
-        minViewX: Int,
-        minViewZ: Int,
-        maxViewX: Int,
-        maxViewZ: Int,
-        overlayBuffer: VertexConsumer,
-        rendererProvider: MultiTextureRenderTypeRendererProvider,
-        mapRenderType: RenderType,
-        finalizer: Consumer<GpuTextureView>?,
-    ) {
-        FramePacer.game.frame()
-        if (!hookRan) {
-            hookRan = true
-        }
-        val matrix: Matrix4f = pose.last().pose()
+            // The minimap's view bounds come in Xaero's 64-block units.
+            val minX = minViewX * 64.0
+            val maxX = (maxViewX + 1) * 64.0
+            val minZ = minViewZ * 64.0
+            val maxZ = (maxViewZ + 1) * 64.0
+            val blocksPerUnit = Matrix4f(matrix).invert().transformDirection(Vector3f(1f, 0f, 0f)).length().coerceAtLeast(1e-4f)
 
-        // The minimap's view bounds come in Xaero's 64-block units.
-        val minX = minViewX * 64.0
-        val maxX = (maxViewX + 1) * 64.0
-        val minZ = minViewZ * 64.0
-        val maxZ = (maxViewZ + 1) * 64.0
-        val blocksPerUnit = Matrix4f(matrix).invert().transformDirection(Vector3f(1f, 0f, 0f)).length().coerceAtLeast(1e-4f)
-
-        // The biome tint and the outlines first in the code, but into the overlay buffer, which the
-        // minimap draws after its terrain; the tint first, so the outlines lie over it.
-        BiomeHighlight.drawMinimap(mapProcessor, overlayBuffer, matrix, blocksPerUnit, originX, originZ, minX, maxX, minZ, maxZ)
-        if (Config.showOutlines) {
-            val session = Session.current
-            val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
-            val map = if (session != null && dimension != null) session.server.markersFor(dimension) else null
-            if (session != null && map != null) {
-                session.markers.of(map)?.outlines?.let { outlines ->
-                    Outlines.draw(overlayBuffer, matrix, outlines, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
+            // The biome tint and the outlines first in the code, but into the overlay buffer, which the
+            // minimap draws after its terrain; the tint first, so the outlines lie over it.
+            BiomeHighlight.drawMinimap(mapProcessor, overlayBuffer, matrix, blocksPerUnit, originX, originZ, minX, maxX, minZ, maxZ)
+            if (Config.showOutlines) {
+                val session = Session.current
+                val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
+                val map = if (session != null && dimension != null) session.server.markersFor(dimension) else null
+                if (session != null && map != null) {
+                    session.markers.of(map)?.outlines?.let { outlines ->
+                        Outlines.draw(overlayBuffer, matrix, outlines, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
+                    }
                 }
             }
-        }
 
-        val target = Backfill.target(mapProcessor, ::standDown) ?: return
-        val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
+            val target = Backfill.target(mapProcessor, ::standDown) ?: return
+            val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
 
-        val plan = Backfill.plan(target, mapProcessor, originX.toDouble(), originZ.toDouble(), minX, maxX, minZ, maxZ, factor, Backfill.Budget(uploads = minOf(4, FramePacer.game.uploads), masks = 4))
-            ?: return standDown("too-far", "The minimap covers too much to backfill")
+            val plan = Backfill.plan(target, mapProcessor, originX.toDouble(), originZ.toDouble(), minX, maxX, minZ, maxZ, factor, Backfill.Budget(uploads = minOf(4, FramePacer.game.uploads), masks = 4))
+                ?: return standDown("too-far", "The minimap covers too much to backfill")
 
-        var renderer: MultiTextureRenderTypeRenderer? = null
-        // Handed back to Xaero even if a piece fails, so its renderer is never left half used.
-        try {
-            for (piece in plan.pieces) {
-                val batch = renderer ?: rendererProvider.getRenderer(finalizer, mapRenderType).also { renderer = it }
-                val size = piece.tileSize.toFloat()
-                val r = piece.mask.rectangles
-                val buffer = batch.begin(piece.texture)
-                for (i in 0 until piece.mask.count) {
-                    val x1 = r[i * 4]
-                    val z1 = r[i * 4 + 1]
-                    val x2 = r[i * 4 + 2]
-                    val z2 = r[i * 4 + 3]
-                    val u1 = (x1 - piece.originX) / size
-                    val v1 = (z1 - piece.originZ) / size
-                    val u2 = (x2 - piece.originX) / size
-                    val v2 = (z2 - piece.originZ) / size
-                    val left = x1 - originX
-                    val top = z1 - originZ
-                    val right = x2 - originX
-                    val bottom = z2 - originZ
-                    // Same corner order and texture orientation as the minimap's own terrain.
-                    buffer.addVertex(matrix, left, bottom, 0f).setUv(u1, v2)
-                    buffer.addVertex(matrix, right, bottom, 0f).setUv(u2, v2)
-                    buffer.addVertex(matrix, right, top, 0f).setUv(u2, v1)
-                    buffer.addVertex(matrix, left, top, 0f).setUv(u1, v1)
+            var renderer: MultiTextureRenderTypeRenderer? = null
+            // Handed back to Xaero even if a piece fails, so its renderer is never left half used.
+            try {
+                for (piece in plan.pieces) {
+                    val batch = renderer ?: rendererProvider.getRenderer(finalizer, mapRenderType).also { renderer = it }
+                    val size = piece.tileSize.toFloat()
+                    val r = piece.mask.rectangles
+                    val buffer = batch.begin(piece.texture)
+                    for (i in 0 until piece.mask.count) {
+                        val x1 = r[i * 4]
+                        val z1 = r[i * 4 + 1]
+                        val x2 = r[i * 4 + 2]
+                        val z2 = r[i * 4 + 3]
+                        val u1 = (x1 - piece.originX) / size
+                        val v1 = (z1 - piece.originZ) / size
+                        val u2 = (x2 - piece.originX) / size
+                        val v2 = (z2 - piece.originZ) / size
+                        val left = x1 - originX
+                        val top = z1 - originZ
+                        val right = x2 - originX
+                        val bottom = z2 - originZ
+                        // Same corner order and texture orientation as the minimap's own terrain.
+                        buffer.addVertex(matrix, left, bottom, 0f).setUv(u1, v2)
+                        buffer.addVertex(matrix, right, bottom, 0f).setUv(u2, v2)
+                        buffer.addVertex(matrix, right, top, 0f).setUv(u2, v1)
+                        buffer.addVertex(matrix, left, top, 0f).setUv(u1, v1)
+                    }
                 }
+            } finally {
+                renderer?.let(rendererProvider::draw)
             }
-        } finally {
-            renderer?.let(rendererProvider::draw)
+            lastSummary = plan.summary
         }
-        lastSummary = plan.summary
     }
 
     private fun standDown(key: String, reason: String) {

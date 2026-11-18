@@ -5,7 +5,7 @@ import com.skystormer.skysmapexposer.Seasons
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
-import com.skystormer.skysmapexposer.MapLayers
+import com.skystormer.skysmapexposer.SharedTerrain
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
@@ -97,10 +97,9 @@ object MapClear {
      */
     internal fun mismatch(dimensionId: String, layer: Int, shownDimension: String, shownLayer: Int, nameOf: (String) -> String): String? {
         val name = nameOf(dimensionId)
-        fun layerName(l: Int) = if (l == MapLayers.SURFACE) "the surface" else "cave layer $l"
         return when {
             dimensionId != shownDimension -> "This clear is for the $name; switch the world map there and click again."
-            layer != shownLayer -> "This clear is for ${layerName(layer)} of the $name, but the world map shows ${layerName(shownLayer)}; switch back and click again."
+            layer != shownLayer -> "This clear is for ${SharedTerrain.layerName(layer)} of the $name, but the world map shows ${SharedTerrain.layerName(shownLayer)}; switch back and click again."
             else -> null
         }
     }
@@ -117,7 +116,7 @@ object MapClear {
             Kind.OLD_SEASON -> {
                 val age = MapAge.of(dimensionId, folder)
                     ?: return null to "No season start is set for the $name; /mapexposer season set <yyyy-MM-dd HH:mm> sets it"
-                Plan(dimensionId, layer, all.filter { (x, z) -> age.mayHoldOld(x, z) }, "$name map from before ${format(age.seasonStart)}", age::isOld) to null
+                Plan(dimensionId, layer, all.filter { (x, z) -> age.mayHoldOld(x, z) }, "$name map from before ${Seasons.format(age.seasonStart)}", age::isOld) to null
             }
             Kind.BORDER -> {
                 val border = MapBorder.border(box, dimensionId, name)
@@ -130,8 +129,6 @@ object MapClear {
     }
 
     /** The regions Xaero has a file for in [folder]. */
-    private fun format(minute: Int): String = Seasons.format(minute)
-
     private fun regionsIn(folder: Path): List<Pair<Int, Int>> = try {
         if (Files.notExists(folder)) emptyList()
         else Files.list(folder).use { files -> files.toList().mapNotNull { MapBackup.regionOf(it.fileName.toString()) } }

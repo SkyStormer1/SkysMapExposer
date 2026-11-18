@@ -171,7 +171,8 @@ object Config {
     var prepareMap: Boolean = true
     var prepareTilesPerSecond: Int = 4
 
-    var servers: List<Server> = defaultServers()
+    /** None until you add one in the settings screen. */
+    var servers: List<Server> = emptyList()
 
     /**
      * One server with a BlueMap.
@@ -214,9 +215,6 @@ object Config {
     /** `Play.Example.com:25565` and `play.example.com` are the same server. */
     fun normalise(address: String): String =
         address.trim().lowercase().removeSuffix(":25565").removeSuffix(".")
-
-    // No server is set up until the player adds one in the settings screen.
-    private fun defaultServers() = emptyList<Server>()
 
     /**
      * What [load] could not read, said once in chat on the next join ([takeLoadProblem]); null when

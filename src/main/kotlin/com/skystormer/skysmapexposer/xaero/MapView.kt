@@ -81,27 +81,6 @@ object MapView {
     private var lastViewed: String? = null
 
     /**
-     * Whether each of the two hiding injections has ever run. Both are optional, so this is how an
-     * unsupported Xaero version gets noticed rather than quietly doing nothing. `/mapexposer`
-     * reports them.
-     */
-    @Volatile
-    var arrowHookRan = false
-        private set
-
-    @Volatile
-    var radarHookRan = false
-        private set
-
-    @Volatile
-    var trackerHookRan = false
-        private set
-
-    @Volatile
-    var wrapperHookRan = false
-        private set
-
-    /**
      * Shows ([x], [z]) of [dimension] on the world map, switching the map to that dimension first
      * if it is showing another one. [screen] is the screen the request came from, so that an open
      * map is moved rather than a second one opened. Returns whether anything could be done.
@@ -165,34 +144,30 @@ object MapView {
         waited = 0
     }
 
-    /** For `GuiMapMixin`: hide the player arrow. Running at all proves that injection took. */
+    /** For `GuiMapMixin`: hide the player arrow. */
     @JvmStatic
     fun hideArrow(): Boolean {
-        arrowHookRan = true
         return viewingAnotherDimension()
     }
 
     /** For `RadarRendererMixin`: hide Xaero's entity radar on the world map. */
     @JvmStatic
     fun hideRadar(): Boolean {
-        radarHookRan = true
         return viewingAnotherDimension()
     }
 
     /**
      * For `MinimapElementWrapperMixin`: hide everything the minimap draws on the world map, bar
-     * waypoints. This is the gate that has to hold, so its flag is the one worth reading.
+     * waypoints.
      */
     @JvmStatic
     fun hideWrappedMinimapElements(): Boolean {
-        wrapperHookRan = true
         return viewingAnotherDimension()
     }
 
     /** For `PlayerTrackerRendererMixin`: hide Xaero's tracked-player dots on the world map. */
     @JvmStatic
     fun hideTracker(): Boolean {
-        trackerHookRan = true
         return viewingAnotherDimension()
     }
 

@@ -15,6 +15,7 @@ import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.ShareableWaypoint
+import com.skystormer.skysmapexposer.Ui
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
@@ -51,8 +52,8 @@ object JourneyMapAdapter : MapAdapter {
     override fun init() = JourneyMapMenus.register()
 
     /**
-     * JourneyMap's own classes that the two hooks lean on, checked once at start as
-     * Xaero's hooks are: whatever is missing is said in the log and in `/mapexposer`.
+     * This mod's two hooks into JourneyMap and the internals it calls ([missingInternals]), checked
+     * once at start as Xaero's hooks are: whatever is missing is said in the log and in `/mapexposer`.
      */
     override fun checkHooks() {
         if (!dimensionHooked()) Log.warn("Could not hook JourneyMap's full-screen map; its dimension button will snap back to yours")
@@ -126,34 +127,34 @@ object JourneyMapAdapter : MapAdapter {
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
         root.then(
             ClientCommands.literal("download")
-                .then(ClientCommands.literal("all").executes { say(it, JourneyMapEdits.download(unexploredOnly = false)) })
-                .then(ClientCommands.literal("unexplored").executes { say(it, JourneyMapEdits.download(unexploredOnly = true)) })
+                .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(unexploredOnly = false)) })
+                .then(ClientCommands.literal("unexplored").executes { Ui.reply(it, JourneyMapEdits.download(unexploredOnly = true)) })
                 .then(ClientCommands.literal("region").then(
                     ClientCommands.argument("x", IntegerArgumentType.integer()).then(
                         ClientCommands.argument("z", IntegerArgumentType.integer())
-                            .executes { say(it, JourneyMapEdits.download(true, regionOf(it))) }
-                            .then(ClientCommands.literal("all").executes { say(it, JourneyMapEdits.download(false, regionOf(it))) })
+                            .executes { Ui.reply(it, JourneyMapEdits.download(true, regionOf(it))) }
+                            .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, regionOf(it))) })
                     )
                 ))
                 .then(ClientCommands.literal("cancel").executes {
-                    say(it, if (JourneyMapEdits.cancel()) "Stopping after the region it is on" else "Nothing is being written into JourneyMap's map")
+                    Ui.reply(it, if (JourneyMapEdits.cancel()) "Stopping after the region it is on" else "Nothing is being written into JourneyMap's map")
                 })
         )
-        root.then(ClientCommands.literal("undo").executes { say(it, JourneyMapEdits.undo()) })
+        root.then(ClientCommands.literal("undo").executes { Ui.reply(it, JourneyMapEdits.undo()) })
         // `clear <kind>` says what would go; `clear <kind> confirm` takes it off; a border can be given by hand.
         val clear = ClientCommands.literal("clear")
         for (kind in JourneyMapEdits.Clear.entries) {
             val node = ClientCommands.literal(kind.word)
                 .executes { it.source.sendFeedback(JourneyMapEdits.clearPreview(kind, null)); 1 }
-                .then(ClientCommands.literal("confirm").executes { say(it, JourneyMapEdits.clear(kind, null)) })
+                .then(ClientCommands.literal("confirm").executes { Ui.reply(it, JourneyMapEdits.clear(kind, null)) })
             if (kind == JourneyMapEdits.Clear.BORDER) {
                 node.then(ClientCommands.argument("radius", IntegerArgumentType.integer(1))
                     .executes { it.source.sendFeedback(JourneyMapEdits.clearPreview(kind, boxOf(it, false))); 1 }
-                    .then(ClientCommands.literal("confirm").executes { say(it, JourneyMapEdits.clear(kind, boxOf(it, false))) })
+                    .then(ClientCommands.literal("confirm").executes { Ui.reply(it, JourneyMapEdits.clear(kind, boxOf(it, false))) })
                     .then(ClientCommands.argument("centerX", IntegerArgumentType.integer())
                         .then(ClientCommands.argument("centerZ", IntegerArgumentType.integer())
                             .executes { it.source.sendFeedback(JourneyMapEdits.clearPreview(kind, boxOf(it, true))); 1 }
-                            .then(ClientCommands.literal("confirm").executes { say(it, JourneyMapEdits.clear(kind, boxOf(it, true))) }))))
+                            .then(ClientCommands.literal("confirm").executes { Ui.reply(it, JourneyMapEdits.clear(kind, boxOf(it, true))) }))))
             }
             clear.then(node)
         }
@@ -166,8 +167,8 @@ object JourneyMapAdapter : MapAdapter {
                     .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
                         .then(ClientCommands.argument("z2", IntegerArgumentType.integer()).executes { context ->
                             fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
-                            val dimension = shownDimension() ?: return@executes say(context, "Not in a world")
-                            say(context, JourneyMapTerrainSave.save(
+                            val dimension = shownDimension() ?: return@executes Ui.reply(context, "Not in a world")
+                            Ui.reply(context, JourneyMapTerrainSave.save(
                                 dimension, minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")),
                                 maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")),
                             ))
@@ -183,9 +184,9 @@ object JourneyMapAdapter : MapAdapter {
         fun biomes() = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME)?.listElementIds()?.toList().orEmpty()
         return ClientCommands.literal("biome")
             .executes {
-                say(it, if (!BiomePicks.any) "No biomes are highlighted" else BiomePicks.all.keys.joinToString(", ", "Highlighted: ") { key -> BiomePicks.nameOf(key) })
+                Ui.reply(it, if (!BiomePicks.any) "No biomes are highlighted" else BiomePicks.all.keys.joinToString(", ", "Highlighted: ") { key -> BiomePicks.nameOf(key) })
             }
-            .then(ClientCommands.literal("clear").executes { BiomePicks.clear(); say(it, "Biome highlights cleared") })
+            .then(ClientCommands.literal("clear").executes { BiomePicks.clear(); Ui.reply(it, "Biome highlights cleared") })
             .then(ClientCommands.argument("biome", StringArgumentType.greedyString())
                 .suggests { _, builder ->
                     val typed = builder.remaining.lowercase()
@@ -196,16 +197,10 @@ object JourneyMapAdapter : MapAdapter {
                     val typed = StringArgumentType.getString(it, "biome").trim()
                     val biome = biomes().firstOrNull { key -> key.identifier().toString() == typed || key.identifier().path == typed }
                         ?: biomes().firstOrNull { key -> BiomePicks.nameOf(key).equals(typed, ignoreCase = true) }
-                        ?: return@executes say(it, "No biome called '$typed' here")
+                        ?: return@executes Ui.reply(it, "No biome called '$typed' here")
                     BiomePicks.toggle(biome)
-                    say(it, (if (BiomePicks.isPicked(biome)) "Highlighting " else "No longer highlighting ") + BiomePicks.nameOf(biome))
+                    Ui.reply(it, (if (BiomePicks.isPicked(biome)) "Highlighting " else "No longer highlighting ") + BiomePicks.nameOf(biome))
                 })
-    }
-
-    /** A command's reply. */
-    private fun say(context: CommandContext<FabricClientCommandSource>, text: String): Int {
-        context.source.sendFeedback(Component.literal(text))
-        return 1
     }
 
     /** The region holding block (`x`, `z`) of a command. */
