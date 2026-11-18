@@ -1,0 +1,21 @@
+# JourneyMap: BlueMap's terrain on the minimap and the map bar on the full-screen map. Marks your
+# map old (season start now) so BlueMap covers it, takes screenshots, then takes the season away.
+# Run with SME_AUTOTEST set to this file's full path, JourneyMap only (-PmapMod=journeymap).
+join MemoryCheck
+waitworld
+wait 10
+cmd mapexposer season set now
+wait 15
+screenshot
+key key.keyboard.j
+wait 8
+screenshot
+cmd mapexposer
+wait 1
+close
+wait 1
+cmd mapexposer season remove
+wait 2
+leave
+waittitle
+quit

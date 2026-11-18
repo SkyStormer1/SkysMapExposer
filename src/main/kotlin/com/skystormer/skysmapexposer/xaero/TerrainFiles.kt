@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.Ui
@@ -47,17 +48,15 @@ import java.util.concurrent.ThreadLocalRandom
  */
 object TerrainFiles {
 
-    const val EXTENSION = ".smemap"
-    private val MAGIC = "SMEMAP".toByteArray(Charsets.US_ASCII)
-    private const val VERSION = 2
+    private val EXTENSION = SharedTerrain.EXTENSION
+    private val MAGIC = SharedTerrain.MAGIC
+    private const val VERSION = SharedTerrain.VERSION
     /** Regions packed but not yet in the file; reading waits while this many are. */
     private const val QUEUED = 2
     /** Regions of an opened file read ahead of the one being written into your map. */
     private const val AHEAD = 2
-    private const val MAX_ENTRY = 64 shl 20
-    private const val KEEP_OPENED = 5
 
-    val folder: Path get() = FabricLoader.getInstance().gameDir.resolve("shared maps")
+    val folder: Path get() = SharedTerrain.folder
 
     // ---- saving ----
 
@@ -224,105 +223,7 @@ object TerrainFiles {
     private fun megabytes(bytes: Long): String =
         if (bytes < 1 shl 20) "${(bytes + 1023) / 1024} KB" else "%.1f MB".format(bytes / (1024.0 * 1024.0))
 
-    // ---- opening ----
-
-    private class Entry(val regionX: Int, val regionZ: Int, val chunks: Int, val offset: Long, val length: Int)
-
-    private class Opened(val path: Path, val from: String, val dimensionId: String, val layer: Int, val area: ShareFormat.Area, val entries: List<Entry>) {
-        val chunks get() = entries.sumOf { it.chunks }
-    }
-
-    private val opened = LinkedHashMap<Int, Opened>()
-
-    /**
-     * Files dropped onto the game window: opens every `.smemap` one. True if all of [paths] were,
-     * so nothing else needs to see the drop.
-     */
-    fun dropped(paths: List<Path>): Boolean {
-        val ours = paths.filter { it.fileName.toString().lowercase().endsWith(EXTENSION) }
-        if (ours.isEmpty()) return false
-        ours.forEach(::open)
-        return ours.size == paths.size
-    }
-
-    /** Opens a terrain file, and offers to add it in chat. */
-    fun open(path: Path) {
-        val player = Minecraft.getInstance().player
-        if (player == null) {
-            Log.info("A map file was dropped outside a world: {}", path)
-            return
-        }
-        val file = try {
-            read(path)
-        } catch (e: Exception) {
-            Log.error("Could not open the map file $path", e)
-            player.sendSystemMessage(Component.literal("§7${path.fileName} could not be opened: ${e.message ?: e.javaClass.simpleName}"))
-            return
-        }
-        val id = ThreadLocalRandom.current().nextInt(1 shl 30)
-        opened[id] = file
-        while (opened.size > KEEP_OPENED) opened.remove(opened.keys.first())
-        val name = Ui.dimensionName(file.dimensionId) ?: file.dimensionId
-        Log.info("Opened {} as {}: {} chunks of the {} (cave layer {}) from {}", path, id, file.chunks, file.dimensionId, file.layer, file.from)
-        val layer = if (file.layer == MapLayers.SURFACE) "" else " (${layerName(file.layer)})"
-        player.sendSystemMessage(
-            Component.literal("§b${file.from}§r's terrain: ${file.chunks} chunks of the $name$layer near ${file.area.x}, ${file.area.z}  ")
-                .append(ChatButton.of("[Add to unexplored only]", "/mapexposer shared $id blank", "Only fills chunks you have never mapped."))
-                .append(Component.literal(" "))
-                .append(ChatButton.of("[Add all]", "/mapexposer shared $id all", "Also replaces your own map there. Each region is backed up first."))
-        )
-    }
-
-    /** The files in the shared maps folder, newest first, by name. */
-    fun list(): List<String> = try {
-        Files.list(folder).use { files ->
-            files.filter { it.fileName.toString().lowercase().endsWith(EXTENSION) }
-                .sorted(compareByDescending<Path> { Files.getLastModifiedTime(it) })
-                .map { it.fileName.toString() }
-                .toList()
-        }
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    private fun read(path: Path): Opened {
-        DataInputStream(Files.newInputStream(path).buffered()).use { input ->
-            val magic = ByteArray(MAGIC.size).also { input.readFully(it) }
-            if (!magic.contentEquals(MAGIC)) error("it is not a Sky's Map Exposer map")
-            val version = input.readInt()
-            if (version !in 1..VERSION) error("it was made by a different version of the mod")
-            val from = input.readUTF()
-            val dimensionId = input.readUTF()
-            val layer = if (version >= 2) input.readInt() else MapLayers.SURFACE
-            val area = ShareFormat.readArea(input)
-            input.readLong()
-            var offset = MAGIC.size + 4L + utfSize(from) + utfSize(dimensionId) + (if (version >= 2) 4 else 0) + 16 + 8
-            val entries = ArrayList<Entry>()
-            while (true) {
-                val rx = try {
-                    input.readInt()
-                } catch (e: EOFException) {
-                    break
-                }
-                val rz = input.readInt()
-                val chunks = input.readInt()
-                val length = input.readInt()
-                if (chunks !in 1..32 * 32 || length !in 1..MAX_ENTRY) error("it is damaged")
-                offset += 16
-                entries.add(Entry(rx, rz, chunks, offset, length))
-                input.skipNBytes(length.toLong())
-                offset += length
-            }
-            if (entries.isEmpty()) error("it holds no terrain")
-            return Opened(path, from, dimensionId, layer, area, entries)
-        }
-    }
-
-    private fun utfSize(text: String): Int {
-        val out = ByteArrayOutputStream()
-        DataOutputStream(out).writeUTF(text)
-        return out.size()
-    }
+    // ---- adding ----
 
     /**
      * Adds opened file [id] to your map; with [unexploredOnly], only into chunks you have never
@@ -332,8 +233,7 @@ object TerrainFiles {
      * that dimension, the import would work but show nothing there, so unless [confirmed] this asks
      * first.
      */
-    fun add(id: Int, unexploredOnly: Boolean, confirmed: Boolean = false): String? {
-        val file = opened[id] ?: return "That map file is no longer open; drop it onto the game again"
+    fun add(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean = false): String? {
         val shown = XaeroWriter.shown().first
         if (!confirmed && shown != null && shown.dimensionId == file.dimensionId && shown.layer != file.layer) {
             val name = Ui.dimensionName(file.dimensionId) ?: file.dimensionId
@@ -354,13 +254,13 @@ object TerrainFiles {
         }
     }
 
-    private fun layerName(layer: Int) = if (layer == MapLayers.SURFACE) "the surface" else "cave layer $layer"
+    private fun layerName(layer: Int) = SharedTerrain.layerName(layer)
 
     /**
      * Reads [file]'s regions on [worker], a few ahead of the one being written, so that the
      * client thread only ever picks up a region that is ready. Used on the client thread only.
      */
-    private class ReadAhead(val file: Opened, val unreadable: AtomicInteger) {
+    private class ReadAhead(val file: SharedTerrain.Opened, val unreadable: AtomicInteger) {
         private val reads = HashMap<Int, Future<XaeroWriter.Pixels>>()
 
         /** Region [index], or null while it is still being read. */
@@ -376,30 +276,16 @@ object TerrainFiles {
     }
 
     /** One region of [file], read when it is about to be written; nothing if it cannot be read, counted in [unreadable]. */
-    private fun region(file: Opened, entry: Entry, unreadable: AtomicInteger): XaeroWriter.Pixels {
-        val empty = TerrainFormat.SharedRegion(entry.regionX, entry.regionZ)
-        return try {
-            val bytes = ByteArray(entry.length)
-            RandomAccessFile(file.path.toFile(), "r").use { input ->
-                input.seek(entry.offset)
-                input.readFully(bytes)
-            }
-            val regions = HashMap<Pair<Int, Int>, TerrainFormat.SharedRegion>()
-            ShareFormat.open(bytes) { batch ->
-                if (batch.format != ShareFormat.TERRAIN) error("not terrain")
-                TerrainFormat.readTerrain(batch.input, batch.count, regions)
-            }
-            regions[entry.regionX to entry.regionZ] ?: empty
-        } catch (e: Exception) {
-            Log.error("Could not read region ${entry.regionX}_${entry.regionZ} of ${file.path}; left it out", e)
-            unreadable.incrementAndGet()
-            empty
-        }
+    private fun region(file: SharedTerrain.Opened, entry: SharedTerrain.Entry, unreadable: AtomicInteger): XaeroWriter.Pixels = try {
+        TerrainFormat.SharedRegion(SharedTerrain.region(file, entry))
+    } catch (e: Exception) {
+        Log.error("Could not read region ${entry.regionX}_${entry.regionZ} of ${file.path}; left it out", e)
+        unreadable.incrementAndGet()
+        TerrainFormat.SharedRegion(SharedTerrain.Region(entry.regionX, entry.regionZ))
     }
 
     /** Leaving the server: a half-saved file is no use, and files opened there were for its map. */
     fun forget() {
         saving?.let(::abandon)
-        opened.clear()
     }
 }

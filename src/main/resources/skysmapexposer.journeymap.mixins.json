@@ -4,7 +4,8 @@
   "package": "com.skystormer.skysmapexposer.mixin.journeymap",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
-    "MapStateMixin"
+    "MapStateMixin",
+    "MapRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 0

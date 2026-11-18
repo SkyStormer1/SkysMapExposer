@@ -5,6 +5,8 @@ import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.CoarseScan
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.MapBorder
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SafeFiles
@@ -29,7 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *  - download ([download]): BlueMap's shaded colours (what BlueMap's terrain shows on JourneyMap)
  *    into JourneyMap's day map, for a region or everything, only where it has nothing or over it;
  *  - clear ([clearPreview], [clear]): chunks from before the season began, or wholly past the world
- *    border, taken off it.
+ *    border, taken off it;
+ *  - a shared map file ([addShared]), coloured as JourneyMap colours its own ([JourneyMapShared]).
  *
  * Both run the same way. Regions are found off the client thread and changed on it, one a tick.
  * Each is copied aside into this edit's own backup folder before it changes, and [undo] puts the
@@ -44,9 +47,11 @@ internal object JourneyMapEdits {
     private class Edit(val regionX: Int, val regionZ: Int, val apply: (IntArray, Path) -> Boolean)
 
     private class Job(
-        val name: String, val session: Session, val dimension: String, val folder: Path, val backups: Path,
+        val name: String, val session: Session?, val dimension: String, val folder: Path, val backups: Path,
         val centreX: Int, val centreZ: Int,
     ) {
+        /** "Download of JourneyMap's map", "Adding Sam's map to JourneyMap's map", for messages. */
+        val title = if (name.startsWith("Adding")) "$name to JourneyMap's map" else "$name of JourneyMap's map"
         @Volatile var cancelled = false
         @Volatile var total = 0
         @Volatile var finding = true
@@ -89,7 +94,7 @@ internal object JourneyMapEdits {
     }
 
     private fun findDownload(job: Job, mapId: String, region: Pair<Int, Int>?, unexploredOnly: Boolean) = finding(job) {
-        val blueMap = job.session.blueMap
+        val blueMap = job.session!!.blueMap
         val layout = blueMap.layout(mapId)
         val size = layout.tileSize
         val finest: Set<Pair<Int, Int>>
@@ -146,6 +151,55 @@ internal object JourneyMapEdits {
                 changed
             })
         }
+    }
+
+    // ---- a shared map file ----
+
+    /**
+     * Adds shared map file [file] to JourneyMap's day map of its dimension; with [unexploredOnly],
+     * only where JourneyMap has nothing. What to tell you.
+     */
+    fun addShared(file: SharedTerrain.Opened, unexploredOnly: Boolean): String {
+        val name = Ui.dimensionName(file.dimensionId) ?: file.dimensionId
+        // JourneyMap's day map is the surface; Xaero's cave layers have no place in it.
+        if (file.layer != MapLayers.SURFACE) {
+            return "This map is of ${SharedTerrain.layerName(file.layer)} of the $name; JourneyMap's day map is the surface, so only Xaero's map can take it"
+        }
+        val job = begin("Adding ${file.from}'s map", Session.current, file.dimensionId) ?: return busyOrMissing()
+        Thread({ findShared(job, file, unexploredOnly) }, "SkysMapExposer JourneyMap shared map").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        Log.info("Adding {} ({} regions of the {}) to JourneyMap's map{}", file.path.fileName, file.entries.size, file.dimensionId, if (unexploredOnly) " (unexplored only)" else "")
+        return "Adding ${file.from}'s map to JourneyMap's map of the $name…"
+    }
+
+    private fun findShared(job: Job, file: SharedTerrain.Opened, unexploredOnly: Boolean) = finding(job) {
+        val entries = file.entries.associateBy { it.regionX to it.regionZ }
+        job.total = entries.size
+        job.finding = false
+        for ((rx, rz) in nearestFirst(job, entries.keys)) {
+            if (job.cancelled) break
+            val picture = try {
+                JourneyMapShared.picture(SharedTerrain.region(file, entries.getValue(rx to rz)))
+            } catch (e: Exception) {
+                Log.error("Could not read region ${rx}_${rz} of ${file.path}; left it out", e)
+                job.looked.incrementAndGet()
+                job.unreadable++
+                continue
+            }
+            queue(job, Edit(rx, rz) { pixels, _ -> merge(pixels, picture, unexploredOnly) })
+        }
+    }
+
+    /** Puts [picture]'s pixels into [pixels], over your map or only where it has nothing; true if any changed. */
+    private fun merge(pixels: IntArray, picture: IntArray, unexploredOnly: Boolean): Boolean {
+        var changed = false
+        for (i in pixels.indices) {
+            val colour = picture[i]
+            if (colour ushr 24 == 0 || pixels[i] == colour) continue
+            if (unexploredOnly && pixels[i] ushr 24 != 0) continue
+            pixels[i] = colour
+            changed = true
+        }
+        return changed
     }
 
     // ---- clear ----
@@ -228,12 +282,13 @@ internal object JourneyMapEdits {
 
     // ---- running an edit ----
 
-    private fun begin(name: String, session: Session, dimension: String): Job? {
+    private fun begin(name: String, session: Session?, dimension: String): Job? {
         if (job != null) return null
         val folder = JourneyMapFiles.dayFolder(dimension) ?: return null
         val player = Minecraft.getInstance().player ?: return null
+        val root = serverFolder() ?: return null
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
-        val backups = session.folder.resolve("journeymap-backups").resolve(stamp).resolve(SafeFiles.name(dimension))
+        val backups = root.resolve("journeymap-backups").resolve(stamp).resolve(SafeFiles.name(dimension))
         Files.createDirectories(backups)
         // Where these backups go back to, so they are never put into another world's map.
         SafeFiles.writeString(backups.resolve(ORIGIN), folder.toAbsolutePath().toString())
@@ -277,7 +332,7 @@ internal object JourneyMapEdits {
     fun status(): String? {
         val running = job ?: return waiting.size.takeIf { it > 0 }?.let { "$it region(s) waiting for JourneyMap to let go of them" }
         return if (running.finding) "${running.name}: finding the regions…"
-        else "${running.name} of JourneyMap's map: ${running.looked.get()} of ${running.total} regions, ${running.changed} changed"
+        else "${running.title}: ${running.looked.get()} of ${running.total} regions, ${running.changed} changed"
     }
 
     /** Leaving a world: the edit stops and what was waiting is dropped. */
@@ -341,7 +396,7 @@ internal object JourneyMapEdits {
             "${waiting.size} open in JourneyMap, changed once it lets go".takeIf { waiting.isNotEmpty() },
             "${job.unreadable} left alone (not a picture this can read)".takeIf { job.unreadable > 0 },
         )
-        val head = "${job.name} of JourneyMap's map ${if (job.cancelled) "stopped" else "done"}: "
+        val head = "${job.title} ${if (job.cancelled) "stopped" else "done"}: "
         val message = Component.literal(head + parts.joinToString("; ") + ". Zoom out and back in to see it.  ")
         if (job.changed > 0) message.append(ChatButton.of("[Undo]", "/mapexposer undo", "Puts the regions back as they were before this."))
         Minecraft.getInstance().player?.sendSystemMessage(message)
@@ -377,7 +432,7 @@ internal object JourneyMapEdits {
 
     /** The newest backup folder of [dimension] on this server, from an earlier game. */
     private fun newestBackups(dimension: String): Path? {
-        val root = Session.current?.folder?.resolve("journeymap-backups") ?: return null
+        val root = serverFolder()?.resolve("journeymap-backups") ?: return null
         if (!Files.isDirectory(root)) return null
         return Files.list(root).use { stamps ->
             stamps.toList().sortedByDescending { it.fileName.toString() }
@@ -385,6 +440,10 @@ internal object JourneyMapEdits {
                 .firstOrNull { Files.exists(it.resolve(ORIGIN)) }
         }
     }
+
+    /** This mod's folder for the server you are on, whether or not it has a BlueMap, where backups go. */
+    private fun serverFolder(): Path? = Session.current?.folder
+        ?: MapExposerClient.addressOf(Minecraft.getInstance())?.let(Session::folderFor)
 
     private fun here(): String? = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()
 

@@ -12,6 +12,7 @@ import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.ShareFormat
+import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.ShareableWaypoint
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
@@ -196,6 +197,9 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
         JourneyMapMenus.goTo(dimension, x, z, from)
+
+    override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String =
+        JourneyMapEdits.addShared(file, unexploredOnly)
 
     override fun downloadStatus(): String? = JourneyMapEdits.status()?.takeIf { JourneyMapEdits.running }
 

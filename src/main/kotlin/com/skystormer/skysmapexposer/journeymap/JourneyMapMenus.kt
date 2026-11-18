@@ -10,6 +10,7 @@ import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.WaypointRules
+import com.skystormer.skysmapexposer.gui.MapBar
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import journeymap.api.v2.client.event.FullscreenRenderEvent
@@ -17,6 +18,8 @@ import journeymap.api.v2.client.event.PopupMenuEvent
 import journeymap.api.v2.client.fullscreen.IFullscreen
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.event.FullscreenEventRegistry
+import journeymap.client.ui.fullscreen.Fullscreen
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
@@ -52,6 +55,10 @@ internal object JourneyMapMenus {
     fun register() {
         FullscreenEventRegistry.FULLSCREEN_POPUP_MENU_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { menu(it) } }
         FullscreenEventRegistry.FULLSCREEN_RENDER_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { render(it) } }
+        // The map bar, as on Xaero's world map.
+        ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
+            if (screen is Fullscreen) guard { MapBar.attachTo(screen) }
+        }
         FullscreenEventRegistry.ADDON_BUTTON_DISPLAY_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { event ->
             guard {
                 // Xaero's map has a dimension button of its own; this is JourneyMap's.
@@ -138,7 +145,7 @@ internal object JourneyMapMenus {
             mouseBlock?.let { (x, z) -> OtherDimensionCoords.forWorldMap(x, z) },
             JourneyMapEdits.status() ?: MapPrep.status(),
             BiomePicks.all.keys.takeIf { it.isNotEmpty() }?.joinToString(", ", "Highlighted: ") { BiomePicks.nameOf(it) },
-        )
+        ).filter { it.isNotBlank() }
         if (lines.isEmpty()) return
         val graphics = event.graphics
         val font = Minecraft.getInstance().font

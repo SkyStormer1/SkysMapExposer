@@ -402,9 +402,11 @@ your game folder, and its settings in `config/skysmapexposer.json`.
 Without Xaero's World Map, the mod works with JourneyMap instead, through JourneyMap's own plugin
 API. It behaves as it does on Xaero's map wherever JourneyMap allows:
 
-- **Terrain:** BlueMap's terrain fills the full-screen map wherever JourneyMap has nothing or your
-  map is old, by the same rules as on Xaero's map, on the day map and, where BlueMap has it, the
-  cave map.
+- **Terrain:** BlueMap's terrain fills the full-screen map and the minimap wherever JourneyMap has
+  nothing or your map is old, by the same rules as on Xaero's map, on the day map and, where
+  BlueMap has it, the cave map.
+- **The bar** ([as on Xaero's map](#the-bar-on-the-world-map)) sits on JourneyMap's full-screen
+  map, with the same switches, Refresh, settings and biome finder.
 - **Markers, players and pings** on the full-screen map and the minimap, with the same right-click
   menus (lock on, trust, save as waypoint, temporary waypoint, copy).
 - **Right-click on the map:** Copy coordinates, Ping here, Share waypoints…, a temporary waypoint
@@ -416,12 +418,13 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
   them back. Regions JourneyMap has open wait until it lets go of them.
 - **Seasons and clearing:** `/mapexposer clear oldseason` and `/mapexposer clear border`, with the
   same backups and undo.
-- **Biome highlight:** right-click the map to highlight the biome under the click, or
-  `/mapexposer biome <name>` / `/mapexposer biome clear`. Biomes are read from JourneyMap's own
-  chunk cache, so they show where JourneyMap has mapped, in the dimension you are in.
-
-Not on JourneyMap (yet): BlueMap's terrain on the minimap (JourneyMap draws picture overlays there
-in the wrong place), the bar on the world map, and importing shared terrain files.
+- **Biome highlight:** pick biomes in the bar, right-click the map to highlight the biome under the
+  click, or `/mapexposer biome <name>` / `/mapexposer biome clear`. Biomes are read from
+  JourneyMap's own chunk cache, so they show where JourneyMap has mapped, in the dimension you are in.
+- **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
+  map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
+  map, with the same backups and undo. Saving one needs Xaero's map, which is what keeps every
+  block; a file of a cave layer only goes into Xaero's.
 
 ## Limits
 
@@ -466,7 +469,8 @@ Written from scratch; no code was copied from any other project.
   and API. None of their code was copied.
 - JourneyMap (under its own licence) is compiled against, never bundled. Map Exposer uses its plugin
   API, and reads its map folders, region cache and chunk cache through JourneyMap's own classes;
-  one mixin keeps its full-screen map on a picked dimension. None of its code was copied.
+  two mixins keep its full-screen map on a picked dimension and draw BlueMap's terrain into its
+  minimap. None of its code was copied.
 - Xaero's World Map and Minimap are closed source. They are compiled against, never bundled.
   Their class, method and field names, and the layout of their map files, were read to place the
   mixins, use their element and waypoint systems, and write downloads through Xaero's own map code.

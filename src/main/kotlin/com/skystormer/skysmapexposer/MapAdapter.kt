@@ -50,6 +50,12 @@ interface MapAdapter {
     /** What the BlueMap layer drew last, for the settings screen and `/mapexposer`. */
     fun summary(): String = ""
 
+    /** Biomes the map has recorded in [dimension] that this game version does not know, for the map bar's list. */
+    fun unknownBiomes(dimension: String?): Set<net.minecraft.resources.ResourceKey<net.minecraft.world.level.biome.Biome>> = emptySet()
+
+    /** Bumped whenever another of [unknownBiomes] turns up. */
+    val unknownBiomesVersion: Int get() = 0
+
     /** Your waypoints of the dimension you are in, to share; null with none to read. */
     fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = null
 
@@ -58,6 +64,13 @@ interface MapAdapter {
         "This map can't take waypoints"
 
     /** How a download into the map is going, while one runs. */
+    /**
+     * Adds shared terrain file [file] (opened as [id]) to this map; with [unexploredOnly], only where
+     * it has nothing. What to tell the player, or null when it asked in chat instead.
+     */
+    fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
+        "This map mod cannot take shared terrain files"
+
     fun downloadStatus(): String? = null
 
     /** Stops a running download; false if none was running. */

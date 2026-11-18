@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import com.skystormer.skysmapexposer.xaero.TerrainFormat
 import com.google.gson.JsonParser
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -75,7 +74,7 @@ class SmallFixesTest {
             ShareFormat.varint(out, 3) // block 3 of none
         }
         val error = runCatching {
-            TerrainFormat.readTerrain(DataInputStream(ByteArrayInputStream(bytes.toByteArray())), 1, HashMap())
+            SharedTerrain.readBatch(DataInputStream(ByteArrayInputStream(bytes.toByteArray())), 1, HashMap())
         }.exceptionOrNull()
         assertTrue(error?.message?.startsWith("the file is damaged") == true, "got $error")
     }

@@ -106,6 +106,7 @@ object MapExposerClient : ClientModInitializer {
                 leaving("the BlueMap session") { Session.end() }
                 leaving("terrain fill") { com.skystormer.skysmapexposer.terrain.TerrainFill.forget() }
                 leaving("chat sharing") { ChatShare.forget() }
+                leaving("shared map files") { SharedTerrain.forget() }
                 leaving("pings") { PlayerPings.forget() }
                 leaving("the map") { MapMods.adapter?.leave() }
                 leaving("hook errors") { HookErrors.forget() }
@@ -217,6 +218,21 @@ object MapExposerClient : ClientModInitializer {
                             ))
                             .then(ClientCommands.literal("remove").executes { say(it, setSeason(null)) })
                     )
+                    .then(
+                        ClientCommands.literal("shared").then(
+                            ClientCommands.argument("id", IntegerArgumentType.integer(0))
+                                .then(ClientCommands.literal("blank").executes { addShared(it, unexploredOnly = true) }
+                                    .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = true, confirmed = true) }))
+                                .then(ClientCommands.literal("all").executes { addShared(it, unexploredOnly = false) }
+                                    .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = false, confirmed = true) }))
+                        )
+                    )
+                    .then(
+                        ClientCommands.literal("terrain").then(ClientCommands.literal("open")
+                            .then(ClientCommands.argument("file", StringArgumentType.greedyString())
+                                .suggests { _, builder -> SharedTerrain.list().forEach(builder::suggest); builder.buildFuture() }
+                                .executes(::openTerrain)))
+                    )
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
                         ClientCommands.literal("prepare")
@@ -306,6 +322,32 @@ object MapExposerClient : ClientModInitializer {
         MapMods.adapter?.shownDimension() ?: Minecraft.getInstance().level?.dimension()?.identifier()?.toString(),
         busy = MapMods.adapter?.downloadStatus() != null,
     )
+
+    /** A map file from the shared maps folder, as if dropped onto the game. */
+    private fun openTerrain(context: CommandContext<FabricClientCommandSource>): Int {
+        val name = StringArgumentType.getString(context, "file")
+        val path = SharedTerrain.folder.resolve(name).normalize()
+        if (!path.startsWith(SharedTerrain.folder) || !java.nio.file.Files.isRegularFile(path)) {
+            context.source.sendError(Component.literal("No map file called $name in the shared maps folder"))
+            return 0
+        }
+        SharedTerrain.open(path)
+        return 1
+    }
+
+    /** The buttons under a map file opened: adds it to the map in use. */
+    private fun addShared(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean, confirmed: Boolean = false): Int {
+        val id = IntegerArgumentType.getInteger(context, "id")
+        val file = SharedTerrain.opened(id)
+        val adapter = MapMods.adapter
+        val text = when {
+            file == null -> "That map file is no longer open; drop it onto the game again"
+            adapter == null -> "Shared terrain goes into Xaero's World Map or JourneyMap; neither is installed"
+            else -> adapter.addSharedTerrain(file, id, unexploredOnly, confirmed) ?: return 1
+        }
+        context.source.sendFeedback(Component.literal(text))
+        return 1
+    }
 
     private fun say(context: CommandContext<FabricClientCommandSource>, message: String): Int {
         context.source.sendFeedback(Component.literal(message))

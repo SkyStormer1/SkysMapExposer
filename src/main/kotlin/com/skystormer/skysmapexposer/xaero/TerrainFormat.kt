@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.ShareFormat.Area
 import com.skystormer.skysmapexposer.ShareFormat.Header
 import com.skystormer.skysmapexposer.ShareFormat.MAX_SIDE
@@ -239,63 +240,13 @@ object TerrainFormat {
         }
     }
 
-    /** Reads an opened [TERRAIN] batch into [into], by region. */
-    fun readTerrain(input: DataInputStream, count: Int, into: MutableMap<Pair<Int, Int>, SharedRegion>) {
-        if (count !in 1..32 * 32) error("$count chunks")
-        val stateCount = varint(input)
-        if (stateCount > 65536) error("$stateCount blocks")
-        val states = List(stateCount) { parseState(input.readUTF()) }
-        val biomeCount = varint(input)
-        if (biomeCount > 65536) error("$biomeCount biomes")
-        val biomes = List(biomeCount) { ResourceKey.create(Registries.BIOME, Identifier.parse(input.readUTF())) }
-        repeat(count) {
-            val cx = input.readInt()
-            val cz = input.readInt()
-            val chunk = SharedChunk()
-            for (i in 0 until 256) {
-                chunk.state[i] = states.entry(varint(input), "block")
-                val height = input.readShort()
-                chunk.height[i] = height
-                chunk.top[i] = (height + unzigzag(varint(input))).toShort()
-                chunk.biome[i] = varint(input).let { if (it == 0) null else biomes.entry(it - 1, "biome") }
-                val lightAndGlow = input.readUnsignedByte()
-                chunk.light[i] = (lightAndGlow and 15).toByte()
-                chunk.glowing[i] = lightAndGlow and 16 != 0
-                val overlays = varint(input)
-                if (overlays > MAX_OVERLAYS) error("$overlays layers on one block")
-                if (overlays > 0) {
-                    chunk.overlays[i] = List(overlays) {
-                        val state = states.entry(varint(input), "block")
-                        val bits = input.readUnsignedByte()
-                        SharedOverlay(state, (bits and 15).toByte(), bits and 16 != 0, input.readUnsignedByte())
-                    }
-                }
-            }
-            val region = into.getOrPut((cx shr 5) to (cz shr 5)) { SharedRegion(cx shr 5, cz shr 5) }
-            region.chunks[(cz and 31) * 32 + (cx and 31)] = chunk
-        }
-    }
-
-    /** Entry [index] of a list read from the file, or "the file is damaged" if there is no such entry. */
-    private fun <T> List<T>.entry(index: Int, what: String): T =
-        getOrNull(index) ?: error("the file is damaged ($what $index of $size)")
-
     // ---- terrain, as it is written into your map ----
 
-    class SharedOverlay(val state: BlockState, val light: Byte, val glowing: Boolean, val opacity: Int)
-
-    class SharedChunk {
-        val state = arrayOfNulls<BlockState>(256)
-        val height = ShortArray(256)
-        val top = ShortArray(256)
-        val biome = arrayOfNulls<ResourceKey<Biome>>(256)
-        val light = ByteArray(256)
-        val glowing = BooleanArray(256)
-        val overlays = arrayOfNulls<List<SharedOverlay>>(256)
-    }
-
-    class SharedRegion(override val regionX: Int, override val regionZ: Int) : XaeroWriter.Pixels {
-        val chunks = arrayOfNulls<SharedChunk>(32 * 32)
+    /** A region of a shared map ([SharedTerrain]), as Xaero's blocks. */
+    class SharedRegion(val terrain: SharedTerrain.Region) : XaeroWriter.Pixels {
+        override val regionX get() = terrain.regionX
+        override val regionZ get() = terrain.regionZ
+        private val chunks get() = terrain.chunks
 
         override fun countInChunk(chunkInRegionX: Int, chunkInRegionZ: Int) =
             if (chunks[chunkInRegionZ * 32 + chunkInRegionX] != null) 256 else 0
@@ -329,10 +280,5 @@ object TerrainFormat {
         return (access.`skysmapexposer$light`().toInt() and 15) or (if (access.`skysmapexposer$glowing`()) 16 else 0)
     }
 
-    /** A block by its name and properties; one this game does not know becomes air. */
-    private fun parseState(text: String): BlockState = try {
-        BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, text, false).blockState()
-    } catch (e: Exception) {
-        Blocks.AIR.defaultBlockState()
-    }
+
 }

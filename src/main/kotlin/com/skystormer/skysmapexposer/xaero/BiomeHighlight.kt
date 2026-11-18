@@ -71,10 +71,13 @@ object BiomeHighlight {
         changed()
     }
 
-    /** Squares worked out for other picks are let go of; a pick changed elsewhere is caught by its version. */
+    /** Squares worked out for other picks are let go of, whichever map's bar changed them. */
     private fun changed() {
         squares.forEach { it.clear() }
+        squaresVersion = BiomePicks.version
     }
+
+    private var squaresVersion = 0
 
     /** The world map, from Xaero's `GuiMap`, with the matrix and origin its terrain was drawn with. */
     @JvmStatic
@@ -85,6 +88,7 @@ object BiomeHighlight {
             Log.warn("Could not look for biomes this game version does not know: {}", e.toString())
         }
         if (!BiomePicks.any) return
+        if (squaresVersion != BiomePicks.version) changed()
         try {
             val view = MapViewport.of(matrix, cameraX, cameraZ)
             // Zoomed out, Xaero draws from coarser copies of its regions (level 1 to 3, each pixel

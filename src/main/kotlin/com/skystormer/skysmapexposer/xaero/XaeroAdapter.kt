@@ -14,10 +14,11 @@ import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.SkippedRegions
 import com.skystormer.skysmapexposer.Ui
-import com.skystormer.skysmapexposer.xaero.MapBar
+import com.skystormer.skysmapexposer.gui.MapBar
 import java.nio.file.Files
 import java.util.UUID
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands
@@ -70,7 +71,7 @@ object XaeroAdapter : MapAdapter {
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
             if (screen.javaClass.name != "xaero.map.gui.GuiMap") return@register
             try {
-                MapBar.addTo(screen)
+                com.skystormer.skysmapexposer.gui.MapBar.addTo(screen)
 
                 ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
                     val status = BlueMapDownload.status() ?: MapPrep.status() ?: return@register
@@ -162,23 +163,8 @@ object XaeroAdapter : MapAdapter {
         return 1
     }
 
-    /** A map file from the shared maps folder, as if dropped onto the game. */
-    private fun openTerrain(context: CommandContext<FabricClientCommandSource>): Int {
-        val name = StringArgumentType.getString(context, "file")
-        val path = TerrainFiles.folder.resolve(name).normalize()
-        if (!path.startsWith(TerrainFiles.folder) || !Files.isRegularFile(path)) {
-            context.source.sendError(Component.literal("No map file called $name in the shared maps folder"))
-            return 0
-        }
-        TerrainFiles.open(path)
-        return 1
-    }
-
-    /** The buttons under a map file opened. */
-    private fun addShared(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean, confirmed: Boolean = false): Int {
-        TerrainFiles.add(IntegerArgumentType.getInteger(context, "id"), unexploredOnly, confirmed)?.let { context.source.sendFeedback(Component.literal(it)) }
-        return 1
-    }
+    override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
+        TerrainFiles.add(file, id, unexploredOnly, confirmed)
 
     private fun cancelDownloadCommand(context: CommandContext<FabricClientCommandSource>): Int {
         if (BlueMapDownload.cancel()) {
@@ -378,25 +364,12 @@ object XaeroAdapter : MapAdapter {
                     .then(ClientCommands.literal("cancel").executes(::cancelDownloadCommand))
             )
             .then(
-                ClientCommands.literal("shared").then(
-                    ClientCommands.argument("id", IntegerArgumentType.integer(0))
-                        .then(ClientCommands.literal("blank").executes { addShared(it, unexploredOnly = true) }
-                            .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = true, confirmed = true) }))
-                        .then(ClientCommands.literal("all").executes { addShared(it, unexploredOnly = false) }
-                            .then(ClientCommands.literal("confirm").executes { addShared(it, unexploredOnly = false, confirmed = true) }))
-                )
-            )
-            .then(
                 ClientCommands.literal("terrain")
                     .then(ClientCommands.literal("save")
                         .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
                             .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
                                 .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
                                     .then(ClientCommands.argument("z2", IntegerArgumentType.integer()).executes(::saveTerrain))))))
-                    .then(ClientCommands.literal("open")
-                        .then(ClientCommands.argument("file", StringArgumentType.greedyString())
-                            .suggests { _, builder -> TerrainFiles.list().forEach(builder::suggest); builder.buildFuture() }
-                            .executes(::openTerrain)))
                     .then(ClientCommands.literal("cancel").executes {
                         it.source.sendFeedback(Component.literal(if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved"))
                         1
@@ -453,6 +426,10 @@ object XaeroAdapter : MapAdapter {
     }
 
     override fun shownDimension(): String? = MarkerElements.worldMapDimension()
+
+    override fun unknownBiomes(dimension: String?) = BiomeHighlight.unknownIn(dimension)
+
+    override val unknownBiomesVersion: Int get() = BiomeHighlight.unknownVersion
 
     override fun cavesShown(session: Session): String? {
         val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return null

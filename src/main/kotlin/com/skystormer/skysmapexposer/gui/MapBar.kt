@@ -1,15 +1,14 @@
-package com.skystormer.skysmapexposer.xaero
+package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.BiomePicks
-import com.skystormer.skysmapexposer.gui.ConfigScreen
-import com.skystormer.skysmapexposer.gui.DockPanel
-import com.skystormer.skysmapexposer.gui.PlayerListScreen
-import com.skystormer.skysmapexposer.xaero.BiomeHighlight
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapRefresh
-import com.skystormer.skysmapexposer.xaero.MarkerElements
 import com.skystormer.skysmapexposer.Session
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
+import com.mojang.blaze3d.platform.InputConstants
 import com.skystormer.skysmapexposer.MapMods
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -24,7 +23,8 @@ import net.minecraft.world.level.biome.Biome
 import java.lang.ref.WeakReference
 
 /**
- * The bar on Xaero's world map: this mod's switches, and a biome finder.
+ * The bar on the world map, Xaero's or JourneyMap's full-screen one: this mod's switches, and a
+ * biome finder.
  *
  * - The header folds the bar down to itself when clicked and moves it when dragged; **Refresh**
  *   downloads the BlueMap tiles in view again (once every 30 seconds) and **Set** opens
@@ -32,7 +32,7 @@ import java.lang.ref.WeakReference
  * - The switches turn BlueMap's terrain, markers, borders and players on and off, for every
  *   server, as the settings do; **List** opens the player list.
  * - Below them, every biome of the dimension the map is showing, with a search box. Clicking one
- *   tints the map wherever Xaero recorded it ([BiomeHighlight]); each picked biome gets its own
+ *   tints the map wherever that map knows it is ([BiomePicks]); each picked biome gets its own
  *   colour, shown beside its name. **Clear** unpicks them all.
  *
  * The list scrolls with the wheel. Moving, docking under another panel, the grips and the size
@@ -95,6 +95,51 @@ object MapBar {
         widgets.add(panel)
         widgets.add(search)
         current = WeakReference(panel)
+    }
+
+    /**
+     * The bar on a screen that draws and handles only its own widgets (JourneyMap's full-screen map,
+     * which takes every widget of its screen for one of its buttons): kept off the screen's widget
+     * list, drawn after the screen and offered the mouse and keys first, through Fabric's screen
+     * events. What the bar or its search box takes, the map underneath never sees.
+     */
+    fun attachTo(screen: Screen) {
+        val search = SearchBox()
+        val panel = Panel(screen, search)
+        search.setResponder { panel.searched() }
+        search.covered = panel::covered
+        current = WeakReference(panel)
+        ScreenEvents.afterExtract(screen).register { _, graphics, mouseX, mouseY, partialTick ->
+            panel.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        }
+        ScreenMouseEvents.allowMouseClick(screen).register { _, event ->
+            when {
+                search.visible && search.isMouseOver(event.x(), event.y()) -> {
+                    search.isFocused = true
+                    search.mouseClicked(event, false)
+                    false
+                }
+                panel.mouseClicked(event, false) -> false
+                else -> {
+                    search.isFocused = false
+                    true
+                }
+            }
+        }
+        ScreenMouseEvents.allowMouseDrag(screen).register { _, event, dragX, dragY -> !panel.mouseDragged(event, dragX, dragY) }
+        ScreenMouseEvents.allowMouseRelease(screen).register { _, event -> !panel.mouseReleased(event) }
+        ScreenMouseEvents.allowMouseScroll(screen).register { _, mouseX, mouseY, _, vertical -> !scrolled(mouseX, mouseY, vertical) }
+        // While the search box has the focus, typing is the box's, not the map's keys.
+        ScreenKeyboardEvents.allowKeyPress(screen).register { _, event ->
+            if (!search.isFocused) return@register true
+            if (event.key() == InputConstants.KEY_ESCAPE) search.isFocused = false else search.keyPressed(event)
+            false
+        }
+        ScreenKeyboardEvents.allowCharType(screen).register { _, event ->
+            if (!search.isFocused) return@register true
+            search.charTyped(event)
+            false
+        }
     }
 
     /** Called before Xaero zooms the map: true when the wheel was over the bar and scrolled it. */
@@ -185,12 +230,12 @@ object MapBar {
         /**
          * The biomes that belong to the dimension the map is showing, by the game's own tags, by
          * name; every biome for a dimension without a tag. Biomes the map has that this game version
-         * does not know are added as they are noticed ([BiomeHighlight.unknownIn]). Worked out again
+         * does not know are added as they are noticed (the map adapter's `unknownBiomes`). Worked out again
          * when the map changes dimension or another of those turns up.
          */
         private fun allBiomes(): List<Pair<ResourceKey<Biome>, String>> {
-            val shown = MarkerElements.worldMapDimension()
-            val version = BiomeHighlight.unknownVersion
+            val shown = MapMods.adapter?.shownDimension()
+            val version = (MapMods.adapter?.unknownBiomesVersion ?: 0)
             if (shown == biomes.dimension && version == biomes.unknownVersion && biomes.all.isNotEmpty()) return biomes.all
             val registry = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME) ?: return emptyList()
             val tag = when (shown) {
@@ -201,7 +246,7 @@ object MapBar {
             }
             val holders = registry.listElements().toList()
             val inDimension = tag?.let { t -> holders.filter { it.`is`(t) } }?.ifEmpty { null } ?: holders
-            val all = (inDimension.map { it.key() } + BiomeHighlight.unknownIn(shown)).distinct()
+            val all = (inDimension.map { it.key() } + MapMods.adapter?.unknownBiomes(shown).orEmpty()).distinct()
                 .map { it to nameOf(it) }.sortedBy { it.second.lowercase() }
             if (shown != biomes.dimension) offset = 0
             biomes = Biomes(shown, version, all)
@@ -212,7 +257,7 @@ object MapBar {
         private fun listed(): List<Pair<ResourceKey<Biome>, String>> {
             val wanted = search.value.trim().lowercase()
             val matching = allBiomes().filter { wanted.isEmpty() || wanted in it.second.lowercase() }
-            val (picked, rest) = matching.partition { BiomeHighlight.isPicked(it.first) }
+            val (picked, rest) = matching.partition { BiomePicks.isPicked(it.first) }
             return picked + rest
         }
 
@@ -238,7 +283,7 @@ object MapBar {
         override fun isMouseOver(mouseX: Double, mouseY: Double): Boolean =
             super.isMouseOver(mouseX, mouseY) && !(search.visible && search.isMouseOver(mouseX, mouseY))
 
-        private fun searchWidth() = baseWidth - 6 - (if (BiomeHighlight.any) switchWidth(CLEAR) + PAD else 0)
+        private fun searchWidth() = baseWidth - 6 - (if (BiomePicks.any) switchWidth(CLEAR) + PAD else 0)
 
         override fun afterLayout() {
             offset = offset.coerceIn(0, maxOf(0, itemCount() - shownRows))
@@ -307,7 +352,7 @@ object MapBar {
             val searchTop = ROW * 2
             graphics.fill(2, searchTop + 1, baseWidth - 2, searchTop + ROW, 0x40000000)
             search.drawAt(graphics, 3, searchTop + 2, searchWidth(), lx, ly, partialTick)
-            if (BiomeHighlight.any) {
+            if (BiomePicks.any) {
                 val overClear = inside && ly in searchTop until searchTop + ROW && mx >= clearLeft
                 button(graphics, CLEAR, clearLeft, searchTop, false, overClear)
                 if (idle && overClear) tooltip(graphics, "Stop highlighting every biome", mouseX, mouseY)
@@ -321,7 +366,7 @@ object MapBar {
             for (i in 0 until rows) {
                 val (biome, name) = listed.getOrNull(i + offset) ?: break
                 val top = listTop + i * ROW
-                val colour = BiomeHighlight.colourOf(biome)
+                val colour = BiomePicks.colourOf(biome)
                 val over = idle && inside && ly >= top && ly < top + ROW
                 if (over) graphics.fill(0, top, baseWidth, top + ROW, HOVER)
                 if (colour != null) graphics.fill(3, top + 2, 10, top + 9, colour or 0xFF000000.toInt())
@@ -368,12 +413,12 @@ object MapBar {
                 ly < ROW * 2 -> switchAt(lx)?.press?.invoke(screen)
                 ly < ROW * 3 -> {
                     // The rest of this row is the search box's, which the mouse reaches directly.
-                    if (BiomeHighlight.any && lx >= clearLeft) BiomeHighlight.clear()
+                    if (BiomePicks.any && lx >= clearLeft) BiomePicks.clear()
                 }
                 else -> {
                     val row = ((ly - listTop) / ROW).toInt()
                     val listed = listed()
-                    if (row in 0 until shownRows) listed.getOrNull(row + offset)?.let { BiomeHighlight.toggle(it.first) }
+                    if (row in 0 until shownRows) listed.getOrNull(row + offset)?.let { BiomePicks.toggle(it.first) }
                 }
             }
             search.isFocused = false

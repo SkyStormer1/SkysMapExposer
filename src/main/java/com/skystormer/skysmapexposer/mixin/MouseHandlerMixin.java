@@ -1,7 +1,7 @@
 package com.skystormer.skysmapexposer.mixin;
 
 import com.skystormer.skysmapexposer.MapMods;
-import com.skystormer.skysmapexposer.xaero.TerrainFiles;
+import com.skystormer.skysmapexposer.SharedTerrain;
 import net.minecraft.client.MouseHandler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -25,11 +25,11 @@ public class MouseHandlerMixin {
     @Inject(method = "onDrop", at = @At("HEAD"), cancellable = true, require = 0)
     //? if >=26.3 {
     private void skysmapexposer$onDrop(long window, List<String> paths, CallbackInfo ci) {
-        if (MapMods.INSTANCE.getXaeroWorldMap() && TerrainFiles.INSTANCE.dropped(paths.stream().map(Path::of).toList())) ci.cancel();
+        if (MapMods.INSTANCE.getAny() && SharedTerrain.INSTANCE.dropped(paths.stream().map(Path::of).toList())) ci.cancel();
     }
     //?} else {
     /*private void skysmapexposer$onDrop(long window, List<Path> paths, int failed, CallbackInfo ci) {
-        if (MapMods.INSTANCE.getXaeroWorldMap() && TerrainFiles.INSTANCE.dropped(paths)) ci.cancel();
+        if (MapMods.INSTANCE.getAny() && SharedTerrain.INSTANCE.dropped(paths)) ci.cancel();
     }
     *///?}
 }
