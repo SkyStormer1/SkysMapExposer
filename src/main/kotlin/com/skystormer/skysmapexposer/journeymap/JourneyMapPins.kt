@@ -35,10 +35,8 @@ import kotlin.math.floor
  *
  * Nothing is rebuilt per frame or per tick. Each overlay is kept under a key made from its
  * dimension and what it shows, so a marker that comes back unchanged from BlueMap's next refresh is
- * left alone, and a player who moves keeps their overlay and only gets a new position. Switching
- * the map to another dimension leaves this one's overlays where they are (JourneyMap only draws
- * the dimension on screen; ones put back after a switch were drawn wrong), so coming back needs
- * nothing rebuilt. Overlays only change when their data does; all go on leaving a world ([forget]).
+ * left alone, and a player who moves keeps their overlay and only gets a new position. Overlays only
+ * change when their data does; everything is dropped on leaving a world ([forget]).
  */
 internal object JourneyMapPins {
 
@@ -64,7 +62,7 @@ internal object JourneyMapPins {
             lastPins = pins
             lastOutlines = outlines
         }
-        if (awaitingIcon.isNotEmpty()) giveIcons()
+        if (awaitingIcon.isNotEmpty()) giveIcons(api)
     }
 
     /** Leaving a world: JourneyMap is told to drop ours ([JourneyMapAdapter.leave]); this lets go of them. */
@@ -101,8 +99,7 @@ internal object JourneyMapPins {
                 else -> keep(api, wanted, pinKey(dimension, pin)) { pinOverlay(dimension, key, pin) }
             }
         }
-        // Only this dimension's: the others wait, hidden, for the map to come back to them.
-        val gone = shown.keys.filter { dimensionOf(it) == dimension } - wanted
+        val gone = shown.keys - wanted
         for (old in gone) {
             shown.remove(old)?.let { api.remove(it.overlay) }
             awaitingIcon.remove(old)
@@ -128,7 +125,8 @@ internal object JourneyMapPins {
             overlay.setPoint(blockOf(player))
             overlay.setActiveUIs(*uisFor(player))
             overlay.setLabel(if (LockedPlayers.isLocked(player.uuid)) player.label else "")
-            overlay.flagForRerender()
+            // Shown again: that is how JourneyMap takes a moved or changed overlay.
+            show(api, overlay)
             return
         }
         existing?.let { api.remove(it.overlay) }
@@ -231,7 +229,7 @@ internal object JourneyMapPins {
     }
 
     /** Markers whose icon has loaded since they were shown get it now. */
-    private fun giveIcons() {
+    private fun giveIcons(api: IClientAPI) {
         val markers = Session.current?.markers ?: return
         val iterator = awaitingIcon.entries.iterator()
         while (iterator.hasNext()) {
@@ -241,7 +239,9 @@ internal object JourneyMapPins {
             val (location, width, height) = markers.iconLocation(path) ?: continue
             val size = MARKER_SIZE * Config.worldMapMarkerScale
             overlay.setIcon(MapImage(location, width, height).setDisplayWidth(size).setDisplayHeight(size).centerAnchors())
-            overlay.flagForRerender()
+            // JourneyMap takes a changed picture only when the overlay is shown again; until then it
+            // goes on drawing the placeholder it set up first.
+            show(api, overlay)
             iterator.remove()
         }
     }

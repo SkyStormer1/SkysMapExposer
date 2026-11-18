@@ -91,7 +91,10 @@ internal object JourneyMapTerrain {
             note = if (state.mapType == Context.MapType.Underground) "BlueMap only has the surface here" else "BlueMap's map here shows the inside; switch to the cave map"
             return
         }
-        val bounds = state.blockBounds ?: return run { note = "JourneyMap has not said what is on screen" }
+        // What is on screen, from the map's live centre: the view's own block area lags a map moved
+        // by Go to or the dimension button, which left pictures built for where it had been.
+        val shownArea = JourneyMapMenus.shownArea(state) ?: return run { note = "JourneyMap has not said what is on screen" }
+        val bounds = net.minecraft.world.phys.AABB(shownArea[0], 0.0, shownArea[1], shownArea[2], 0.0, shownArea[3])
 
         val left = Math.floorDiv(bounds.minX.toInt(), REGION)
         val right = Math.floorDiv(bounds.maxX.toInt(), REGION)
@@ -121,7 +124,7 @@ internal object JourneyMapTerrain {
             if (region in busy) continue
             val old = shown[region]
             val tiles = tilesFor(session, region, layout) ?: continue.also { note = "waiting for BlueMap's tiles" }
-            if (seaFloor) tiles.forEach { session.seaFloor.want(it, map, state.mapCenter.x.toDouble(), state.mapCenter.z.toDouble(), bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, closeUp = scale <= SeaFloor.CLOSE_UP) }
+            if (seaFloor) tiles.forEach { session.seaFloor.want(it, map, bounds.center.x, bounds.center.z, bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, closeUp = scale <= SeaFloor.CLOSE_UP) }
             val changed = old != null && (tiles.map { it.floor } != old.floors || tiles.map { it.contentMinute } != old.contents)
             if (old != null && !changed && now - old.checkedAt < RECHECK_MS) continue
             if (old == null && shown.size * bytesAt(scale) >= budget()) break

@@ -120,6 +120,22 @@ internal object JourneyMapMenus {
     }
 
     /**
+     * The blocks JourneyMap's full-screen map shows now, as left, top, right, bottom: its live centre
+     * and, at [state]'s zoom ([UIState.blockSize], window pixels a block), the window's size. The
+     * view's own block area lags a moved map. Null until the map has been seen open.
+     */
+    fun shownArea(state: UIState): DoubleArray? {
+        val map = fullscreen ?: return null
+        val pixelsPerBlock = state.blockSize.takeIf { it > 0 } ?: return null
+        val window = Minecraft.getInstance().window
+        val halfWide = window.width / 2.0 / pixelsPerBlock
+        val halfHigh = window.height / 2.0 / pixelsPerBlock
+        val x = map.getCenterBlockX(false)
+        val z = map.getCenterBlockZ(false)
+        return doubleArrayOf(x - halfWide, z - halfHigh, x + halfWide, z + halfHigh)
+    }
+
+    /**
      * The block under the mouse at ([mouseX], [mouseY]), in GUI pixels: the map's own centre, plus
      * the mouse's distance from the middle of the window over JourneyMap's [UIState.blockSize]
      * (window pixels a block, at its zoom). The view's block area lags a moved map, so is not used.
