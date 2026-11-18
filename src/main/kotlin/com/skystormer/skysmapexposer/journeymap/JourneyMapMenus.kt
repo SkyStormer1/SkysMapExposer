@@ -123,7 +123,12 @@ internal object JourneyMapMenus {
         // The list and downloads read BlueMap, so they are only worth offering on a server that has one.
         if (Session.current != null) {
             menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
-            if (!JourneyMapEdits.running) menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z) }
+            if (!JourneyMapEdits.running) {
+                menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z) }
+                // As on Xaero's map: what would go is said in chat, with the button to go ahead.
+                menu.addMenuItem("Clear old season…") { offerClear(JourneyMapEdits.Clear.OLD_SEASON) }
+                menu.addMenuItem("Clear past border…") { offerClear(JourneyMapEdits.Clear.BORDER) }
+            }
         }
     }
 
@@ -173,6 +178,12 @@ internal object JourneyMapMenus {
             .append(" ")
             .append(ChatButton.of("[Everything]", "/mapexposer download all", "Everywhere BlueMap has the map, over your own map too."))
         Minecraft.getInstance().player?.sendSystemMessage(message)
+    }
+
+    /** "Clear old season…", "Clear past border…": closes the map and says in chat what would go, with the button to clear it. */
+    private fun offerClear(kind: JourneyMapEdits.Clear) {
+        Ui.open(null)
+        Minecraft.getInstance().player?.sendSystemMessage(JourneyMapEdits.clearPreview(kind, null))
     }
 
     /**
