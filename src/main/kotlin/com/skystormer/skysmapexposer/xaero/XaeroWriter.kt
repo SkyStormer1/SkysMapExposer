@@ -2,7 +2,6 @@ package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMapPicture
-import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session

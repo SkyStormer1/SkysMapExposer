@@ -4,9 +4,6 @@ import com.skystormer.skysmapexposer.SafeFiles
 import journeymap.client.io.FileHandler
 import journeymap.client.model.region.RegionImageCache
 import net.minecraft.client.Minecraft
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
-import net.minecraft.resources.ResourceKey
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -28,9 +25,14 @@ internal object JourneyMapFiles {
     const val REGION = 512
 
     /** JourneyMap's folder for [dimension]'s day map in the world you are in, or null before it has one. */
-    fun dayFolder(dimension: String): Path? {
+    fun dayFolder(dimension: String): Path? = dimensionFolder(dimension)?.resolve("day")
+
+    /** JourneyMap's chunk cache of [dimension] in the world you are in: one file per region, `c.x.z.jmc`. */
+    fun chunkCacheFolder(dimension: String): Path? = dimensionFolder(dimension)?.resolve("chunk_cache")
+
+    private fun dimensionFolder(dimension: String): Path? {
         val world = FileHandler.getJMWorldDir(Minecraft.getInstance()) ?: return null
-        return FileHandler.getDimPath(world, keyOf(dimension))?.resolve("day")
+        return FileHandler.getDimPath(world, JourneyMapAdapter.levelKey(dimension))
     }
 
     fun regionFile(folder: Path, regionX: Int, regionZ: Int): Path = folder.resolve("$regionX,$regionZ.png")
@@ -86,9 +88,6 @@ internal object JourneyMapFiles {
             else -> false
         }
     }
-
-    private fun keyOf(dimension: String): ResourceKey<net.minecraft.world.level.Level> =
-        ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension))
 
     /** Beside a backup: there was no file before. */
     private const val ABSENT = ".none"

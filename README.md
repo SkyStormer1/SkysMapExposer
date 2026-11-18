@@ -419,8 +419,9 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
 - **Seasons and clearing:** `/mapexposer clear oldseason` and `/mapexposer clear border`, with the
   same backups and undo.
 - **Biome highlight:** pick biomes in the bar, right-click the map to highlight the biome under the
-  click, or `/mapexposer biome <name>` / `/mapexposer biome clear`. Biomes are read from
-  JourneyMap's own chunk cache, so they show where JourneyMap has mapped, in the dimension you are in.
+  click, or `/mapexposer biome <name>` / `/mapexposer biome clear`; on the full-screen map and, by
+  the bar's Minimap switch, the minimap. Biomes are read from JourneyMap's own chunk cache, so they
+  show where JourneyMap has mapped, in the dimension you are in.
 - **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
   map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
   map, with the same backups and undo. Saving one needs Xaero's map, which is what keeps every

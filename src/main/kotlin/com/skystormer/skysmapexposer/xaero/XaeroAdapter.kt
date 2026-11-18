@@ -19,7 +19,6 @@ import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.SkippedRegions
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.gui.MapBar
-import java.nio.file.Files
 import java.util.UUID
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
@@ -428,6 +427,8 @@ object XaeroAdapter : MapAdapter {
     override fun shownDimension(): String? = MarkerElements.worldMapDimension()
 
     override fun unknownBiomes(dimension: String?) = BiomeHighlight.unknownIn(dimension)
+
+    override val tintsMinimap: Boolean get() = MapMods.xaeroMinimap
 
     override val unknownBiomesVersion: Int get() = BiomeHighlight.unknownVersion
 

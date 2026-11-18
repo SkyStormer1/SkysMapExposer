@@ -13,10 +13,6 @@ import journeymap.api.v2.common.waypoint.WaypointFactory
 import journeymap.api.v2.common.waypoint.WaypointGroup
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
-import net.minecraft.resources.ResourceKey
-import net.minecraft.world.level.Level
 import kotlin.math.floor
 
 /**
@@ -104,7 +100,7 @@ internal object JourneyMapWaypoints {
     private fun isTemporary(waypoint: Waypoint): Boolean = waypoint.getCustomData(TEMPORARY) != null
 
     private fun add(api: IClientAPI, dimension: String, name: String, x: Int, y: Int, z: Int, rgb: Int, persistent: Boolean) {
-        val waypoint = WaypointFactory.createWaypoint(JourneyMapAdapter.MOD_ID, BlockPos(x, y, z), name, keyOf(dimension), persistent)
+        val waypoint = WaypointFactory.createWaypoint(JourneyMapAdapter.MOD_ID, BlockPos(x, y, z), name, JourneyMapAdapter.levelKey(dimension), persistent)
         waypoint.setColor(rgb)
         if (!persistent) waypoint.setCustomData(TEMPORARY, "1")
         group(api).addWaypoint(waypoint)
@@ -123,15 +119,13 @@ internal object JourneyMapWaypoints {
             dimension == Config.OVERWORLD && here == Config.NETHER -> Math.floorDiv(x, Config.NETHER_SCALE) to Math.floorDiv(z, Config.NETHER_SCALE)
             else -> x to z
         }
-        return api.getAllWaypoints(keyOf(dimension)).any { it.x == sx && it.z == sz && it.name == name }
+        return api.getAllWaypoints(JourneyMapAdapter.levelKey(dimension)).any { it.x == sx && it.z == sz && it.name == name }
     }
 
     /** JourneyMap's "Map Exposer" group, made the first time it is needed. */
     private fun group(api: IClientAPI): WaypointGroup =
         api.getWaypointGroupByName(JourneyMapAdapter.MOD_ID, GROUP)
             ?: WaypointFactory.createWaypointGroup(JourneyMapAdapter.MOD_ID, GROUP).also(api::addWaypointGroup)
-
-    private fun keyOf(dimension: String): ResourceKey<Level> = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension))
 
     private inline fun guard(what: String, block: () -> String): String = try {
         block()

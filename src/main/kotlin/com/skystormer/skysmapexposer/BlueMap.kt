@@ -400,21 +400,22 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         }
 
         /**
-         * Decodes a PNG (or any image ImageIO reads), refusing one wider or taller than
-         * [maxSide] before decoding it, so a small file claiming a huge picture cannot use up memory.
-         */
-        @Throws(IOException::class)
-        /**
          * A lowres tile of a map whose tiles are [tileSize] blocks: exactly `(tileSize + 1)` wide and
          * twice as tall, as BlueMap writes them. Any other shape is refused from the image's header,
          * before a single pixel is decoded, so a broken or hostile server can't make the game decode
          * a picture far bigger than a tile.
          */
+        @Throws(IOException::class)
         fun readTile(bytes: ByteArray, tileSize: Int): BufferedImage {
             val side = tileSize + 1
             return readImage(bytes, side, side * 2, exact = true)
         }
 
+        /**
+         * Decodes a PNG (or any image ImageIO reads), refusing one wider or taller than
+         * [maxSide] before decoding it, so a small file claiming a huge picture cannot use up memory.
+         */
+        @Throws(IOException::class)
         fun readImage(bytes: ByteArray, maxSide: Int): BufferedImage = readImage(bytes, maxSide, maxSide, exact = false)
 
         private fun readImage(bytes: ByteArray, maxWidth: Int, maxHeight: Int, exact: Boolean): BufferedImage {

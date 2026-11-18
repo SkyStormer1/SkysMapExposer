@@ -49,7 +49,7 @@ internal object JourneyMapMenus {
     /** Switches [map] to [dimension] if it is showing another ([JourneyMapDimension]). */
     private fun showIfOther(map: IFullscreen, dimension: String) {
         if (map.uiState?.dimension?.identifier()?.toString() == dimension) return
-        JourneyMapDimension.show(map, net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.Identifier.parse(dimension)))
+        JourneyMapDimension.show(map, JourneyMapAdapter.levelKey(dimension))
     }
 
     fun register() {

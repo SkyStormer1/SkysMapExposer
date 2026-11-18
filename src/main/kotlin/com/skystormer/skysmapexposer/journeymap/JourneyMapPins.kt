@@ -24,7 +24,6 @@ import journeymap.api.v2.common.Context
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.core.BlockPos
-import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
@@ -92,7 +91,7 @@ internal object JourneyMapPins {
 
     private fun update(api: IClientAPI, dimension: String?, pins: List<Markers.Pin>, outlines: List<Markers.Outline>?) {
         dimension ?: return
-        val key = dimensionKey(dimension) ?: return
+        val key = runCatching { JourneyMapAdapter.levelKey(dimension) }.getOrNull() ?: return
         val wanted = HashSet<String>()
         outlines?.forEach { outline -> keep(api, wanted, outlineKey(dimension, outline)) { outlineOverlay(key, outline) } }
         for (pin in pins) {
@@ -147,11 +146,10 @@ internal object JourneyMapPins {
     // ---- making overlays ----
 
     private fun pinOverlay(dimensionId: String, dimension: ResourceKey<Level>, pin: Markers.Pin): Overlay {
-        val image = when (pin) {
-            is Markers.Point -> iconOf(pin) ?: dot(POINT_COLOUR).also { if (pin.icon != null) awaitingIcon[pinKey(dimensionId, pin)] = pin.icon }
-            is Markers.Ping -> faceOf(pin.uuid)
-            else -> dot(PLAYER_COLOUR)
-        }
+        // Players have overlays of their own ([playerOverlay]); a ping shows its sender's face.
+        val image = if (pin is Markers.Point) {
+            iconOf(pin) ?: dot(POINT_COLOUR).also { if (pin.icon != null) awaitingIcon[pinKey(dimensionId, pin)] = pin.icon }
+        } else faceOf((pin as Markers.Ping).uuid)
         val size = if (pin is Markers.Point) MARKER_SIZE * Config.worldMapMarkerScale else HEAD_SIZE * Config.playerHeadScale
         image.setDisplayWidth(size).setDisplayHeight(size).centerAnchors()
         val overlay = MarkerOverlay(JourneyMapAdapter.MOD_ID, blockOf(pin), image)
@@ -303,12 +301,6 @@ internal object JourneyMapPins {
     private fun dimensionOf(key: String): String = key.substringAfter('|').substringBefore('|')
 
     private fun blockOf(pin: Markers.Pin) = BlockPos(floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt())
-
-    private fun dimensionKey(dimension: String): ResourceKey<Level>? = try {
-        ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension))
-    } catch (e: Exception) {
-        null
-    }
 
     private val FULLSCREEN = arrayOf(Context.UI.Fullscreen)
     private val BOTH = arrayOf(Context.UI.Fullscreen, Context.UI.Minimap)

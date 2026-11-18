@@ -50,6 +50,9 @@ interface MapAdapter {
     /** What the BlueMap layer drew last, for the settings screen and `/mapexposer`. */
     fun summary(): String = ""
 
+    /** Whether this map's minimap shows the picked biomes too, so the map bar offers the switch for it. */
+    val tintsMinimap: Boolean get() = false
+
     /** Biomes the map has recorded in [dimension] that this game version does not know, for the map bar's list. */
     fun unknownBiomes(dimension: String?): Set<net.minecraft.resources.ResourceKey<net.minecraft.world.level.biome.Biome>> = emptySet()
 

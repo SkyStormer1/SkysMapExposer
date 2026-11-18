@@ -10,29 +10,8 @@ import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.TilePixels
 import com.skystormer.skysmapexposer.TileStore
 import journeymap.api.v2.client.IClientAPI
-import journeymap.api.v2.client.display.ImageOverlay
-import journeymap.api.v2.client.model.MapImage
 import journeymap.api.v2.common.Context
-import journeymap.client.render.JmRenderRouter
-import journeymap.client.render.map.Renderer
-import com.mojang.blaze3d.systems.RenderSystem
-//? if >=26.3 {
-import com.mojang.renderpearl.api.textures.FilterMode
-//?} else {
-/*import com.mojang.blaze3d.textures.FilterMode
-*///?}
-import net.minecraft.client.gui.GuiGraphicsExtractor
-import net.minecraft.client.gui.render.TextureSetup
-import net.minecraft.client.renderer.RenderPipelines
-import net.minecraft.client.renderer.state.gui.BlitRenderState
-import org.joml.Matrix3x2f
-import org.joml.Matrix3x2fStack
 import net.minecraft.client.Minecraft
-import net.minecraft.client.renderer.texture.DynamicTexture
-import net.minecraft.core.BlockPos
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
-import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.ChunkPos
 import java.util.BitSet
 
@@ -40,7 +19,7 @@ import java.util.BitSet
  * BlueMap's terrain on JourneyMap's full-screen map: one picture per JourneyMap region (512 blocks
  * square) on screen, showing BlueMap only in the chunks that need it and see-through everywhere
  * else, so JourneyMap's own map shows through wherever it is good. The same on its minimap, for
- * the regions around you there, drawn into the minimap's own picture ([drawOnMinimap]).
+ * the regions around you there.
  *
  * A chunk needs it when BlueMap has something there and either JourneyMap has nothing (asked with
  * the API's `requestMapTile`, which hands back JourneyMap's own picture of the region), or your map
@@ -51,8 +30,7 @@ import java.util.BitSet
  * pictures on screen, which stay within the texture budget ([Config.textureBudgetMb]) and are
  * closed once their region goes off screen or you leave. Zoomed out, each picture is smaller, read
  * from the tile's own smaller copy when it has one. On the full-screen map each picture is an
- * overlay; on the minimap, where JourneyMap draws picture overlays uncut and unturned, it is drawn
- * by `MapRendererMixin` into the picture JourneyMap cuts and turns, under its outlines.
+ * overlay; on the minimap, [JourneyMapMinimap] draws it.
  */
 internal object JourneyMapTerrain {
 
@@ -65,8 +43,7 @@ internal object JourneyMapTerrain {
      * JourneyMap was last asked what it has there.
      */
     private class Shown(
-        val overlay: ImageOverlay?, val texture: Identifier, val scale: Int, val side: Int,
-        val wanted: BitSet, val contents: List<Int>, val floors: List<IntArray?>, var checkedAt: Long,
+        val picture: RegionPicture, val wanted: BitSet, val contents: List<Int>, val floors: List<IntArray?>, var checkedAt: Long,
     )
 
     private val shown = HashMap<Region, Shown>()
@@ -103,8 +80,10 @@ internal object JourneyMapTerrain {
         })
         if (session == null || !Config.enabled || state == null || !state.active ||
             (state.mapType != Context.MapType.Day && state.mapType != Context.MapType.Underground)) {
-            // Kept while the map is closed for a moment; let go once it has stayed closed.
-            if (shown.keys.any { it.ui == ui } && now - (lastActive[ui] ?: 0L) > KEEP_CLOSED_MS) clear(api, ui)
+            // Kept while the map is only closed for a moment, and let go once it has stayed closed;
+            // switched off, no BlueMap, or another kind of map: gone at once, as on Xaero's map.
+            val closedOnly = session != null && Config.enabled && state != null && !state.active
+            if (shown.keys.any { it.ui == ui } && (!closedOnly || now - (lastActive[ui] ?: 0L) > KEEP_CLOSED_MS)) clear(api, ui)
             return
         }
         lastActive[ui] = now
@@ -118,13 +97,11 @@ internal object JourneyMapTerrain {
             say(if (state.mapType == Context.MapType.Underground) "BlueMap only has the surface here" else "BlueMap's map here shows the inside; switch to the cave map")
             return
         }
-        // What is on screen, from the map's live centre: the view's own block area lags a map moved
-        // by Go to or the dimension button, which left pictures built for where it had been.
-        // The minimap follows you, and its own block area keeps up.
-        val bounds = if (fullscreen) {
-            val shownArea = JourneyMapMenus.shownArea(state) ?: return say("JourneyMap has not said what is on screen")
-            net.minecraft.world.phys.AABB(shownArea[0], 0.0, shownArea[1], shownArea[2], 0.0, shownArea[3])
-        } else state.blockBounds ?: return say("JourneyMap has not said what the minimap shows")
+        // What is on screen, worked out here: JourneyMap's own account of it lags a moved full-screen
+        // map and is never kept up to date for the minimap.
+        val area = (if (fullscreen) JourneyMapMenus.shownArea(state) else JourneyMapMinimap.area)
+            ?: return say(if (fullscreen) "JourneyMap has not said what is on screen" else "waiting for the minimap to draw")
+        val bounds = net.minecraft.world.phys.AABB(area[0], 0.0, area[1], area[2], 0.0, area[3])
 
         val left = Math.floorDiv(bounds.minX.toInt(), REGION)
         val right = Math.floorDiv(bounds.maxX.toInt(), REGION)
@@ -143,7 +120,7 @@ internal object JourneyMapTerrain {
         // The sea floor, from BlueMap's 3D tiles, as on Xaero's map: asked for the tiles on screen.
         val seaFloor = Config.seaFloorHires && !SeaFloor.hasCeiling(dimension)
 
-        shown.keys.filter { it.ui == ui && (it !in wanted || shown[it]!!.scale != scale) }.forEach { remove(api, it) }
+        shown.keys.filter { it.ui == ui && (it !in wanted || shown[it]!!.picture.scale != scale) }.forEach { remove(api, it) }
 
         // Nearest first, at most as many a tick as Xaero rebuilds masks a frame.
         val centreX = (left + right) / 2.0
@@ -164,21 +141,12 @@ internal object JourneyMapTerrain {
         }
     }
 
-    private fun overlayOf(region: Region, northWest: BlockPos, southEast: BlockPos, image: MapImage): ImageOverlay {
-        val overlay = ImageOverlay(JourneyMapAdapter.MOD_ID, northWest, southEast, image)
-        overlay.setDimension(ResourceKey.create(Registries.DIMENSION, Identifier.parse(region.dimension)))
-        overlay.setDisplayOrder(TERRAIN_ORDER)
-        overlay.setActiveUIs(Context.UI.Fullscreen)
-        return overlay
-    }
-
     /** Leaving a world: JourneyMap drops our overlays ([JourneyMapAdapter.leave]); this frees the pictures. */
     fun forget() {
         generation++
-        shown.values.forEach { Minecraft.getInstance().textureManager.release(it.texture) }
+        shown.values.forEach { it.picture.release() }
         shown.clear()
         busy.clear()
-        minimapRenderer = null
     }
 
     private fun clear(api: IClientAPI, ui: Context.UI) {
@@ -187,10 +155,8 @@ internal object JourneyMapTerrain {
 
     private fun remove(api: IClientAPI, region: Region) {
         val gone = shown.remove(region) ?: return
-        gone.overlay?.let(api::remove)
-        if (region.ui == Context.UI.Minimap) minimapChanged()
-        // Freed only once JourneyMap has let go of the overlay that draws it.
-        Minecraft.getInstance().textureManager.release(gone.texture)
+        gone.picture.remove(api)
+        if (region.ui == Context.UI.Minimap) JourneyMapMinimap.changed()
     }
 
     /**
@@ -217,7 +183,7 @@ internal object JourneyMapTerrain {
         type: Context.MapType, chunkY: Int?,
     ) {
         val generation = generation
-        val key = ResourceKey.create(Registries.DIMENSION, Identifier.parse(region.dimension))
+        val key = JourneyMapAdapter.levelKey(region.dimension)
         val first = ChunkPos(region.x * CHUNKS, region.z * CHUNKS)
         val last = ChunkPos(region.x * CHUNKS + CHUNKS - 1, region.z * CHUNKS + CHUNKS - 1)
         try {
@@ -338,30 +304,11 @@ internal object JourneyMapTerrain {
         }
         busy.remove(region)
         remove(api, region)
-        val northWest = BlockPos(region.x * REGION, 0, region.z * REGION)
-        val southEast = BlockPos(region.x * REGION + image.width * scale, 0, region.z * REGION + image.height * scale)
-        // Handed over as a texture of ours, by name, as marker icons are, rather than as the picture
-        // itself, which JourneyMap would keep a second copy of.
-        val texture = Identifier.fromNamespaceAndPath("skysmapexposer", "journeymap_terrain/${nextTexture++}")
-        Minecraft.getInstance().textureManager.register(texture, DynamicTexture({ "skysmapexposer terrain ${region.x},${region.z}" }, image))
-        val side = image.width
-        if (region.ui == Context.UI.Minimap) {
-            shown[region] = Shown(null, texture, scale, side, made.wanted, made.contents, made.floors, System.currentTimeMillis())
-            minimapChanged()
-            return
-        }
-        val overlay = overlayOf(region, northWest, southEast, MapImage(texture, image.width, image.height))
-        try {
-            api.show(overlay)
-            shown[region] = Shown(overlay, texture, scale, side, made.wanted, made.contents, made.floors, System.currentTimeMillis())
-        } catch (e: Exception) {
-            Minecraft.getInstance().textureManager.release(texture)
-            Log.warn("JourneyMap would not show BlueMap's picture of region {}, {}: {}", region.x, region.z, e.toString())
-        }
+        val fullscreen = region.ui == Context.UI.Fullscreen
+        val picture = RegionPicture.show(api, "terrain", region.dimension, region.x * REGION, region.z * REGION, scale, image, fullscreen, TERRAIN_ORDER) ?: return
+        shown[region] = Shown(picture, made.wanted, made.contents, made.floors, System.currentTimeMillis())
+        if (!fullscreen) JourneyMapMinimap.changed()
     }
-
-    /** Numbers the pictures' texture names; client thread only. */
-    private var nextTexture = 0
 
     /** Why nothing is being drawn just now, if anything stops it, on the full-screen map and the minimap. */
     private var note = ""
@@ -375,52 +322,9 @@ internal object JourneyMapTerrain {
             ", $mini on the minimap" + (if (minimapNote.isEmpty()) "" else " ($minimapNote)")
     }
 
-    /** The minimap's renderer, once it has drawn: told when its pictures change, so it draws its own picture again. */
-    private var minimapRenderer: Renderer? = null
-
-    private fun minimapChanged() {
-        try {
-            minimapRenderer?.markOverlaySurfaceDirty()
-        } catch (e: Exception) {
-            Log.warn("Could not have JourneyMap redraw its minimap: {}", e.toString())
-        }
-    }
-
-    /**
-     * From `MapRendererMixin`, while JourneyMap draws a map into its own picture: on the minimap,
-     * BlueMap's pictures of the regions there, placed as JourneyMap places its outlines (each block's
-     * pixel in its grid, moved by [xOffset], [yOffset]), with [pose]. Render thread.
-     */
-    @JvmStatic
-    fun drawOnMinimap(graphics: GuiGraphicsExtractor, pose: Matrix3x2fStack, xOffset: Double, yOffset: Double, renderer: Renderer) {
-        try {
-            if (renderer.context != Context.UI.Minimap) return
-            minimapRenderer = renderer
-            if (shown.isEmpty()) return
-            val dimension = renderer.uiState?.dimension?.identifier()?.toString() ?: return
-            val textures = Minecraft.getInstance().textureManager
-            val sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST, true)
-            for ((region, picture) in shown) {
-                if (region.ui != Context.UI.Minimap || region.dimension != dimension) continue
-                val view = textures.getTexture(picture.texture).textureView ?: continue
-                val reach = picture.side * picture.scale
-                val northWest = renderer.getBlockPixelInGridExact(BlockPos(region.x * REGION, 0, region.z * REGION))
-                val southEast = renderer.getBlockPixelInGridExact(BlockPos(region.x * REGION + reach, 0, region.z * REGION + reach))
-                val state = BlitRenderState(
-                    RenderPipelines.GUI_TEXTURED, TextureSetup.singleTexture(view, sampler), Matrix3x2f(pose),
-                    Math.round(northWest.x + xOffset).toInt(), Math.round(northWest.y + yOffset).toInt(),
-                    Math.round(southEast.x + xOffset).toInt(), Math.round(southEast.y + yOffset).toInt(),
-                    0f, 1f, 0f, 1f, -1, null,
-                )
-                JmRenderRouter.addGuiElement(graphics, state)
-            }
-        } catch (e: Throwable) {
-            minimapFailed++
-            if (minimapFailed == 1) Log.error("Could not draw BlueMap's terrain on JourneyMap's minimap", e)
-        }
-    }
-
-    private var minimapFailed = 0
+    /** The minimap's pictures of [dimension], for [JourneyMapMinimap] to draw. */
+    fun minimapPictures(dimension: String): List<RegionPicture> =
+        shown.mapNotNull { (region, picture) -> picture.picture.takeIf { region.ui == Context.UI.Minimap && region.dimension == dimension } }
 
     private fun budget(): Long = Config.textureBudgetMb.toLong() * 1024 * 1024
 

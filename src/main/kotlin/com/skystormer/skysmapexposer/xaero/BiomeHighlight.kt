@@ -39,9 +39,6 @@ object BiomeHighlight {
      */
     private val squares = Array(5) { HashMap<Long, Square>() }
 
-    /** The picks themselves are shared with JourneyMap's map ([BiomePicks]). */
-    val any: Boolean get() = BiomePicks.any
-
     /**
      * Biomes the map has recorded that this version of the game does not know, by dimension: from
      * a map made with a newer version, or a server running one. The game has no list of them, so
@@ -55,21 +52,6 @@ object BiomeHighlight {
         private set
 
     fun unknownIn(dimension: String?): Set<ResourceKey<Biome>> = dimension?.let { unknown[it] }.orEmpty()
-
-    fun isPicked(biome: ResourceKey<Biome>): Boolean = BiomePicks.isPicked(biome)
-
-    /** The tint of [biome], or null if it is not picked. */
-    fun colourOf(biome: ResourceKey<Biome>): Int? = BiomePicks.colourOf(biome)
-
-    fun toggle(biome: ResourceKey<Biome>) {
-        BiomePicks.toggle(biome)
-        changed()
-    }
-
-    fun clear() {
-        BiomePicks.clear()
-        changed()
-    }
 
     /** Squares worked out for other picks are let go of, whichever map's bar changed them. */
     private fun changed() {
@@ -184,7 +166,8 @@ object BiomeHighlight {
     }
 
     private fun giveUp(where: String, e: Throwable) {
-        clear()
+        BiomePicks.clear()
+        changed()
         Log.error("Could not highlight biomes on the $where; the highlight is turned off", e)
     }
 

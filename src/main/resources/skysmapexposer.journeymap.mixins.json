@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
     "MapStateMixin",
-    "MapRendererMixin"
+    "OutlinePassMixin"
   ],
   "injectors": {
     "defaultRequire": 0

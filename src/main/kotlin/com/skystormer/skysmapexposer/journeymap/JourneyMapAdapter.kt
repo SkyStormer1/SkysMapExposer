@@ -8,6 +8,7 @@ import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapAdapter
 import com.skystormer.skysmapexposer.MapBorder
+import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
@@ -23,6 +24,9 @@ import net.minecraft.network.chat.Component
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.core.registries.Registries
+import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceKey
+import net.minecraft.world.level.Level
 import java.util.UUID
 
 /**
@@ -46,7 +50,21 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun init() = JourneyMapMenus.register()
 
-    override fun checkHooks() {}
+    /**
+     * JourneyMap's own classes that two hooks and the biome tint lean on, checked once at start as
+     * Xaero's hooks are: whatever is missing is said in the log and in `/mapexposer`.
+     */
+    override fun checkHooks() {
+        if (!dimensionHooked()) Log.warn("Could not hook JourneyMap's full-screen map; its dimension button will snap back to yours")
+        if (!minimapHooked()) Log.warn("Could not hook JourneyMap's minimap; BlueMap's terrain and the biome tint will not show on it")
+        if (!JourneyMapBiomes.available) Log.warn("Could not find JourneyMap's chunk cache; picked biomes will not be tinted on its maps")
+    }
+
+    private fun dimensionHooked() = MapExposerClient.injected("journeymap.client.model.map.MapState", "keepDimension")
+
+    private fun minimapHooked() = MapExposerClient.injected("journeymap.client.render.map.PolygonGeometryDrawPass", "drawTerrain")
+
+    override val tintsMinimap: Boolean get() = true
 
     // JourneyMap starts its plugins with itself, so by the time a world opens it has, or never will.
     override fun join() {
@@ -64,6 +82,7 @@ object JourneyMapAdapter : MapAdapter {
         JourneyMapPins.forget()
         JourneyMapTerrain.forget()
         JourneyMapBiomes.forget()
+        JourneyMapMinimap.forget()
         JourneyMapMenus.forget()
     }
 
@@ -82,10 +101,6 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
-        fun say(context: CommandContext<FabricClientCommandSource>, text: String): Int {
-            context.source.sendFeedback(Component.literal(text))
-            return 1
-        }
         root.then(
             ClientCommands.literal("download")
                 .then(ClientCommands.literal("all").executes { say(it, JourneyMapEdits.download(unexploredOnly = false)) })
@@ -129,10 +144,6 @@ object JourneyMapAdapter : MapAdapter {
      * the biome under the click.
      */
     private fun biomeCommand(): LiteralArgumentBuilder<FabricClientCommandSource> {
-        fun say(context: CommandContext<FabricClientCommandSource>, text: String): Int {
-            context.source.sendFeedback(Component.literal(text))
-            return 1
-        }
         fun biomes() = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME)?.listElementIds()?.toList().orEmpty()
         return ClientCommands.literal("biome")
             .executes {
@@ -155,6 +166,12 @@ object JourneyMapAdapter : MapAdapter {
                 })
     }
 
+    /** A command's reply. */
+    private fun say(context: CommandContext<FabricClientCommandSource>, text: String): Int {
+        context.source.sendFeedback(Component.literal(text))
+        return 1
+    }
+
     /** The region holding block (`x`, `z`) of a command. */
     private fun regionOf(context: CommandContext<FabricClientCommandSource>): Pair<Int, Int> =
         Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION) to
@@ -169,7 +186,8 @@ object JourneyMapAdapter : MapAdapter {
     override fun status(say: (String) -> Unit) {
         say("JourneyMap plugin: " + if (api != null) "§aloaded" else "§cnot started (needs JourneyMap's API 2)")
         if (api != null) say("On JourneyMap: ${JourneyMapPins.summary()}, ${JourneyMapTerrain.summary()}" + (JourneyMapBiomes.summary()?.let { ", $it" } ?: ""))
-        say("JourneyMap dimension hook: " + if (JourneyMapDimension.hookRan) "§aworking" else "§enot seen yet (open the full-screen map)")
+        fun mark(ok: Boolean) = if (ok) "§aok§r" else "§cmissing§r"
+        say("JourneyMap hooks: dimension ${mark(dimensionHooked())}, minimap ${mark(minimapHooked() && JourneyMapMinimap.working)}, chunk cache ${mark(JourneyMapBiomes.available)}")
     }
 
     /** The full-screen map's dimension while it is open; otherwise yours, which it opens on. */
@@ -212,6 +230,9 @@ object JourneyMapAdapter : MapAdapter {
 
     /** How long after joining before leftover temporary waypoints are looked for: a server sends its waypoints a moment after you join. */
     private const val TIDY_DELAY_MS = 5_000L
+
+    /** The game's key for dimension [id] ("minecraft:the_nether"). */
+    fun levelKey(id: String): ResourceKey<Level> = ResourceKey.create(Registries.DIMENSION, Identifier.parse(id))
 
     private fun fullscreen() = api?.getUIState(Context.UI.Fullscreen)?.takeIf { it.active }
 }

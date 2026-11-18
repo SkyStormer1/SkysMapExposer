@@ -6,8 +6,6 @@ import com.skystormer.skysmapexposer.Ui
 import journeymap.api.v2.client.fullscreen.IFullscreen
 import journeymap.api.v2.common.Context
 import net.minecraft.client.Minecraft
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 
@@ -23,17 +21,9 @@ object JourneyMapDimension {
     var chosen: ResourceKey<Level>? = null
         private set
 
-    /** Whether the hook has run at all, for `/mapexposer`. */
-    @Volatile
-    var hookRan = false
-        private set
-
     /** For `MapStateMixin`: the dimension JourneyMap's full-screen map should keep showing. */
     @JvmStatic
-    fun keep(actual: ResourceKey<Level>): ResourceKey<Level> {
-        hookRan = true
-        return chosen ?: actual
-    }
+    fun keep(actual: ResourceKey<Level>): ResourceKey<Level> = chosen ?: actual
 
     /** Switches [map] to [dimension]; your own dimension clears the choice. */
     fun show(map: IFullscreen, dimension: ResourceKey<Level>) {
@@ -50,7 +40,7 @@ object JourneyMapDimension {
     fun showNext(map: IFullscreen) {
         val shown = map.uiState?.dimension?.identifier()?.toString()
         val next = CYCLE[(CYCLE.indexOf(shown) + 1) % CYCLE.size]
-        show(map, ResourceKey.create(Registries.DIMENSION, Identifier.parse(next)))
+        show(map, JourneyMapAdapter.levelKey(next))
         Ui.say("Showing the ${Ui.dimensionName(next)}")
     }
 

@@ -71,8 +71,8 @@ object MapBar {
         Switch("Players", "Other players' heads, on both maps and over the ones you lock on to", { Config.showPlayers }) {
             Config.showPlayers = !Config.showPlayers; Config.save()
         },
-        // Only with Xaero's Minimap (or Fair-Play) installed, which this mod does not need.
-        if (MapMods.xaeroMinimap) {
+        // Only with a minimap that shows them: Xaero's Minimap (or Fair-Play), or JourneyMap's.
+        if (MapMods.adapter?.tintsMinimap == true) {
             Switch("Minimap", "The biomes you pick below, tinted on the minimap too", { Config.minimapBiomes }) {
                 Config.minimapBiomes = !Config.minimapBiomes; Config.save()
             }
