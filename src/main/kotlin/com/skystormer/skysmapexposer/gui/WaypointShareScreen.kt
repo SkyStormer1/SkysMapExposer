@@ -126,6 +126,13 @@ class WaypointShareScreen(
         })
     }
 
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (scrollY == 0.0) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        page += if (scrollY < 0) 1 else -1
+        fill()
+        return true
+    }
+
     override fun onClose() {
         Ui.open(parent)
     }
