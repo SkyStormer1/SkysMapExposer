@@ -3,7 +3,7 @@
   "id": "skysmapexposer",
   "version": "${version}",
   "name": "Sky's Map Exposer",
-  "description": "Brings the server's BlueMap into Xaero's World Map and Minimap: terrain where yours is missing or out of date, markers you can save as waypoints, players, and the world border.",
+  "description": "Brings the server's BlueMap into Xaero's World Map and Minimap or JourneyMap: terrain where yours is missing or out of date, markers you can save as waypoints, players, and the world border.",
   "authors": [
     "SkyStormer1"
   ],
