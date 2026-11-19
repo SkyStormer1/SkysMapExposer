@@ -165,7 +165,7 @@ internal object JourneyMapImportedBiomes {
 
     /**
      * For JourneyMap's own line under the mouse, where it knows no biome itself
-     * (`SnapshotBlockDataAccessorMixin`): the biome a shared file gave [pos], or null.
+     * ([SnapshotBiomeMixin], [BlockInfoBiomeMixin]): the biome a shared file gave [pos], or null.
      */
     @JvmStatic
     fun biomeFor(dimension: ResourceKey<Level>, pos: BlockPos): Biome? {

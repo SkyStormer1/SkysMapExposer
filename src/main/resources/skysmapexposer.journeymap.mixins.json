@@ -4,6 +4,7 @@
   "package": "com.skystormer.skysmapexposer.mixin.journeymap",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
+    "BlockInfoBiomeMixin",
     "FullscreenMapTypeMixin",
     "FullscreenToolbarMixin",
     "ImageHolderAccessor",
