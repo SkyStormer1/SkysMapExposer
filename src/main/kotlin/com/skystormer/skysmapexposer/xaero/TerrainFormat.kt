@@ -125,6 +125,8 @@ object TerrainFormat {
         private var regionSince = 0L
         /** How far into a region it has read, for one it has not finished. */
         private val reading = HashMap<Pair<Int, Int>, Int>()
+        /** How long one [next] may spend reading your map ([System.nanoTime]), so the game keeps its frame rate. */
+        var budget = 2_000_000L
         override val progress get() = "region ${minOf(batch + 1, batches)} of $batches"
 
         override fun next(): Step {
@@ -141,7 +143,7 @@ object TerrainFormat {
                 TerrainBody(part).also { it.age = age; collector = it }
             }
             val now = System.currentTimeMillis()
-            val deadline = System.nanoTime() + READ_BUDGET
+            val deadline = System.nanoTime() + budget
             for ((rx, rz) in pending.take(REGIONS_AT_ONCE)) {
                 val region = XaeroWriter.loaded(processor, folder, rx, rz, layer) ?: continue
                 val next = synchronized(region) { collector.read(region, rx, rz, reading[rx to rz] ?: 0, deadline) }
@@ -181,8 +183,6 @@ object TerrainFormat {
 
             private const val REGIONS_AT_ONCE = 3
             private const val LOAD_WAIT = 30_000L
-            /** Time spent reading your map per tick, so the game keeps its frame rate. */
-            private const val READ_BUDGET = 4_000_000L
 
             /**
              * A reader of the chunks of [wanted] (inclusive), or of every region Xaero has a file

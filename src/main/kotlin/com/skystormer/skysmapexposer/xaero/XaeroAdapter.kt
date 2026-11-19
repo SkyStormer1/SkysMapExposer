@@ -24,7 +24,12 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
+import net.minecraft.client.DeltaTracker
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.resources.Identifier
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import xaero.map.WorldMapSession
@@ -305,7 +310,13 @@ object XaeroAdapter : MapAdapter {
         return 1
     }
 
-    override fun init() = addToMapScreen()
+    override fun init() {
+        addToMapScreen()
+        // Every frame, even under a screen: saving a terrain file reads a thin slice of your map.
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("skysmapexposer", "terrain_save"), object : HudElement {
+            override fun extractRenderState(graphics: GuiGraphicsExtractor, delta: DeltaTracker) = TerrainFiles.frame()
+        })
+    }
 
     override fun checkHooks() {
         if (!hookInstalled()) Log.warn("This version of Xaero's World Map is not supported; nothing will be drawn on it")

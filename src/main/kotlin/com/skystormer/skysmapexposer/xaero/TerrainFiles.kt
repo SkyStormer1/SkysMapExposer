@@ -124,6 +124,23 @@ object TerrainFiles {
         Log.info("Saving terrain stopped: {}", message)
     }
 
+    /**
+     * Your map is read on the client thread, where Xaero keeps it, in thin slices: one each frame
+     * ([frame], from the HUD), so it never holds up a frame for long; or, while no frame has come
+     * for a while (the HUD hidden with F1), a slice each tick.
+     */
+    private const val FRAME_BUDGET = 1_000_000L
+    private const val TICK_BUDGET = 2_000_000L
+    private const val FRAMES_GONE = 250_000_000L
+    private var framedAt = 0L
+
+    /** Each frame, from the HUD: a slice of reading. */
+    fun frame() {
+        val current = saving ?: return
+        framedAt = System.nanoTime()
+        advance(current, FRAME_BUDGET)
+    }
+
     fun tick() {
         val current = saving ?: return
         current.ticks++
@@ -131,10 +148,17 @@ object TerrainFiles {
             Log.error("Could not save terrain to ${current.part}", e)
             return fail(current, "could not write the file (${e.message ?: e.javaClass.simpleName})")
         }
+        if (current.ticks % 40 == 0) Ui.say("Saving terrain: ${current.reader.progress}")
+        if (System.nanoTime() - framedAt > FRAMES_GONE) advance(current, TICK_BUDGET)
+    }
+
+    private fun advance(current: Saving, budget: Long) {
+        if (current.error != null) return
         // The file is behind: let it catch up rather than hold more packed regions in memory.
         if (current.queued.get() >= QUEUED) return
+        current.reader.budget = budget
         when (val step = current.reader.next()) {
-            is Step.Waiting -> if (current.ticks % 40 == 0) Ui.say("Saving terrain: ${current.reader.progress}")
+            is Step.Waiting -> {}
             is Step.Failed -> fail(current, step.message)
             is Step.Done -> finish(current)
             is Step.Ready -> {
