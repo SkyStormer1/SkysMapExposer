@@ -130,9 +130,9 @@ object MapMenus {
     }
 
     /**
-     * "Save terrain file" for the chunks Xaero has selected and "Save whole map" for every region of
-     * this dimension, each the whole map of them, to send however you like; while one is saving,
-     * "Stop saving" in their place.
+     * "Save terrain file": the chunks dragged over with the right button held, or, after a plain
+     * right-click (which selects only the chunk under the mouse), all of this dimension's map; every
+     * block, to send however you like. While one is saving, "Stop saving" in its place.
      */
     private fun addSaveOptions(options: ArrayList<RightClickOption>, target: IRightClickableElement, selection: MapTileSelection?) {
         if (TerrainFiles.busy) {
@@ -142,15 +142,15 @@ object MapMenus {
             })
             return
         }
-        val where = "saved in the \"shared maps\" folder of your game folder. Send the file to anyone; they drop it onto their game window to add it."
-        if (selection != null) {
-            val tooltip = listOf(Component.literal("Save terrain to a file"), Component.literal("§7${sizeOf(selection)} of your map, every block, $where"))
-            options.add(MenuTooltips.Option("Save terrain file", options.size, target, tooltip) { parent ->
-                startSave(parent, ShareFormat.Area(selection.left, selection.top, selection.right, selection.bottom))
-            })
-        }
-        val tooltip = listOf(Component.literal("Save the whole map to a file"), Component.literal("§7All of this dimension's map, every block, $where Asks first if it is big."))
-        options.add(MenuTooltips.Option("Save whole map", options.size, target, tooltip) { parent -> startSave(parent, null) })
+        val dragged = selection != null && (selection.right > selection.left || selection.bottom > selection.top)
+        val what = if (dragged) "${sizeOf(selection)} of your map" else "All of this dimension's map (drag with the right button held to pick an area instead)"
+        val tooltip = listOf(
+            Component.literal("Save terrain to a file"),
+            Component.literal("§7$what, every block, saved in the \"shared maps\" folder of your game folder. Send the file to anyone; they drop it onto their game window to add it. Asks first if it is big."),
+        )
+        options.add(MenuTooltips.Option("Save terrain file", options.size, target, tooltip) { parent ->
+            startSave(parent, if (dragged) ShareFormat.Area(selection.left, selection.top, selection.right, selection.bottom) else null)
+        })
     }
 
     /** Starts a save of [area] (null: the whole map); a big one asks first, then comes back to the map ([parent]). */

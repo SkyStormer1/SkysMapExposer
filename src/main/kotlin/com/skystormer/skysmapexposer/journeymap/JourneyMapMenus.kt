@@ -123,16 +123,12 @@ internal object JourneyMapMenus {
                 if (mine == null || mine.second.isEmpty()) Ui.say("You have no saved waypoints here to share")
                 else Ui.open(WaypointShareScreen(map.screen, mine.first, mine.second))
             }
-            // Xaero's map saves the chunks dragged over; JourneyMap's has no picking, so the region clicked.
+            // As Xaero's after a plain right-click: the whole map. JourneyMap's has no dragging to pick
+            // an area; `/mapexposer terrain save` takes one.
             if (dimension != null && JourneyMapTerrainSave.busy) {
                 menu.addMenuItem("Stop saving") { Ui.say(if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No terrain file is being saved") }
             } else if (dimension != null) {
-                menu.addMenuItem("Save terrain file (this region)") { block ->
-                    val rx = Math.floorDiv(block.x, JourneyMapFiles.REGION)
-                    val rz = Math.floorDiv(block.z, JourneyMapFiles.REGION)
-                    startSave(map.screen, dimension, ShareFormat.Area(rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31))
-                }
-                menu.addMenuItem("Save whole map") { startSave(map.screen, dimension, null) }
+                menu.addMenuItem("Save terrain file") { startSave(map.screen, dimension, null) }
             }
             val other = dimension?.let(WaypointRules::counterpartName)
             if (other != null) {

@@ -316,18 +316,18 @@ nothing more is sent. Everything else travels hidden from both chats.
 - **Share waypoints…**: tick some waypoints of the dimension you are in, then pick a player. An
   **[Add waypoints]** button adds them to their selected waypoint set, leaving out any they already
   have. Needs Xaero's Minimap at both ends.
-- **Save terrain file**: drag over some chunks with the right mouse button, then choose it. Every block of your map there,
+- **Save terrain file**: drag over some chunks with the right mouse button, then choose it; after a
+  plain right-click it saves all of this dimension's map instead. Every block of your map there,
   exactly as Xaero keeps it, is saved to a `.smemap` file in the `shared maps` folder of your game
   folder; a link in chat opens the folder. Send the file however you like. Whoever gets it drops it
   onto their game window, then chooses **[Add to unexplored only]** or **[Add all]**. Each of their
   regions is backed up first, the same as a download. In the Nether it saves and adds the cave layer
   the world map is showing, not the roof.
-- **Save whole map**: the same for all of this dimension's map at once. Anything over 512 × 512
-  chunks asks first, saying how big the file may be and how much room the drive has; a save never
-  starts without room for it, and stops (keeping nothing) if the drive fills up. While a save runs,
-  the top of the map says how far it has got, and **Stop saving** takes the place of both entries.
-  `/mapexposer terrain save all` does the same from chat. Files over 512 chunks a side need 1.10 or
-  newer to open.
+  Anything over 512 × 512 chunks asks first, saying how big the file may be and how much room the
+  drive has; a save never starts without room for it, and stops (keeping nothing) if the drive fills
+  up. While a save runs, the top of the map says how far it has got, and **Stop saving** takes the
+  entry's place. `/mapexposer terrain save all` saves the whole map from chat. Files over 512 chunks
+  a side need 1.10 or newer to open.
 
 Messages go out slowly, well under a vanilla server's spam limit. Being muted, or a server without
 `/msg`, stops sharing.
@@ -432,9 +432,9 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
   show where JourneyMap has mapped, in whichever dimension the map shows.
 - **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
   map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
-  map, with the same backups and undo. Save one from JourneyMap with "Save terrain file (this
-  region)" or "Save whole map" on the right-click menu, `/mapexposer terrain save <x1> <z1> <x2> <z2>`
-  or `/mapexposer terrain save all`, asking first and checking for room as on Xaero's: it is read from
+  map, with the same backups and undo. Save one from JourneyMap with "Save terrain file" on
+  the right-click menu (the whole map) or `/mapexposer terrain save <x1> <z1> <x2> <z2>` (an area),
+  asking first and checking for room as on Xaero's: it is read from
   JourneyMap's chunk cache, so it holds the chunks JourneyMap has cached, and either map can add it.
   A file of a cave layer only goes into Xaero's.
 
