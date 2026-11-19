@@ -31,7 +31,8 @@ import java.util.BitSet
  * Pictures come from the tiles [TileStore] already keeps on disk; nothing is cached here but the
  * pictures on screen, which stay within the texture budget ([Config.textureBudgetMb]) and are
  * closed once their region goes off screen or you leave. Zoomed out, each picture is smaller, read
- * from the tile's own smaller copy when it has one. On the full-screen map each picture is an
+ * from the tile's own smaller copy when it has one; a picture of the last zoom stays up until the
+ * new one is ready, and zooming out keeps the sharper one while the budget allows. On the full-screen map each picture is an
  * overlay; on the minimap, [JourneyMapMinimap] draws it.
  */
 internal object JourneyMapTerrain {
@@ -113,7 +114,8 @@ internal object JourneyMapTerrain {
         // The tile's own size for this zoom, as on Xaero's map ([TilePixels.factorsFor]); coarser
         // only while the regions on screen would not fit the budget.
         val factors = TilePixels.factorsFor(layout.tileSize)
-        val blocksPerPixel = if (state.blockSize > 0) 1 / state.blockSize else 1.0
+        val pixelsPerBlock = if (fullscreen) JourneyMapMenus.pixelsPerBlock(state) else state.blockSize
+        val blocksPerPixel = if (pixelsPerBlock > 0) 1 / pixelsPerBlock else 1.0
         var step = factors.indexOfLast { it <= blocksPerPixel.coerceAtLeast(1.0) }.coerceAtLeast(0)
         while (step < factors.lastIndex && inView.toLong() * bytesAt(factors[step]) > budget()) step++
         val scale = factors[step]
@@ -122,7 +124,11 @@ internal object JourneyMapTerrain {
         // The sea floor, from BlueMap's 3D tiles, as on Xaero's map: asked for the tiles on screen.
         val seaFloor = Config.seaFloorHires && !SeaFloor.hasCeiling(dimension)
 
-        shown.keys.filter { it.ui == ui && (it !in wanted || shown[it]!!.picture.scale != scale) }.forEach { remove(api, it) }
+        // Off screen: gone. A picture of another zoom stays up until its replacement is ready, so
+        // zooming never blanks the map; zoomed out, a sharper one is kept while the budget allows.
+        shown.keys.filter { it.ui == ui && it !in wanted }.forEach { remove(api, it) }
+        val overBudget = shown.entries.sumOf { (region, picture) -> if (region.ui == ui) bytesAt(picture.picture.scale) else 0L } > budget()
+        fun wrongZoom(picture: Shown) = picture.picture.scale > scale || (picture.picture.scale < scale && overBudget)
 
         // Nearest first, at most as many a tick as Xaero rebuilds masks a frame.
         val centreX = (left + right) / 2.0
@@ -135,10 +141,18 @@ internal object JourneyMapTerrain {
             val tiles = tilesFor(session, region, layout) ?: continue.also { say("waiting for BlueMap's tiles") }
             if (seaFloor) tiles.forEach { session.seaFloor.want(it, map, bounds.center.x, bounds.center.z, bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, closeUp = scale <= SeaFloor.CLOSE_UP) }
             val changed = old != null && (tiles.map { it.floor } != old.made.floors || tiles.map { it.contentMinute } != old.made.contents)
-            if (old != null && !changed && now - old.checkedAt < RECHECK_MS) continue
-            if (old == null && shown.size * bytesAt(scale) >= budget()) break
+            val rezoom = old != null && wrongZoom(old)
+            if (old != null && !changed && !rezoom && now - old.checkedAt < RECHECK_MS) continue
+            if (old == null && overBudget) break
             busy.add(region)
-            ask(api, session, region, tiles, scale, rebuild = changed, state.mapType, state.chunkY)
+            if (rezoom && !changed && now - old.checkedAt < REUSE_MS) {
+                // Only the zoom changed: what JourneyMap said it has there still stands, so the picture
+                // is made again at the new size without asking it again.
+                val made = old.made
+                session.work { build(api, session, region, tiles, scale, generation, made) }
+            } else {
+                ask(api, session, region, tiles, scale, rebuild = changed || rezoom, state.mapType, state.chunkY)
+            }
             started++
         }
     }
@@ -335,6 +349,8 @@ internal object JourneyMapTerrain {
 
     /** How often what is shown is checked again: as often as Xaero rebuilds its masks. */
     private const val RECHECK_MS = 5_000L
+    /** How long what JourneyMap said it has in a region is trusted for remaking its picture at another zoom. */
+    private const val REUSE_MS = 30_000L
     private const val KEEP_CLOSED_MS = 30_000L
     private const val OPAQUE = 0xFF000000.toInt()
 

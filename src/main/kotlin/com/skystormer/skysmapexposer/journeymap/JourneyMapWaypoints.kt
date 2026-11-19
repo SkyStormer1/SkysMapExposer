@@ -18,8 +18,8 @@ import kotlin.math.floor
 /**
  * Waypoints on JourneyMap, by the same rules as on Xaero's ([WaypointRules]): markers saved, shares
  * and pings added, and temporary ones, all in a "Map Exposer" group of JourneyMap's so they can be
- * switched off together; and yours read back to share. Temporary ones are not saved by JourneyMap
- * and are removed on leaving a world ([forget]), as Xaero's are.
+ * switched off together; and yours read back to share. Temporary ones last until you delete them or
+ * leave the world ([forget]), as Xaero's do, a change of dimension included.
  *
  * Temporary ones carry a mark of this mod's ([TEMPORARY]), not JourneyMap's "persistent" flag: where
  * a server keeps the waypoints (JourneyMap on the server, as in single player), saved ones come back
@@ -39,7 +39,7 @@ internal object JourneyMapWaypoints {
         val y = floor(pin.y).toInt()
         val z = floor(pin.z).toInt()
         if (!temporary && has(api, dimension, pin.label, x, z)) return@guard "${pin.label} is already a waypoint"
-        add(api, dimension, pin.label, x, y, z, WaypointRules.RGB[WaypointRules.colourFor(pin)], persistent = !temporary)
+        add(api, dimension, pin.label, x, y, z, WaypointRules.RGB[WaypointRules.colourFor(pin)], temporary)
         if (temporary) "Temporary waypoint set on ${pin.label}" else "Saved ${pin.label} as a waypoint"
     }
 
@@ -49,7 +49,7 @@ internal object JourneyMapWaypoints {
             var added = 0
             for (w in waypoints) {
                 if (has(api, dimension, w.name, w.x, w.z)) continue
-                add(api, dimension, w.name, w.x, w.y, w.z, WaypointRules.RGB[w.color.coerceIn(0, WaypointRules.RGB.lastIndex)], persistent = true)
+                add(api, dimension, w.name, w.x, w.y, w.z, WaypointRules.RGB[w.color.coerceIn(0, WaypointRules.RGB.lastIndex)], temporary = false)
                 added++
             }
             val name = Ui.dimensionName(dimension) ?: dimension
@@ -67,7 +67,7 @@ internal object JourneyMapWaypoints {
         val target = if (dimension == Config.OVERWORLD) Config.NETHER else Config.OVERWORLD
         val (cx, cy, cz) = WaypointRules.counterpart(x, z, dimension)
         // JourneyMap needs a height; the Overworld has no rule for one, so it is sea level there.
-        add(api, target, "From the ${Ui.dimensionName(dimension)}", cx, cy ?: SEA_LEVEL, cz, WHITE, persistent = false)
+        add(api, target, "From the ${Ui.dimensionName(dimension)}", cx, cy ?: SEA_LEVEL, cz, WHITE, temporary = true)
         "Temporary waypoint set in the $other at ${WaypointRules.counterpartCoordinates(x, z, dimension)}"
     }
 
@@ -99,10 +99,15 @@ internal object JourneyMapWaypoints {
 
     private fun isTemporary(waypoint: Waypoint): Boolean = waypoint.getCustomData(TEMPORARY) != null
 
-    private fun add(api: IClientAPI, dimension: String, name: String, x: Int, y: Int, z: Int, rgb: Int, persistent: Boolean) {
-        val waypoint = WaypointFactory.createWaypoint(JourneyMapAdapter.MOD_ID, BlockPos(x, y, z), name, JourneyMapAdapter.levelKey(dimension), persistent)
+    /**
+     * Adds a waypoint. Every one is handed to JourneyMap as kept: JourneyMap drops the ones it is
+     * told not to keep whenever you change dimension, and a temporary one is meant to last until you
+     * delete it or leave the world. Those carry [TEMPORARY], by which they go on leaving ([tidy]).
+     */
+    private fun add(api: IClientAPI, dimension: String, name: String, x: Int, y: Int, z: Int, rgb: Int, temporary: Boolean) {
+        val waypoint = WaypointFactory.createWaypoint(JourneyMapAdapter.MOD_ID, BlockPos(x, y, z), name, JourneyMapAdapter.levelKey(dimension), true)
         waypoint.setColor(rgb)
-        if (!persistent) waypoint.setCustomData(TEMPORARY, "1")
+        if (temporary) waypoint.setCustomData(TEMPORARY, "1")
         group(api).addWaypoint(waypoint)
         api.addWaypoint(JourneyMapAdapter.MOD_ID, waypoint)
     }

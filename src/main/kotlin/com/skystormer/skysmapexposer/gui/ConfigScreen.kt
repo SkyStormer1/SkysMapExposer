@@ -591,7 +591,12 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, third, ROW).build())
         addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + third + GAP, y, third, ROW).build())
         addRenderableWidget(downloadButton(left + (third + GAP) * 2, y, WIDTH - (third + GAP) * 2))
+        // With an address and no maps picked yet, they are looked up at once, once per server shown.
+        if (draft.url.isNotBlank() && DIMENSIONS.all { draft.maps[it.first].isNullOrBlank() } && autoFound.add(draft)) findMaps()
     }
+
+    /** The servers whose maps were looked up on their own already, so it happens once each. */
+    private val autoFound = HashSet<Any>()
 
     private fun switchPage(to: Page) {
         keepEdits()
@@ -748,15 +753,32 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             val result = runCatching { BlueMap(url).use { it.maps() } }
             minecraft.execute {
                 result.onSuccess { maps ->
-                    val overworld = mapBoxes[Config.OVERWORLD]
-                    if (overworld != null && overworld.value.isBlank()) {
-                        (maps.firstOrNull { it.first == "world" } ?: maps.firstOrNull())?.let { overworld.value = it.first }
+                    // Each dimension's box, if empty, gets the map whose id or name says it is that dimension's.
+                    for ((dimension, _) in DIMENSIONS) {
+                        val box = mapBoxes[dimension] ?: continue
+                        if (box.value.isBlank()) guessMap(dimension, maps)?.let { box.value = it }
                     }
                     show("Maps here: " + maps.joinToString(", ") { (id, name) -> "$id ($name)" })
                 }
                 result.onFailure { show("Could not reach BlueMap at $url: ${it.message ?: it.javaClass.simpleName}") }
             }
         }, "SkysMapExposer find maps").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * The map of [maps] (id, name) for [dimension]: one named for the Nether or the End, and for the
+     * Overworld "world" or "overworld", else the first that is neither of the others.
+     */
+    private fun guessMap(dimension: String, maps: List<Pair<String, String>>): String? {
+        fun words(map: Pair<String, String>) = (map.first + " " + map.second).lowercase().replace('_', ' ').replace('-', ' ')
+        fun nether(map: Pair<String, String>) = "nether" in words(map)
+        fun end(map: Pair<String, String>) = Regex("""\bend\b""").containsMatchIn(words(map))
+        return when (dimension) {
+            Config.NETHER -> maps.firstOrNull(::nether)?.first
+            Config.END -> maps.firstOrNull { end(it) && !nether(it) }?.first
+            else -> (maps.firstOrNull { it.first.lowercase() in setOf("world", "overworld") }
+                ?: maps.firstOrNull { !nether(it) && !end(it) })?.first
+        }
     }
 
     private fun show(text: String) {

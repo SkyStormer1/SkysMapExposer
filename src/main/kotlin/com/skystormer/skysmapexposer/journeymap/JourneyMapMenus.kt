@@ -20,6 +20,7 @@ import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.event.FullscreenEventRegistry
 import journeymap.client.ui.UIManager
 import journeymap.client.ui.fullscreen.Fullscreen
+import journeymap.client.ui.fullscreen.menu.FullScreenPopupMenu
 import net.minecraft.core.BlockPos
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.Minecraft
@@ -62,6 +63,13 @@ internal object JourneyMapMenus {
     private var pending: Pair<Int, Int>? = null
     private var pendingDimension: String? = null
 
+    /**
+     * The screen Go to was pressed on when the map was not open (the player list, with the settings
+     * behind it), put back once the map Go to opened is closed; [backToShown] once that map is up.
+     */
+    private var backTo: Screen? = null
+    private var backToShown = false
+
     /** Switches [map] to [dimension] if it is showing another ([JourneyMapDimension]). */
     private fun showIfOther(map: IFullscreen, dimension: String) {
         if (map.uiState?.dimension?.identifier()?.toString() == dimension) return
@@ -72,15 +80,19 @@ internal object JourneyMapMenus {
         FullscreenEventRegistry.FULLSCREEN_POPUP_MENU_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { menu(it) } }
         FullscreenEventRegistry.FULLSCREEN_RENDER_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { render(it) } }
         JourneyMapSelection.register()
-        // The map bar, as on Xaero's world map.
+        // The map bar, as on Xaero's world map; also while JourneyMap's right-click menu is open,
+        // which is a screen of its own over the map, so the bar does not vanish under it.
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
-            if (screen is Fullscreen) guard { MapBar.attachTo(screen) }
+            if (screen is Fullscreen || screen is FullScreenPopupMenu) guard { MapBar.attachTo(screen) }
         }
         FullscreenEventRegistry.ADDON_BUTTON_DISPLAY_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { event ->
             guard {
-                // Xaero's map has a dimension button of its own; this is JourneyMap's.
-                event.themeButtonDisplay.addThemeButton("Dimension", DIMENSION_ICON) { event.fullscreen?.let(JourneyMapDimension::showNext) }
-                    .setTooltip("Dimension", "Shows the next of the Overworld, the Nether and the End; back to yours when you leave the map")
+                // Xaero's map has a dimension button of its own; this is JourneyMap's, at the end of the
+                // top row ([JourneyMapToolbar]), or here in the side column if that hook could not apply.
+                if (!JourneyMapToolbar.inTopRow) {
+                    event.themeButtonDisplay.addThemeButton("Dimension", JourneyMapToolbar.iconFor(event.fullscreen?.uiState?.dimension)) { event.fullscreen?.let(JourneyMapDimension::showNext) }
+                        .setTooltip("Dimension", "Shows the next of the Overworld, the Nether and the End; back to yours when you leave the map")
+                }
             }
         }
     }
@@ -88,6 +100,7 @@ internal object JourneyMapMenus {
     fun forget() {
         fullscreen = null
         pending = null
+        backTo = null
         JourneyMapSelection.forget()
         JourneyMapDimension.forget()
     }
@@ -97,6 +110,12 @@ internal object JourneyMapMenus {
      * Xaero's does. The player list closes the map for a moment and counts as still on it.
      */
     fun tick(client: Minecraft) {
+        // The map Go to opened over another screen has closed: back to that screen.
+        if (backTo != null && backToShown && client.gui.screen() == null) {
+            val screen = backTo
+            backTo = null
+            Ui.open(screen)
+        }
         if (JourneyMapDimension.chosen == null) return
         val screen = client.gui.screen()
         val onTheMap = screen != null && (screen === fullscreen?.screen || screen is PlayerListScreen)
@@ -160,6 +179,8 @@ internal object JourneyMapMenus {
     private fun render(event: FullscreenRenderEvent) {
         val map = event.fullscreen ?: return
         fullscreen = map
+        JourneyMapToolbar.refresh()
+        if (backTo != null) backToShown = true
         if (JourneyMapDimension.backToYou) {
             JourneyMapDimension.backToYou = false
             Minecraft.getInstance().player?.let { map.centerOn(it.x, it.z) }
@@ -221,18 +242,31 @@ internal object JourneyMapMenus {
 
     /**
      * The blocks JourneyMap's full-screen map shows now, as left, top, right, bottom: its live centre
-     * and, at [state]'s zoom ([UIState.blockSize], window pixels a block), the window's size. The
-     * view's own block area lags a moved map. Null until the map has been seen open.
+     * and, at its live zoom ([pixelsPerBlock]), the window's size. Null until the map has been seen open.
      */
     fun shownArea(state: UIState): DoubleArray? {
         val map = fullscreen ?: return null
-        val pixelsPerBlock = state.blockSize.takeIf { it > 0 } ?: return null
+        val pixels = pixelsPerBlock(state).takeIf { it > 0 } ?: return null
         val window = Minecraft.getInstance().window
-        val halfWide = window.width / 2.0 / pixelsPerBlock
-        val halfHigh = window.height / 2.0 / pixelsPerBlock
+        val halfWide = window.width / 2.0 / pixels
+        val halfHigh = window.height / 2.0 / pixels
         val x = map.getCenterBlockX(false)
         val z = map.getCenterBlockZ(false)
         return doubleArrayOf(x - halfWide, z - halfHigh, x + halfWide, z + halfHigh)
+    }
+
+    /**
+     * Window pixels a block on the full-screen map, at the zoom it shows now. JourneyMap's [UIState]
+     * keeps the zoom the map opened at (its block size is zoom / 512), so the live one is asked of
+     * the map itself, falling back to [state]'s if that cannot be reached.
+     */
+    fun pixelsPerBlock(state: UIState): Double {
+        val zoom = try {
+            (fullscreen as? Fullscreen)?.zoom
+        } catch (e: LinkageError) {
+            null
+        }
+        return zoom?.takeIf { it > 0 }?.let { it / 512.0 } ?: state.blockSize
     }
 
     /** The block under the mouse on JourneyMap's full-screen map, as JourneyMap itself works it out. */
@@ -256,11 +290,20 @@ internal object JourneyMapMenus {
         }
         pending = x to z
         pendingDimension = dimension
+        // JourneyMap opens its map only with no other screen up, so whatever Go to was pressed on is
+        // closed first, and put back when the map closes.
+        val current = Minecraft.getInstance().gui.screen()
+        if (current != null && current !is Fullscreen) {
+            backTo = current
+            backToShown = false
+            Ui.open(null)
+        }
         return try {
             UIManager.INSTANCE.getOrOpenFullscreenMap()
             true
         } catch (e: LinkageError) {
             pending = null
+            backTo = null
             false
         }
     }
@@ -274,9 +317,6 @@ internal object JourneyMapMenus {
             Log.error("Something of this mod's on JourneyMap's map failed", e)
         }
     }
-
-    /** The dimension button's picture: an eye of ender, from the game's own items. */
-    private val DIMENSION_ICON = net.minecraft.resources.Identifier.withDefaultNamespace("textures/item/ender_eye.png")
 
     /** Under JourneyMap's own line of where you are, at the top of the map. */
     private const val LINES_TOP = 70

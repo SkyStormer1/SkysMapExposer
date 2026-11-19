@@ -131,6 +131,8 @@ object AutoTest {
                 }
                 "mapzoom" -> (client.gui.screen() as? MapCamera)?.skysmapexposerSetZoom(rest.toDouble())
                 "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
+                // `zoom out` / `zoom in`: the screen open's own zoomOut() / zoomIn(), as JourneyMap's full-screen map has.
+                "zoom" -> client.gui.screen()?.let { it.javaClass.getMethod(if (rest == "in") "zoomIn" else "zoomOut").invoke(it) }
                 "goto" -> {
                     val parts = rest.split(' ')
                     val (x, z) = parts.take(2).map { it.toInt() }

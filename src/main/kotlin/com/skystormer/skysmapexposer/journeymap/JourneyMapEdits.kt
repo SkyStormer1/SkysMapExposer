@@ -396,7 +396,7 @@ internal object JourneyMapEdits {
         val parts = listOfNotNull(
             "${job.changed} region(s) changed",
             "${waiting.size} open in JourneyMap, changed once it lets go".takeIf { waiting.isNotEmpty() },
-            "${job.unreadable} left alone (not a picture this can read)".takeIf { job.unreadable > 0 },
+            "${job.unreadable} left alone (could not be read; the log says why)".takeIf { job.unreadable > 0 },
         )
         val head = "${job.title} ${if (job.cancelled) "stopped" else "done"}: "
         val message = Component.literal(head + parts.joinToString("; ") + ". Zoom out and back in to see it.  ")

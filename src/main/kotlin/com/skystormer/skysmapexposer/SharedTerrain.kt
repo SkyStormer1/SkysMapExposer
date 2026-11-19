@@ -379,7 +379,7 @@ object SharedTerrain {
             input.readFully(bytes)
         }
         val regions = HashMap<Pair<Int, Int>, Region>()
-        ShareFormat.open(bytes, MAX_UNPACKED) { batch ->
+        ShareFormat.open(bytes, MAX_UNPACKED, MAX_FILE_SIDE) { batch ->
             if (batch.format != ShareFormat.TERRAIN) error("not terrain")
             readBatch(batch.input, batch.count, regions)
         }

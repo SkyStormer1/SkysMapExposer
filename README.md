@@ -96,9 +96,9 @@ The mod does nothing until you tell it where a server's BlueMap is. You do this 
    **Sky's Map Exposer** and click the cog.
 3. The screen opens on the server you are on, with **Server address** already filled in.
    Paste the address from step 1 into **BlueMap address**.
-4. Press **Find maps**. The line above the buttons lists the maps that BlueMap has, and the
-   overworld is filled in for you. Type the right map names into **Nether map** and **End map** if
-   you want them. Leave a box blank to not use BlueMap there.
+4. The maps are looked up on their own (or press **Find maps**): the line above the buttons lists
+   the maps that BlueMap has, and each dimension's box is filled in with the map named for it. Fix
+   any it got wrong. Leave a box blank to not use BlueMap there.
 5. Press **Done**. Open the world map (M). Unexplored areas now show BlueMap's terrain.
 
 ![The Sky's Map Exposer settings screen, filled in for play.example.com](docs/settings.png)
@@ -120,7 +120,7 @@ Hover over any setting in the game for an explanation.
 | **BlueMap address** | The web page of the server's BlueMap. |
 | **Overworld / Nether / End map** | Which BlueMap map to use for each dimension. The **ON/OFF** button beside it switches that dimension's *terrain*. Borders, markers and players still show with terrain off. |
 | **Cover map before** | Your overworld map from before this date and time (`yyyy-MM-dd HH:mm`) is covered by BlueMap however recent it is. Useful when a new season starts on a new world. **Now** fills in the current time. Leave blank for never. |
-| **Find maps** | Asks the BlueMap which maps it has. |
+| **Find maps** | Asks the BlueMap which maps it has, and fills each empty map box with the one named for that dimension. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
 | **Prepare map** (Tiles tab) | After you join, downloads every tile BlueMap has, a few a second, and makes it ready to draw, so the map is ready before you open it. On as the mod comes. It starts from the middle of the map and works outwards, the dimension you are in first; tiles you are looking at always come first, and it pauses while the game is busy. **Stop preparing** / **Prepare now** stop it or go over the map again (`/mapexposer prepare` and `/mapexposer prepare cancel` too). How far it has got shows at the top of the world map. |
@@ -419,7 +419,8 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
   menus (lock on, trust, save as waypoint, temporary waypoint, copy).
 - **Right-click on the map:** Copy coordinates, Ping here, Share waypoints…, a temporary waypoint
   in the other dimension, Players… and Download BlueMap…. The other dimension's coordinates of the
-  block under the mouse show at the top, and a dimension button sits with JourneyMap's own.
+  block under the mouse show at the top, and a dimension button sits at the end of the top row; its
+  picture is the dimension shown (a grass block, a nether portal, an eye of ender).
 - **Picking an area** as on Xaero's map: drag with the right mouse button held. The chunks it covers
   are outlined, and the menu that opens when you let go saves or downloads just those; a plain
   right-click picks nothing, and the menu works on the whole map.

@@ -166,9 +166,10 @@ object ShareFormat {
 
     /**
      * Checks and opens a batch made by [pack], hands it to [action] and closes it. Reading more
-     * than [limit] bytes out of it fails, so a small batch cannot unpack into a huge one.
+     * than [limit] bytes out of it fails, so a small batch cannot unpack into a huge one. Its area
+     * may be at most [maxSide] chunks a side: [MAX_SIDE] in chat, the whole file's in a terrain file.
      */
-    fun <T> open(bytes: ByteArray, limit: Int = Int.MAX_VALUE, action: (Opened) -> T): T {
+    fun <T> open(bytes: ByteArray, limit: Int = Int.MAX_VALUE, maxSide: Int = MAX_SIDE, action: (Opened) -> T): T {
         if (bytes.size < 9) error("too short")
         val head = ByteBuffer.wrap(bytes, 0, 8)
         val crc = head.int
@@ -184,7 +185,7 @@ object ShareFormat {
             val batch = varint(input)
             val batches = varint(input)
             if (batches !in 1..65536 || batch !in 0 until batches) error("batch $batch of $batches")
-            val area = readArea(input)
+            val area = readArea(input, maxSide)
             val count = input.readInt()
             return action(Opened(format, Header(from, dimensionId, shareId, batch, batches, area), count, input))
         }

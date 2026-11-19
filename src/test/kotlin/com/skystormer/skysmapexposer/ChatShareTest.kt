@@ -162,6 +162,16 @@ class ChatShareTest {
     }
 
     @Test
+    fun `a terrain file's region of a wide save opens, while chat still turns a wide area away`() {
+        // A region of a whole-map save carries the whole save's area, far over chat's limit.
+        val header = ShareFormat.Header("Alice", "minecraft:overworld", 1, 0, 1024, ShareFormat.Area(-512, -512, 511, 511))
+        val batch = ShareFormat.pack(ShareFormat.TERRAIN, header, 1) { out -> out.writeInt(0) }
+        assertEquals(1024, ShareFormat.open(batch, Int.MAX_VALUE, 3_750_000) { it.header.area.width })
+        val e = assertThrows(Exception::class.java) { ShareFormat.open(batch) { } }
+        assertTrue("bad area" in e.message.orEmpty(), e.message)
+    }
+
+    @Test
     fun `a batch that unpacks past the limit is turned away quickly`() {
         val header = ShareFormat.Header("Alice", "minecraft:overworld", 1, 0, 1, ShareFormat.Area(0, 0, 0, 0))
         val long = "a".repeat(60_000)

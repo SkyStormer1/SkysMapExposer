@@ -11,6 +11,7 @@ import journeymap.api.v2.common.event.FullscreenEventRegistry
 import journeymap.client.ui.fullscreen.Fullscreen
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.core.BlockPos
@@ -29,10 +30,15 @@ import net.minecraft.core.BlockPos
 internal object JourneyMapSelection {
 
     private const val RIGHT = 1
+    /** How far, in window pixels, the mouse must move with the right button down to start picking an area. */
+    private const val DRAG_PIXELS = 8.0
 
     private var start: BlockPos? = null
     private var end: BlockPos? = null
     private var holding = false
+    /** Where the mouse was when the right button went down, in window pixels, and whether it has moved enough since to be a drag. */
+    private var pressedAt = 0.0 to 0.0
+    private var moved = false
     /** True while the held-back press is handed to JourneyMap, so it is let through. */
     private var replaying = false
     private var picked: ShareFormat.Area? = null
@@ -78,11 +84,21 @@ internal object JourneyMapSelection {
         start = event.location
         end = event.location
         holding = true
+        moved = false
+        val mouse = Minecraft.getInstance().mouseHandler
+        pressedAt = mouse.xpos() to mouse.ypos()
         picked = null
         hideOutline()
     }
 
     private fun dragged(map: Fullscreen) {
+        // A hand moving a little during a right-click is not a drag.
+        if (!moved) {
+            val mouse = Minecraft.getInstance().mouseHandler
+            val (x, y) = pressedAt
+            moved = Math.hypot(mouse.xpos() - x, mouse.ypos() - y) >= DRAG_PIXELS
+            if (!moved) return
+        }
         end = map.blockAtMouse ?: return
         val area = current() ?: return
         if (area.width > 1 || area.height > 1) showOutline(area) else hideOutline()
@@ -91,7 +107,7 @@ internal object JourneyMapSelection {
     private fun released(map: Screen, event: MouseButtonEvent) {
         if (event.button() != RIGHT || !holding) return
         holding = false
-        picked = current()?.takeIf { it.width > 1 || it.height > 1 }
+        picked = current()?.takeIf { moved && (it.width > 1 || it.height > 1) }
         picked?.let { Log.info("Picked {} × {} chunks on JourneyMap's map", it.width, it.height) } ?: hideOutline()
         replaying = true
         try {
