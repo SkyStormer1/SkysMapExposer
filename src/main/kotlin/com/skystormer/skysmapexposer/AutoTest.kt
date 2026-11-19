@@ -45,6 +45,7 @@ import java.nio.file.Path
  * - `close` closes whatever screen is open
  * - `join <world>` opens that singleplayer world, first making it (creative, peaceful) if needed
  * - `server <address>` joins that server
+ * - `guiscale <n>` sets the GUI scale (0 auto)
  * - `waitworld` waits until you are in a world with no screen open
  * - `leave` saves and quits to the title screen, as the pause menu does
  * - `waittitle` waits until you are back on the title screen
@@ -215,6 +216,12 @@ object AutoTest {
                         LevelSettings(rest, GameType.CREATIVE, LevelSettings.DifficultySettings(Difficulty.PEACEFUL, false, false), true, WorldDataConfiguration.DEFAULT),
                         WorldOptions.defaultWithRandomSeed(), WorldPresets::createNormalWorldDimensions, TitleScreen(),
                     )
+                }
+                // `guiscale <n>`: the GUI scale setting (0 auto), as the video settings set it.
+                "guiscale" -> {
+                    client.options.guiScale().set(rest.toInt())
+                    client.options.save()
+                    client.resizeGui()
                 }
                 // `server <address>`: joins that server, with its saved entry's settings where it has one.
                 "server" -> {

@@ -115,6 +115,14 @@ object Config {
     var barLeft: Int = 52
     var barTop: Int = 2
 
+    /**
+     * The same place as a share of the room the screen leaves for the bar (0 at the left or top
+     * edge, 1 at the right edge or bottom), so it stays where it was whatever the GUI scale; below
+     * 0 until the bar is first moved, when [barLeft] and [barTop] are used as they are.
+     */
+    var barLeftShare: Double = -1.0
+    var barTopShare: Double = -1.0
+
     /** How many biomes the bar lists at once. */
     var barRows: Int = 6
 
@@ -268,6 +276,8 @@ object Config {
             read("barOpen") { barOpen = it.asBoolean }
             read("barLeft") { barLeft = it.asInt }
             read("barTop") { barTop = it.asInt }
+            read("barLeftShare") { barLeftShare = it.asDouble.coerceAtMost(1.0) }
+            read("barTopShare") { barTopShare = it.asDouble.coerceAtMost(1.0) }
             read("barRows") { barRows = it.asInt.coerceIn(1, 40) }
             read("minimapBiomes") { minimapBiomes = it.asBoolean }
             read("pings") { pings = it.asBoolean }
@@ -381,6 +391,8 @@ object Config {
         json.addProperty("barOpen", barOpen)
         json.addProperty("barLeft", barLeft)
         json.addProperty("barTop", barTop)
+        json.addProperty("barLeftShare", barLeftShare)
+        json.addProperty("barTopShare", barTopShare)
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
         json.addProperty("pings", pings)

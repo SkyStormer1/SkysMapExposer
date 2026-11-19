@@ -48,10 +48,17 @@ internal object JourneyMapToolbar {
     fun append(map: Fullscreen, options: ThemeToolbar?) {
         options ?: return
         // JourneyMap sets its buttons up more than once on the same toolbar: one button is enough.
-        button.get()?.let { if (options.contains(it)) return }
+        // The screen's own widgets start again each time (a new GUI scale, say), so it is handed
+        // to the screen again, or it would be drawn but never hear the mouse.
+        button.get()?.let { old ->
+            if (options.contains(old)) {
+                if (old !in map.children()) map.addButtonWidget(old)
+                return
+            }
+        }
         try {
             val made = DimensionButton(ThemeLoader.getCurrentTheme(), iconFor(shown())) { JourneyMapDimension.showNext(map) }
-            made.setTooltip("Dimension", TIP)
+            made.setTooltip(TIP)
             options.add(made)
             map.addButtonWidget(made)
             button = WeakReference(made)

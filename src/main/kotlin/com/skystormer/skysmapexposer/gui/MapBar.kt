@@ -21,6 +21,7 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.tags.BiomeTags
 import net.minecraft.world.level.biome.Biome
 import java.lang.ref.WeakReference
+import kotlin.math.roundToInt
 
 /**
  * The bar on the world map, Xaero's or JourneyMap's full-screen one: this mod's switches, and a
@@ -109,8 +110,12 @@ object MapBar {
         search.setResponder { panel.searched() }
         search.covered = panel::covered
         current = WeakReference(panel)
+        under = null
         ScreenEvents.afterExtract(screen).register { _, graphics, mouseX, mouseY, partialTick ->
             panel.extractRenderState(graphics, mouseX, mouseY, partialTick)
+            // The screen drew its tooltip before this: the bar's own would be dropped with the
+            // frame, so it is drawn now, over the bar.
+            graphics.extractDeferredElements(mouseX, mouseY, partialTick)
         }
         ScreenMouseEvents.allowMouseClick(screen).register { _, event ->
             when {
@@ -140,6 +145,26 @@ object MapBar {
             search.charTyped(event)
             false
         }
+    }
+
+    /**
+     * The bar on a menu that opens over the map as a screen of its own (JourneyMap's right-click
+     * menu): drawn under the menu, by [drawUnder] from the menu's own drawing, and not offered the
+     * mouse, so the menu is never covered or has its clicks taken.
+     */
+    fun showUnder(screen: Screen) {
+        val panel = Panel(screen, SearchBox())
+        under = WeakReference(panel)
+    }
+
+    private var under: WeakReference<Panel>? = null
+
+    /** Draws the bar of [showUnder] for [screen], before the menu on it is drawn. */
+    @JvmStatic
+    fun drawUnder(screen: Any, graphics: GuiGraphicsExtractor, partialTick: Float) {
+        val panel = under?.get()?.takeIf { it.isOn(screen) } ?: return
+        // The mouse far away: nothing under the menu lights up or shows a tooltip.
+        panel.extractRenderState(graphics, -10_000, -10_000, partialTick)
     }
 
     /** Called before Xaero zooms the map: true when the wheel was over the bar and scrolled it. */
@@ -200,11 +225,38 @@ object MapBar {
 
         private val font get() = Minecraft.getInstance().font
 
-        override fun savedLeft(width: Int) = Config.barLeft
-        override fun saveLeft(left: Int, width: Int) { Config.barLeft = left }
+        // Kept as a share of the room the screen leaves (as well as in GUI units, for older
+        // versions), so the bar stays in the same place on screen at every GUI scale. A place
+        // saved only in GUI units (an older version) is taken as it is at the scale in use now.
+        override fun savedLeft(width: Int): Int {
+            val room = maxOf(0, screen.width - width)
+            if (Config.barLeftShare < 0) {
+                Config.barLeftShare = if (room > 0) (Config.barLeft.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+                Config.save()
+                return Config.barLeft
+            }
+            return (Config.barLeftShare * room).roundToInt()
+        }
+        override fun saveLeft(left: Int, width: Int) {
+            Config.barLeft = left
+            val room = screen.width - width
+            Config.barLeftShare = if (room > 0) (left.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+        }
         override var savedTop: Int
-            get() = Config.barTop
-            set(value) { Config.barTop = value }
+            get() {
+                val room = maxOf(0, screen.height - ROW)
+                if (Config.barTopShare < 0) {
+                    Config.barTopShare = if (room > 0) (Config.barTop.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+                    Config.save()
+                    return Config.barTop
+                }
+                return (Config.barTopShare * room).roundToInt()
+            }
+            set(value) {
+                Config.barTop = value
+                val room = screen.height - ROW
+                Config.barTopShare = if (room > 0) (value.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+            }
         override var savedRows: Int
             get() = Config.barRows
             set(value) { Config.barRows = value }

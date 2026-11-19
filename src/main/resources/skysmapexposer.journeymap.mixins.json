@@ -10,6 +10,7 @@
     "ImageHolderAccessor",
     "MapStateMixin",
     "OutlinePassMixin",
+    "PopupMenuMixin",
     "SnapshotBiomeMixin"
   ],
   "injectors": {

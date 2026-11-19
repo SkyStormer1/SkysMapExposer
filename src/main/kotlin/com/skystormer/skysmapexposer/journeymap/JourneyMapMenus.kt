@@ -81,9 +81,13 @@ internal object JourneyMapMenus {
         FullscreenEventRegistry.FULLSCREEN_RENDER_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { render(it) } }
         JourneyMapSelection.register()
         // The map bar, as on Xaero's world map; also while JourneyMap's right-click menu is open,
-        // which is a screen of its own over the map, so the bar does not vanish under it.
+        // which is a screen of its own over the map, so the bar does not vanish under it: there drawn
+        // under the menu (`PopupMenuMixin`), never over it.
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
-            if (screen is Fullscreen || screen is FullScreenPopupMenu) guard { MapBar.attachTo(screen) }
+            when (screen) {
+                is Fullscreen -> guard { MapBar.attachTo(screen) }
+                is FullScreenPopupMenu -> guard { MapBar.showUnder(screen) }
+            }
         }
         FullscreenEventRegistry.ADDON_BUTTON_DISPLAY_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { event ->
             guard {
@@ -91,7 +95,7 @@ internal object JourneyMapMenus {
                 // top row ([JourneyMapToolbar]), or here in the side column if that hook could not apply.
                 if (!JourneyMapToolbar.inTopRow) {
                     event.themeButtonDisplay.addThemeButton("Dimension", JourneyMapToolbar.iconFor(event.fullscreen?.uiState?.dimension)) { event.fullscreen?.let(JourneyMapDimension::showNext) }
-                        .setTooltip("Dimension", "Shows the next of the Overworld, the Nether and the End; back to yours when you leave the map")
+                        .setTooltip("Shows the next of the Overworld, the Nether and the End; back to yours when you leave the map")
                 }
             }
         }
