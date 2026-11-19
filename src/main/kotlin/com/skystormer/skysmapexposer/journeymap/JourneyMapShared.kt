@@ -77,6 +77,15 @@ internal object JourneyMapShared {
         return out
     }
 
+    /** [state]'s colour in JourneyMap before any biome tint, 0xRRGGBB; 0 for one it leaves off the map. */
+    fun baseColour(state: BlockState): Int {
+        if (state.isAir) return 0
+        val md = BlockMD.get(state)
+        if (md.isIgnore) return 0
+        return (if (md.hasColor()) md.textureColor else 0).and(0xFFFFFF).takeIf { it != 0 }
+            ?: state.block.defaultMapColor().col
+    }
+
     /** [state]'s colour in JourneyMap, tinted by [biome] where JourneyMap tints it; null for a block it leaves off the map. */
     private fun colourOf(state: BlockState, biome: Biome?): Int? {
         if (state.isAir) return null

@@ -314,7 +314,7 @@ object XaeroWriter {
         private val picture: BlueMapPicture.RegionPicture,
         private val palette: XaeroPalette,
     ) : Pixels {
-        private val pixel = XaeroPalette.Pixel()
+        private val pixel = com.skystormer.skysmapexposer.BlockGuesser.Pixel()
         override val regionX get() = picture.regionX
         override val regionZ get() = picture.regionZ
 

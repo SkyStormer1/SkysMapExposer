@@ -118,6 +118,8 @@ internal object JourneyMapTerrainSave {
                     for (cz in maxOf(area.top, rz * 32)..minOf(area.bottom, rz * 32 + 31)) {
                         for (cx in maxOf(area.left, rx * 32)..minOf(area.right, rx * 32 + 31)) {
                             val chunk = cache[(cz - rz * 32) * 32 + (cx - rx * 32)] ?: continue
+                            // A downloaded or shared chunk taken back by an undo: empty, not yours.
+                            if (JourneyMapCacheWrites.kindOf(chunk) == JourneyMapCacheWrites.Kind.WITHDRAWN) continue
                             if (old?.contains(key(cx, cz)) == true) { oldLeftOut++; continue }
                             writer.chunk(cx, cz, columns(chunk) ?: continue)
                         }
@@ -150,6 +152,8 @@ internal object JourneyMapTerrainSave {
         val out = SharedTerrain.SharedChunk()
         for (x in 0 until 16) for (z in 0 until 16) {
             val i = x * 16 + z
+            // A column with nothing in it: a downloaded or shared chunk's column that was not kept.
+            if (surface[x + z * 16] <= chunk.minBuild) continue
             val top = (surface[x + z * 16] - 1).coerceIn(chunk.minBuild, chunk.maxBuild - 1)
             val topState = chunk.blockAt(x, top, z)
             // Water is a layer over the ground, as deep as it is, as Xaero keeps it.

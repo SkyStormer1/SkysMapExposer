@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.skystormer.skysmapexposer.BiomeGuide
+import com.skystormer.skysmapexposer.BlockGuesser
 import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Clock
@@ -47,8 +48,12 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 internal object JourneyMapEdits {
 
-    /** One region to change: [apply] changes its pixels in place, true if it changed any. Client thread. */
-    private class Edit(val regionX: Int, val regionZ: Int, val apply: (IntArray, Path) -> Boolean)
+    /**
+     * One region to change: [apply] changes its pixels in place, true if it changed any; then [cache]
+     * is shown the region's pixels as they now are, to put in JourneyMap's chunk cache what took
+     * ([JourneyMapCacheWrites]). Client thread.
+     */
+    private class Edit(val regionX: Int, val regionZ: Int, val cache: ((IntArray) -> Unit)? = null, val apply: (IntArray, Path) -> Boolean)
 
     private class Job(
         val name: String, val session: Session?, val dimension: String, val folder: Path, val backups: Path,
@@ -61,6 +66,8 @@ internal object JourneyMapEdits {
         @Volatile var finding = true
         @Volatile var found = false
         val looked = AtomicInteger()
+        /** Downloaded and shared columns into JourneyMap's chunk cache, for saving terrain files; none for a clear. */
+        var cache: JourneyMapCacheWrites.Batch? = null
         var changed = 0
         var unreadable = 0
         val ready = LinkedBlockingQueue<Edit>(QUEUE)
@@ -90,15 +97,18 @@ internal object JourneyMapEdits {
         if (SeaFloor.hasCeiling(dimension) && session.view(mapId) != MapLayers.View.ROOF) {
             return "BlueMap's map here shows the inside, which JourneyMap keeps in its cave maps; only the surface can be downloaded"
         }
-        val job = begin("Download", session, dimension) ?: return busyOrMissing()
+        val job = begin("Download", session, dimension, keepInCache = true) ?: return busyOrMissing()
         val biomes = JourneyMapImportedBiomes.folder(dimension)
-        Thread({ findDownload(job, mapId, area, unexploredOnly, biomes) }, "SkysMapExposer JourneyMap download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        val registries = Minecraft.getInstance().level!!.registryAccess()
+        Thread({ findDownload(job, mapId, area, unexploredOnly, biomes, registries) }, "SkysMapExposer JourneyMap download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         Log.info("Download from BlueMap map '{}' into JourneyMap's {} started: {}{}", mapId, dimension,
             area?.let { "blocks ${it.left * 16}, ${it.top * 16} to ${it.right * 16 + 15}, ${it.bottom * 16 + 15}" } ?: "everything BlueMap has", if (unexploredOnly) " (unexplored only)" else "")
         return "Downloading from BlueMap into JourneyMap's map…"
     }
 
-    private fun findDownload(job: Job, mapId: String, area: ShareFormat.Area?, unexploredOnly: Boolean, biomes: Path?) = finding(job) {
+    private fun findDownload(
+        job: Job, mapId: String, area: ShareFormat.Area?, unexploredOnly: Boolean, biomes: Path?, registries: net.minecraft.core.RegistryAccess,
+    ) = finding(job) {
         val blueMap = job.session!!.blueMap
         val layout = blueMap.layout(mapId)
         val size = layout.tileSize
@@ -130,9 +140,16 @@ internal object JourneyMapEdits {
         // The biomes, guessed from BlueMap's ground by the same guide as a download into Xaero's map
         // ([BiomeGuide]), from the same tiles, and kept for JourneyMap ([JourneyMapImportedBiomes]).
         val guide = if (Config.guessBiomes && biomes != null) BiomeGuide.forDimension(job.dimension) else null
-        val ground = guide?.let {
-            LowresSource(size, hasSea = job.dimension == Config.OVERWORLD) { tx, tz -> bytes(tx, tz)?.let { BlueMapPicture.decode(tx, tz, size, it) } }
+        // BlueMap's colours and heights, for the blocks kept in JourneyMap's chunk cache.
+        val decoded = object : LinkedHashMap<Pair<Int, Int>, BlueMapPicture.Tile?>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int, Int>, BlueMapPicture.Tile?>) = size > KEEP_TILES
         }
+        fun tile(tx: Int, tz: Int): BlueMapPicture.Tile? = decoded.getOrPut(tx to tz) { bytes(tx, tz)?.let { BlueMapPicture.decode(tx, tz, size, it) } }
+        val ground = guide?.let {
+            LowresSource(size, hasSea = job.dimension == Config.OVERWORLD) { tx, tz -> tile(tx, tz) }
+        }
+        // The block for each colour, as JourneyMap would draw it, by the same guesser as a download into Xaero's map.
+        val guesser = BlockGuesser(registries, job.dimension, JourneyMapShared::baseColour)
         for ((rx, rz) in regions) {
             if (job.cancelled) break
             val picture = IntArray(JourneyMapFiles.REGION * JourneyMapFiles.REGION)
@@ -155,14 +172,22 @@ internal object JourneyMapEdits {
                 }
             }
             if (!any) { job.looked.incrementAndGet(); continue }
+            var guess: BiomeGuide.Guess? = null
             if (guide != null && ground != null && biomes != null) {
                 try {
-                    JourneyMapImportedBiomes.addGuess(biomes, rx, rz, guide.guess(ground, rx, rz)) { px, pz -> picture[pz * JourneyMapFiles.REGION + px] ushr 24 != 0 }
+                    guess = guide.guess(ground, rx, rz)
+                    JourneyMapImportedBiomes.addGuess(biomes, rx, rz, guess) { px, pz -> picture[pz * JourneyMapFiles.REGION + px] ushr 24 != 0 }
                 } catch (e: Exception) {
                     Log.warn("Could not guess the biomes of region {}, {}: {}", rx, rz, e.toString())
                 }
             }
-            queue(job, Edit(rx, rz) { pixels, _ ->
+            val columns = if (job.cache == null) null else try {
+                downloadColumns(rx, rz, size, finest, blocks, ::tile, guesser, guess)
+            } catch (e: Exception) {
+                Log.warn("Could not work out the blocks of region {}, {} for JourneyMap's chunk cache: {}", rx, rz, e.toString())
+                null
+            }
+            queue(job, Edit(rx, rz, columns?.let { cacheWhereTaken(job, it, picture) }) { pixels, _ ->
                 var changed = false
                 for (i in pixels.indices) {
                     val colour = picture[i]
@@ -173,6 +198,70 @@ internal object JourneyMapEdits {
                 }
                 changed
             })
+        }
+    }
+
+    /**
+     * BlueMap's region ([rx], [rz]) as columns for JourneyMap's chunk cache: each block BlueMap has
+     * (inside [blocks], if given) as the block [guesser] takes its colour for, at its height, over
+     * water as deep as it looks, with the guessed biome, as a download writes Xaero's map.
+     */
+    private fun downloadColumns(
+        rx: Int, rz: Int, size: Int, finest: Set<Pair<Int, Int>>, blocks: IntArray?,
+        tile: (Int, Int) -> BlueMapPicture.Tile?, guesser: BlockGuesser, guess: BiomeGuide.Guess?,
+    ): SharedTerrain.Region {
+        val picture = BlueMapPicture.RegionPicture(rx, rz)
+        val minX = maxOf(picture.originX, blocks?.get(0) ?: Int.MIN_VALUE)
+        val minZ = maxOf(picture.originZ, blocks?.get(1) ?: Int.MIN_VALUE)
+        val maxX = minOf(picture.originX + BlueMapPicture.REGION - 1, blocks?.get(2) ?: Int.MAX_VALUE)
+        val maxZ = minOf(picture.originZ + BlueMapPicture.REGION - 1, blocks?.get(3) ?: Int.MAX_VALUE)
+        for ((tx, tz) in BlueMapPicture.tilesOver(minX, minZ, maxX, maxZ, size)) {
+            if (tx to tz !in finest) continue
+            tile(tx, tz)?.let { picture.fill(it, minX, minZ, maxX, maxZ) }
+        }
+        val region = SharedTerrain.Region(rx, rz)
+        val pixel = BlockGuesser.Pixel()
+        val water = net.minecraft.world.level.block.Blocks.WATER.defaultBlockState()
+        for (pz in 0 until BlueMapPicture.REGION) for (px in 0 until BlueMapPicture.REGION) {
+            val i = pz * BlueMapPicture.REGION + px
+            val colour = picture.colour[i]
+            if (colour == 0) continue
+            val height = picture.height[i].toInt()
+            guesser.decide(colour, height, guess?.at(px, pz)?.let(guesser::biomeKey), pixel)
+            val index = (pz shr 4) * 32 + (px shr 4)
+            val chunk = region.chunks[index] ?: SharedTerrain.SharedChunk().also { region.chunks[index] = it }
+            val c = (px and 15) * 16 + (pz and 15)
+            val light = picture.light[i]
+            chunk.state[c] = pixel.state
+            chunk.biome[c] = pixel.biome
+            chunk.light[c] = light
+            chunk.top[c] = height.toShort()
+            if (pixel.water) {
+                chunk.height[c] = (height - pixel.depth).toShort()
+                chunk.overlays[c] = listOf(SharedTerrain.SharedOverlay(water, light, false, pixel.depth))
+            } else {
+                chunk.height[c] = height.toShort()
+                chunk.glowing[c] = pixel.state.lightEmission > 0
+            }
+        }
+        return region
+    }
+
+    /**
+     * For an [Edit]: once its region's pixels are as they will stay, [columns] into JourneyMap's chunk
+     * cache wherever the picture took this edit's colour ([picture]), so the cache shows what the map
+     * shows; not where your own map stayed, or where nothing was put.
+     */
+    private fun cacheWhereTaken(job: Job, columns: SharedTerrain.Region, picture: IntArray): ((IntArray) -> Unit)? {
+        val batch = job.cache ?: return null
+        return { pixels ->
+            val taken = java.util.BitSet(pixels.size)
+            for (i in pixels.indices) if (picture[i] ushr 24 != 0 && pixels[i] == picture[i]) taken.set(i)
+            if (!taken.isEmpty) batch.add(columns) { index, column ->
+                val px = (index and 31) * 16 + (column shr 4)
+                val pz = (index shr 5) * 16 + (column and 15)
+                taken.get(pz * JourneyMapFiles.REGION + px)
+            }
         }
     }
 
@@ -188,7 +277,7 @@ internal object JourneyMapEdits {
         if (file.layer != MapLayers.SURFACE) {
             return "This map is of ${SharedTerrain.layerName(file.layer)} of the $name; JourneyMap's day map is the surface, so only Xaero's map can take it"
         }
-        val job = begin("Adding ${file.from}'s map", Session.current, file.dimensionId) ?: return busyOrMissing()
+        val job = begin("Adding ${file.from}'s map", Session.current, file.dimensionId, keepInCache = true) ?: return busyOrMissing()
         val biomes = JourneyMapImportedBiomes.folder(file.dimensionId)
         Thread({ findShared(job, file, unexploredOnly, biomes) }, "SkysMapExposer JourneyMap shared map").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         Log.info("Adding {} ({} regions of the {}) to JourneyMap's map{}", file.path.fileName, file.entries.size, file.dimensionId, if (unexploredOnly) " (unexplored only)" else "")
@@ -201,24 +290,26 @@ internal object JourneyMapEdits {
         job.finding = false
         for ((rx, rz) in nearestFirst(job, entries.keys)) {
             if (job.cancelled) break
+            var region: SharedTerrain.Region? = null
             val picture = try {
-                val region = SharedTerrain.region(file, entries.getValue(rx to rz))
+                val read = SharedTerrain.region(file, entries.getValue(rx to rz))
+                region = read
                 // Its biomes too, which JourneyMap's pictures have no room for ([JourneyMapImportedBiomes]).
                 biomes?.let { folder ->
                     try {
-                        JourneyMapImportedBiomes.add(folder, rx, rz, region)
+                        JourneyMapImportedBiomes.add(folder, rx, rz, read)
                     } catch (e: Exception) {
                         Log.warn("Could not keep the biomes of region {}, {} of {}: {}", rx, rz, file.path.fileName, e.toString())
                     }
                 }
-                JourneyMapShared.picture(region)
+                JourneyMapShared.picture(read)
             } catch (e: Exception) {
                 Log.error("Could not read region ${rx}_${rz} of ${file.path}; left it out", e)
                 job.looked.incrementAndGet()
                 job.unreadable++
                 continue
             }
-            queue(job, Edit(rx, rz) { pixels, _ -> merge(pixels, picture, unexploredOnly) })
+            queue(job, Edit(rx, rz, region?.let { cacheWhereTaken(job, it, picture) }) { pixels, _ -> merge(pixels, picture, unexploredOnly) })
         }
     }
 
@@ -315,7 +406,7 @@ internal object JourneyMapEdits {
 
     // ---- running an edit ----
 
-    private fun begin(name: String, session: Session?, dimension: String): Job? {
+    private fun begin(name: String, session: Session?, dimension: String, keepInCache: Boolean = false): Job? {
         if (job != null) return null
         val folder = JourneyMapFiles.dayFolder(dimension) ?: return null
         val player = Minecraft.getInstance().player ?: return null
@@ -326,6 +417,7 @@ internal object JourneyMapEdits {
         // Where these backups go back to, so they are never put into another world's map.
         SafeFiles.writeString(backups.resolve(ORIGIN), folder.toAbsolutePath().toString())
         val started = Job(name, session, dimension, folder, backups, player.blockX, player.blockZ)
+        if (keepInCache && JourneyMapCacheWrites.working) started.cache = JourneyMapCacheWrites.Batch(dimension, JourneyMapCacheWrites.ledgerIn(backups))
         job = started
         lastBackups = backups
         return started
@@ -347,6 +439,8 @@ internal object JourneyMapEdits {
     }
 
     private fun queue(job: Job, edit: Edit) {
+        // The cache's writing keeps up, or the finding waits for it: a region's columns take memory.
+        while (!job.cancelled && (job.cache?.pending ?: 0) > MAX_CACHE_BEHIND) Thread.sleep(50)
         while (!job.ready.offer(edit, 200, TimeUnit.MILLISECONDS)) if (job.cancelled) return
     }
 
@@ -416,7 +510,9 @@ internal object JourneyMapEdits {
         val file = JourneyMapFiles.regionFile(job.folder, edit.regionX, edit.regionZ)
         try {
             val pixels = JourneyMapFiles.read(file) ?: return run { job.unreadable++ }
-            if (!edit.apply(pixels, file)) return
+            val changed = edit.apply(pixels, file)
+            edit.cache?.invoke(pixels)
+            if (!changed) return
             JourneyMapFiles.backUp(file, job.backups.resolve(file.fileName))
             JourneyMapFiles.write(file, pixels)
             job.changed++
@@ -435,7 +531,9 @@ internal object JourneyMapEdits {
         val before = pixels.copyOf()
         val file = JourneyMapFiles.regionFile(job.folder, edit.regionX, edit.regionZ)
         return try {
-            if (!edit.apply(pixels, file)) return true
+            val changed = edit.apply(pixels, file)
+            edit.cache?.invoke(pixels)
+            if (!changed) return true
             JourneyMapFiles.backUpHeld(before, job.backups.resolve(file.fileName))
             if (!JourneyMapFiles.replaceHeld(holder, pixels)) return false
             job.changed++
@@ -449,6 +547,7 @@ internal object JourneyMapEdits {
 
     private fun finish(job: Job) {
         this.job = null
+        job.cache?.close { chunks -> if (chunks > 0) Log.info("{}: {} chunks kept in JourneyMap's chunk cache, for saving terrain files", job.title, chunks) }
         val parts = listOfNotNull(
             "${job.changed} region(s) changed",
             "${waiting.size} open in JourneyMap, changed once it lets go".takeIf { waiting.isNotEmpty() },
@@ -494,6 +593,14 @@ internal object JourneyMapEdits {
                 if (JourneyMapFiles.restore(JourneyMapFiles.regionFile(folder, rx.toInt(), rz.toInt()), backups.resolve(name))) restored++
             }
         }
+        // The chunks it put in JourneyMap's chunk cache, taken back too, off the client thread.
+        val ledger = JourneyMapCacheWrites.ledgerIn(backups)
+        if (Files.isRegularFile(ledger)) {
+            Thread({
+                val taken = JourneyMapCacheWrites.withdraw(dimension, ledger)
+                if (taken > 0) Log.info("Undo: took {} chunks back out of JourneyMap's chunk cache", taken)
+            }, "SkysMapExposer JourneyMap cache undo").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        }
         if (held == 0) lastBackups = null.also { runCatching { Files.delete(backups.resolve(ORIGIN)) } }
         return "Put back $restored region(s) of JourneyMap's map" +
             (if (held > 0) "; $held are open in JourneyMap, so move away from them and undo again" else "") + "."
@@ -525,4 +632,5 @@ internal object JourneyMapEdits {
     private const val KEEP_TILES = 8
     private const val MAX_WAITING = 32
     private const val RETRY_MS = 2_000L
+    private const val MAX_CACHE_BEHIND = 3
 }
