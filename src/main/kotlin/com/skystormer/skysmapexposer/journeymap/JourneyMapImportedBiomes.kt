@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.BiomeGuide
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.SharedTerrain
@@ -21,7 +22,8 @@ import java.util.zip.DeflaterOutputStream
 import java.util.zip.InflaterInputStream
 
 /**
- * The biomes of shared map files added to JourneyMap's map ([JourneyMapEdits.addShared]).
+ * The biomes of shared map files added to JourneyMap's map ([JourneyMapEdits.addShared]), and the
+ * biomes guessed for a download of BlueMap into it, as a download into Xaero's map guesses them.
  *
  * JourneyMap's map is only pictures; the biome under the mouse, its own and this mod's biome
  * highlight ([JourneyMapBiomes]) come from its chunk cache, which only holds chunks JourneyMap
@@ -76,7 +78,10 @@ internal object JourneyMapImportedBiomes {
             cells[cellZ * CELLS + cellX] = (index + 1).toShort()
             any = true
         }
-        if (!any) return
+        if (any) save(folder, regionX, regionZ, palette, cells)
+    }
+
+    private fun save(folder: Path, regionX: Int, regionZ: Int, palette: List<ResourceKey<Biome>>, cells: ShortArray) {
         val bytes = ByteArrayOutputStream()
         DataOutputStream(bytes).use { out ->
             out.writeInt(MAGIC)
@@ -91,6 +96,34 @@ internal object JourneyMapImportedBiomes {
         Files.createDirectories(folder)
         SafeFiles.write(path, bytes.toByteArray())
         cache[path] = Grid(palette, cells)
+    }
+
+    /**
+     * Keeps [guess]'s biomes ([BiomeGuide], from a download of BlueMap) for region ([regionX],
+     * [regionZ]), where [drawn] (block x, z in the region) and no biome is kept yet: a shared map
+     * file's real biomes are never written over by a guess. Off the client thread.
+     */
+    fun addGuess(folder: Path, regionX: Int, regionZ: Int, guess: BiomeGuide.Guess, drawn: (Int, Int) -> Boolean) {
+        val old = read(folder, regionX, regionZ)
+        val palette = ArrayList(old?.palette.orEmpty())
+        val indexOf = HashMap<ResourceKey<Biome>, Int>().apply { palette.forEachIndexed { i, key -> put(key, i) } }
+        val cells = old?.cells?.copyOf() ?: ShortArray(CELLS * CELLS)
+        val keys = HashMap<String, ResourceKey<Biome>?>()
+        var any = false
+        for (cellZ in 0 until CELLS) for (cellX in 0 until CELLS) {
+            val index = cellZ * CELLS + cellX
+            if (cells[index] > 0) continue
+            val x = cellX * 4 + 2
+            val z = cellZ * 4 + 2
+            if (!drawn(x, z)) continue
+            val name = guess.at(x, z) ?: continue
+            val biome = keys.getOrPut(name) { runCatching { ResourceKey.create(Registries.BIOME, Identifier.parse(name)) }.getOrNull() } ?: continue
+            val at = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
+            if (at >= MAX_BIOMES) continue
+            cells[index] = (at + 1).toShort()
+            any = true
+        }
+        if (any) save(folder, regionX, regionZ, palette, cells)
     }
 
     /** Region ([regionX], [regionZ])'s grid, or null where no shared file left any biomes. Any thread; reads the file the first time. */

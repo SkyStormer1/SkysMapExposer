@@ -1,9 +1,12 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.BiomeGuide
 import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.CoarseScan
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.LowresSource
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.ShareFormat
@@ -88,13 +91,14 @@ internal object JourneyMapEdits {
             return "BlueMap's map here shows the inside, which JourneyMap keeps in its cave maps; only the surface can be downloaded"
         }
         val job = begin("Download", session, dimension) ?: return busyOrMissing()
-        Thread({ findDownload(job, mapId, area, unexploredOnly) }, "SkysMapExposer JourneyMap download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        val biomes = JourneyMapImportedBiomes.folder(dimension)
+        Thread({ findDownload(job, mapId, area, unexploredOnly, biomes) }, "SkysMapExposer JourneyMap download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         Log.info("Download from BlueMap map '{}' into JourneyMap's {} started: {}{}", mapId, dimension,
             area?.let { "blocks ${it.left * 16}, ${it.top * 16} to ${it.right * 16 + 15}, ${it.bottom * 16 + 15}" } ?: "everything BlueMap has", if (unexploredOnly) " (unexplored only)" else "")
         return "Downloading from BlueMap into JourneyMap's map…"
     }
 
-    private fun findDownload(job: Job, mapId: String, area: ShareFormat.Area?, unexploredOnly: Boolean) = finding(job) {
+    private fun findDownload(job: Job, mapId: String, area: ShareFormat.Area?, unexploredOnly: Boolean, biomes: Path?) = finding(job) {
         val blueMap = job.session!!.blueMap
         val layout = blueMap.layout(mapId)
         val size = layout.tileSize
@@ -115,9 +119,19 @@ internal object JourneyMapEdits {
         }
         job.total = regions.size
         job.finding = false
-        // BlueMap's tiles, decoded once while neighbouring regions still need them.
+        // BlueMap's tiles, fetched and decoded once while neighbouring regions still need them.
+        val fetched = object : LinkedHashMap<Pair<Int, Int>, ByteArray?>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int, Int>, ByteArray?>) = size > KEEP_TILES
+        }
+        fun bytes(tx: Int, tz: Int): ByteArray? = fetched.getOrPut(tx to tz) { if (tx to tz in finest) blueMap.tile(mapId, 1, tx, tz) else null }
         val tiles = object : LinkedHashMap<Pair<Int, Int>, IntArray?>(16, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int, Int>, IntArray?>) = size > KEEP_TILES
+        }
+        // The biomes, guessed from BlueMap's ground by the same guide as a download into Xaero's map
+        // ([BiomeGuide]), from the same tiles, and kept for JourneyMap ([JourneyMapImportedBiomes]).
+        val guide = if (Config.guessBiomes && biomes != null) BiomeGuide.forDimension(job.dimension) else null
+        val ground = guide?.let {
+            LowresSource(size, hasSea = job.dimension == Config.OVERWORLD) { tx, tz -> bytes(tx, tz)?.let { BlueMapPicture.decode(tx, tz, size, it) } }
         }
         for ((rx, rz) in regions) {
             if (job.cancelled) break
@@ -127,7 +141,7 @@ internal object JourneyMapEdits {
             val originZ = rz * JourneyMapFiles.REGION
             for ((tx, tz) in BlueMapPicture.tilesOver(originX, originZ, originX + JourneyMapFiles.REGION - 1, originZ + JourneyMapFiles.REGION - 1, size)) {
                 if (tx to tz !in finest) continue
-                val pixels = tiles.getOrPut(tx to tz) { blueMap.tile(mapId, 1, tx, tz)?.let { TilePixels.decode(it, size, 1) } } ?: continue
+                val pixels = tiles.getOrPut(tx to tz) { bytes(tx, tz)?.let { TilePixels.decode(it, size, 1) } } ?: continue
                 val width = size + 1
                 for (z in 0 until size) for (x in 0 until size) {
                     val colour = pixels[z * width + x]
@@ -141,6 +155,13 @@ internal object JourneyMapEdits {
                 }
             }
             if (!any) { job.looked.incrementAndGet(); continue }
+            if (guide != null && ground != null && biomes != null) {
+                try {
+                    JourneyMapImportedBiomes.addGuess(biomes, rx, rz, guide.guess(ground, rx, rz)) { px, pz -> picture[pz * JourneyMapFiles.REGION + px] ushr 24 != 0 }
+                } catch (e: Exception) {
+                    Log.warn("Could not guess the biomes of region {}, {}: {}", rx, rz, e.toString())
+                }
+            }
             queue(job, Edit(rx, rz) { pixels, _ ->
                 var changed = false
                 for (i in pixels.indices) {
