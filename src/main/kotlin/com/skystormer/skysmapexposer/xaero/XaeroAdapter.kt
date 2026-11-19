@@ -73,7 +73,7 @@ object XaeroAdapter : MapAdapter {
                 com.skystormer.skysmapexposer.gui.MapBar.addTo(screen)
 
                 ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
-                    val status = BlueMapDownload.status() ?: MapPrep.status() ?: return@register
+                    val status = BlueMapDownload.status() ?: TerrainFiles.status() ?: MapPrep.status() ?: return@register
                     val font = Screens.getMinecraft(screen).font
                     val half = font.width(status) / 2 + 4
                     val middle = screen.width / 2
@@ -154,10 +154,13 @@ object XaeroAdapter : MapAdapter {
         return intArrayOf(minOf(x1, x2), minOf(z1, z2), maxOf(x1, x2), maxOf(z1, z2))
     }
 
-    /** The terrain of the chunks between two block positions, inclusive, to a file in the shared maps folder. */
-    private fun saveTerrain(context: CommandContext<FabricClientCommandSource>): Int {
-        val (left, top, right, bottom) = chunks(context)
-        return Ui.reply(context, TerrainFiles.save(left, top, right, bottom))
+    /**
+     * The terrain of the chunks between two block positions, inclusive, or of the whole map
+     * ([whole]), to a file in the shared maps folder. A big one asks first ([SharedTerrain.reply]).
+     */
+    private fun saveTerrain(context: CommandContext<FabricClientCommandSource>, whole: Boolean, confirmed: Boolean): Int {
+        val area = if (whole) null else chunks(context).let { (left, top, right, bottom) -> ShareFormat.Area(left, top, right, bottom) }
+        return SharedTerrain.reply(context, TerrainFiles.save(area, confirmed))
     }
 
     override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
@@ -364,7 +367,12 @@ object XaeroAdapter : MapAdapter {
                         .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
                             .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
                                 .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
-                                    .then(ClientCommands.argument("z2", IntegerArgumentType.integer()).executes(::saveTerrain))))))
+                                    .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
+                                        .executes { saveTerrain(it, whole = false, confirmed = false) }
+                                        .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = false, confirmed = true) })))))
+                        .then(ClientCommands.literal("all")
+                            .executes { saveTerrain(it, whole = true, confirmed = false) }
+                            .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = true, confirmed = true) })))
                     .then(ClientCommands.literal("cancel").executes {
                         Ui.reply(it, if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved")
                     })

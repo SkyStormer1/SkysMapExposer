@@ -2,6 +2,8 @@ package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.ShareFormat.unzigzag
 import com.skystormer.skysmapexposer.ShareFormat.varint
+import com.mojang.brigadier.context.CommandContext
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
@@ -49,6 +51,12 @@ object SharedTerrain {
      * a file made to unpack into gigabytes is refused rather than freezing the game.
      */
     private const val MAX_UNPACKED = 64 shl 20
+    /** The widest a terrain file may be, in chunks: the whole world, border to border. */
+    private const val MAX_FILE_SIDE = 3_750_000
+    /** Saving more chunks a side than this asks first ([bigWarning]); the same as a share in chat. */
+    const val WARN_SIDE = ShareFormat.MAX_SIDE
+    /** Room kept free on the drive: a save does not start, or stops, rather than leave less. */
+    private const val ROOM_SPARE = 256L shl 20
     private const val MAX_OVERLAYS = 16
     private const val KEEP_OPENED = 5
     private val FILE_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss")
@@ -98,8 +106,7 @@ object SharedTerrain {
      */
     fun savedMessage(chunks: Int, file: Path, size: Long, oldLeftOut: Int, extra: String = ""): Component {
         val note = extra + if (oldLeftOut > 0) " ($oldLeftOut chunks from before the season began were left out)" else ""
-        val shown = if (size < 1 shl 20) "${(size + 1023) / 1024} KB" else "%.1f MB".format(size / (1024.0 * 1024.0))
-        return Component.literal("Saved the terrain of $chunks chunks to §b${file.fileName}§r ($shown)$note  ")
+        return Component.literal("Saved the terrain of $chunks chunks to §b${file.fileName}§r (${SharedTerrain.size(size)})$note  ")
             .append(Component.literal("[Open folder]").withStyle { style ->
                 style.withColor(ChatFormatting.GREEN)
                     .withClickEvent(ClickEvent.OpenFile(folder))
@@ -107,6 +114,96 @@ object SharedTerrain {
                         "Opens the shared maps folder. Send the file to whoever you like; they drop it onto their game window to add it."
                     )))
             })
+    }
+
+    /** What asking for a save came to, on either map: what to tell the player, or a warning to [confirm] first. */
+    class Answer(val text: String, val confirm: Boolean = false)
+
+    /**
+     * Answers a `terrain save` command with [answer]; a warning comes with a button that runs the
+     * same command with `confirm` on the end.
+     */
+    fun reply(context: CommandContext<FabricClientCommandSource>, answer: Answer): Int {
+        if (!answer.confirm) return Ui.reply(context, answer.text)
+        val command = context.input.removePrefix("/").trim() + " confirm"
+        context.source.sendFeedback(Component.literal(answer.text + "  ").append(ChatButton.of("[Save anyway]", "/$command", "Starts saving it")))
+        return 1
+    }
+
+    /**
+     * The regions of [wanted] (all of [files] when null) that [has] a file of, from [files], the
+     * regions there are files of: by going through whichever is fewer, the area or the files, so a
+     * huge area typed in costs no more than the map there is.
+     */
+    fun regionsIn(wanted: ShareFormat.Area?, files: Set<Pair<Int, Int>>, has: (Int, Int) -> Boolean = { x, z -> (x to z) in files }): List<Pair<Int, Int>> {
+        if (wanted == null) return files.sortedWith(compareBy({ it.second }, { it.first }))
+        val xs = Math.floorDiv(wanted.left, 32)..Math.floorDiv(wanted.right, 32)
+        val zs = Math.floorDiv(wanted.top, 32)..Math.floorDiv(wanted.bottom, 32)
+        val inArea = (xs.last - xs.first + 1).toLong() * (zs.last - zs.first + 1)
+        if (inArea > files.size + 4096L) return files.filter { (x, z) -> x in xs && z in zs }.sortedWith(compareBy({ it.second }, { it.first }))
+        return buildList { for (z in zs) for (x in xs) if (has(x, z)) add(x to z) }
+    }
+
+    /** The chunks spanning [regions]; null if there are none. */
+    fun spanning(regions: Collection<Pair<Int, Int>>): ShareFormat.Area? {
+        if (regions.isEmpty()) return null
+        return ShareFormat.Area(
+            regions.minOf { it.first } * 32, regions.minOf { it.second } * 32,
+            regions.maxOf { it.first } * 32 + 31, regions.maxOf { it.second } * 32 + 31,
+        )
+    }
+
+    /** The regions [folder] has a file of, by [pattern] (region x and z as its two groups); none if it cannot be read. */
+    fun regionFiles(folder: Path, pattern: Regex): Set<Pair<Int, Int>> = try {
+        Files.list(folder).use { files ->
+            files.toList().mapNotNull { pattern.matchEntire(it.fileName.toString())?.destructured }
+                .mapTo(HashSet()) { (x, z) -> x.toInt() to z.toInt() }
+        }
+    } catch (e: Exception) {
+        emptySet()
+    }
+
+    /**
+     * Before a save of [regions] regions: why it cannot go ahead, if the
+     * drive the shared maps folder is on has too little room for it ([ROOM_SPARE] kept free besides).
+     */
+    fun noRoom(regions: Int): String? {
+        val free = freeSpace() ?: return null
+        val needed = estimate(regions)
+        if (free >= needed + ROOM_SPARE) return null
+        return "Not enough room on the drive for that: it may need about ${size(needed)}, and ${size(free)} is free"
+    }
+
+    /**
+     * The warning before saving more than [WARN_SIDE] chunks a side: how much, how long, and the
+     * room it may take. Null for a smaller area, which saves without asking.
+     */
+    fun bigWarning(width: Int, height: Int, regions: Int): String? {
+        if (width <= WARN_SIDE && height <= WARN_SIDE) return null
+        val free = freeSpace()?.let { ", and ${size(it)} is free" } ?: ""
+        return "That is $width × $height chunks: $regions regions of your map. The file may be about " +
+            "${size(estimate(regions))}$free. Saving takes a while (you can keep playing and stop it from " +
+            "the map's right-click menu), and whoever gets the file needs a version of the mod from 1.10 on."
+    }
+
+    /** True once the drive is so full that a save going on should stop rather than fill it. */
+    fun nearlyFull(): Boolean = (freeSpace() ?: Long.MAX_VALUE) < ROOM_SPARE
+
+    private fun freeSpace(): Long? = try {
+        Files.createDirectories(folder)
+        Files.getFileStore(folder).usableSpace
+    } catch (e: Exception) {
+        null
+    }
+
+    /** About how big a file of [regions] full regions comes out (saves so far: 200 to 330 bytes a chunk). */
+    private fun estimate(regions: Int): Long = regions * 1024L * 330
+
+    /** [bytes] as KB, MB or GB. */
+    fun size(bytes: Long): String = when {
+        bytes < 1 shl 20 -> "${(bytes + 1023) / 1024} KB"
+        bytes < 1L shl 30 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+        else -> "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
     }
 
     /** What to say when a save found nothing: all [oldLeftOut] chunks there were old-season, else [none]. */
@@ -244,7 +341,7 @@ object SharedTerrain {
             val from = input.readUTF()
             val dimensionId = input.readUTF()
             val layer = if (version >= 2) input.readInt() else MapLayers.SURFACE
-            val area = ShareFormat.readArea(input)
+            val area = ShareFormat.readArea(input, MAX_FILE_SIDE)
             input.readLong()
             var offset = MAGIC.size + 4L + utfSize(from) + utfSize(dimensionId) + (if (version >= 2) 4 else 0) + 16 + 8
             val entries = ArrayList<Entry>()

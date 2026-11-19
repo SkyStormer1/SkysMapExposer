@@ -4,7 +4,6 @@ import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.ShareFormat.Area
 import com.skystormer.skysmapexposer.ShareFormat.Header
-import com.skystormer.skysmapexposer.ShareFormat.MAX_SIDE
 import com.skystormer.skysmapexposer.ShareFormat.Source
 import com.skystormer.skysmapexposer.ShareFormat.Step
 import com.skystormer.skysmapexposer.ShareFormat.pack
@@ -126,7 +125,7 @@ object TerrainFormat {
         private var regionSince = 0L
         /** How far into a region it has read, for one it has not finished. */
         private val reading = HashMap<Pair<Int, Int>, Int>()
-        override val progress get() = "batch ${minOf(batch + 1, batches)} of $batches"
+        override val progress get() = "region ${minOf(batch + 1, batches)} of $batches"
 
         override fun next(): Step {
             if (batch >= parts.size) return Step.Done
@@ -178,36 +177,33 @@ object TerrainFormat {
         fun regionsOf(index: Int): List<Pair<Int, Int>> = parts[index].second
 
         companion object {
+            private val REGION_FILE = Regex("""(-?\d+)_(-?\d+)\.zip""")
+
             private const val REGIONS_AT_ONCE = 3
             private const val LOAD_WAIT = 30_000L
             /** Time spent reading your map per tick, so the game keeps its frame rate. */
             private const val READ_BUDGET = 4_000_000L
 
-            /** A reader of chunks [left]..[right], [top]..[bottom] (inclusive), or why there cannot be one. */
-            fun plan(from: String, left: Int, top: Int, right: Int, bottom: Int): Pair<RegionReader?, String?> {
-                val area = Area(left, top, right, bottom)
-                if (area.width > MAX_SIDE || area.height > MAX_SIDE) {
-                    return null to "That is ${area.width} × ${area.height} chunks; pick at most $MAX_SIDE × $MAX_SIDE"
-                }
+            /**
+             * A reader of the chunks of [wanted] (inclusive), or of every region Xaero has a file
+             * for in the dimension and layer shown when null, or why there cannot be one.
+             */
+            fun plan(from: String, wanted: Area?): Pair<RegionReader?, String?> {
                 val (shown, why) = XaeroWriter.shown()
                 shown ?: return null to why
                 val processor = shown.processor
                 val layer = shown.layer
                 val folder = shown.folder
-                val parts = ArrayList<Pair<Area, List<Pair<Int, Int>>>>()
-                for (rz in (top shr 5)..(bottom shr 5)) {
-                    for (rx in (left shr 5)..(right shr 5)) {
-                        if (!Files.exists(folder.resolve(MapBackup.regionFile(rx, rz))) &&
-                            processor.getLeafMapRegion(layer, rx, rz, false) == null
-                        ) continue
-                        val part = Area(
-                            maxOf(left, rx * 32), maxOf(top, rz * 32),
-                            minOf(right, rx * 32 + 31), minOf(bottom, rz * 32 + 31),
-                        )
-                        parts.add(part to listOf(rx to rz))
-                    }
+                val files = SharedTerrain.regionFiles(folder, REGION_FILE)
+                val regions = SharedTerrain.regionsIn(wanted, files) { x, z -> (x to z) in files || processor.getLeafMapRegion(layer, x, z, false) != null }
+                val area = wanted ?: SharedTerrain.spanning(regions) ?: return null to "Nothing of your map to save yet: Xaero has not saved any of this dimension's map to disk; try again in a minute"
+                val parts = regions.map { (rx, rz) ->
+                    Area(
+                        maxOf(area.left, rx * 32), maxOf(area.top, rz * 32),
+                        minOf(area.right, rx * 32 + 31), minOf(area.bottom, rz * 32 + 31),
+                    ) to listOf(rx to rz)
                 }
-                if (parts.isEmpty()) return null to "Nothing of your map there to share: you have not mapped those chunks"
+                if (parts.isEmpty()) return null to "Nothing of your map there to save: you have not mapped those chunks"
                 return RegionReader(from, shown.dimensionId, folder, layer, area, parts) to null
             }
         }

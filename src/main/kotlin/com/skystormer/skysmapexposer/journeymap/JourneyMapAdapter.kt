@@ -161,18 +161,30 @@ object JourneyMapAdapter : MapAdapter {
         root.then(clear)
         root.then(biomeCommand())
         // The same as Xaero's: the chunks between two block positions, from the map shown.
-        root.then(ClientCommands.literal("terrain").then(ClientCommands.literal("save")
-            .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
-                .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
-                    .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
-                        .then(ClientCommands.argument("z2", IntegerArgumentType.integer()).executes { context ->
-                            fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
-                            val dimension = shownDimension() ?: return@executes Ui.reply(context, "Not in a world")
-                            Ui.reply(context, JourneyMapTerrainSave.save(
-                                dimension, minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")),
-                                maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")),
-                            ))
-                        }))))))
+        root.then(ClientCommands.literal("terrain")
+            .then(ClientCommands.literal("save")
+                .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
+                    .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
+                        .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
+                            .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
+                                .executes { saveTerrain(it, whole = false, confirmed = false) }
+                                .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = false, confirmed = true) })))))
+                .then(ClientCommands.literal("all")
+                    .executes { saveTerrain(it, whole = true, confirmed = false) }
+                    .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = true, confirmed = true) })))
+            .then(ClientCommands.literal("cancel").executes {
+                Ui.reply(it, if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No map file is being saved")
+            }))
+    }
+
+    /** The chunks between two block positions, inclusive, or the whole map ([whole]) shown, to a terrain file; a big one asks first. */
+    private fun saveTerrain(context: CommandContext<FabricClientCommandSource>, whole: Boolean, confirmed: Boolean): Int {
+        val dimension = shownDimension() ?: return Ui.reply(context, "Not in a world")
+        val area = if (whole) null else {
+            fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
+            ShareFormat.Area(minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")), maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")))
+        }
+        return SharedTerrain.reply(context, JourneyMapTerrainSave.save(dimension, area, confirmed))
     }
 
     /**

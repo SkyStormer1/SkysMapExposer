@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.Ui
 import java.util.concurrent.Callable
@@ -56,14 +57,20 @@ object TerrainFiles {
 
     val busy: Boolean get() = saving != null
 
-    /** Starts saving the terrain of chunks [left]..[right], [top]..[bottom] (inclusive) to a file. Returns what to tell the player. */
-    fun save(left: Int, top: Int, right: Int, bottom: Int): String {
-        if (saving != null) return "A map is already being saved to a file; /mapexposer terrain cancel stops it"
+    /**
+     * Starts saving the terrain of the chunks of [wanted] (inclusive), or of the whole map of the
+     * dimension shown when null, to a file. Anything over [SharedTerrain.WARN_SIDE] chunks a side
+     * comes back as a warning to confirm, unless [confirmed]; it never starts without room for it.
+     */
+    fun save(wanted: ShareFormat.Area?, confirmed: Boolean): SharedTerrain.Answer {
+        if (saving != null) return SharedTerrain.Answer("A map is already being saved to a file; right-click the world map and choose Stop saving to stop it")
         val me = Minecraft.getInstance().player?.gameProfile?.name() ?: "?"
-        val (reader, why) = TerrainFormat.RegionReader.plan(me, left, top, right, bottom)
-        reader ?: return why!!
+        val (reader, why) = TerrainFormat.RegionReader.plan(me, wanted)
+        reader ?: return SharedTerrain.Answer(why!!)
         val area = reader.area
-        return try {
+        SharedTerrain.noRoom(reader.batches)?.let { return SharedTerrain.Answer(it) }
+        if (!confirmed) SharedTerrain.bigWarning(area.width, area.height, reader.batches)?.let { return SharedTerrain.Answer(it, confirm = true) }
+        return SharedTerrain.Answer(try {
             val (file, part) = SharedTerrain.newFile(reader.dimensionId, area)
             val out = DataOutputStream(BufferedOutputStream(Files.newOutputStream(part)))
             SharedTerrain.startFile(out, me, reader.dimensionId, reader.layer, area)
@@ -73,8 +80,27 @@ object TerrainFiles {
         } catch (e: Exception) {
             Log.error("Could not start saving terrain to a file", e)
             "Could not save to the shared maps folder: ${e.message ?: e.javaClass.simpleName}"
-        }
+        })
     }
+
+    /** The last thing said about a save, shown on the world map until [noticeUntil]. */
+    private var notice: String? = null
+    private var noticeUntil = 0L
+
+    /** Says [message] on the action bar and, for a while, on the world map, where the action bar does not show. */
+    fun tell(message: String) {
+        notice = message
+        noticeUntil = System.currentTimeMillis() + NOTICE_MILLIS
+        Ui.say(message)
+    }
+
+    /** The line on the world map: how a save is going, else what was last said about one, for a while. */
+    fun status(): String? {
+        saving?.let { return "Saving terrain to a file: ${it.reader.progress} (right-click the map to stop)" }
+        return notice?.takeIf { System.currentTimeMillis() < noticeUntil }
+    }
+
+    private const val NOTICE_MILLIS = 10_000L
 
     fun cancel(): Boolean {
         val current = saving ?: return false
@@ -94,7 +120,7 @@ object TerrainFiles {
 
     private fun fail(current: Saving, message: String) {
         abandon(current)
-        Ui.say("Saving stopped: $message")
+        tell("Saving stopped: $message")
         Log.info("Saving terrain stopped: {}", message)
     }
 
@@ -117,6 +143,7 @@ object TerrainFiles {
                 worker.execute {
                     try {
                         if (current.error == null && !current.cancelled) {
+                            if (SharedTerrain.nearlyFull()) throw java.io.IOException("the drive is nearly full")
                             SharedTerrain.writeRegion(current.out, rx, rz, step.count, step.bytes)
                             current.regions.incrementAndGet()
                         }
@@ -149,7 +176,7 @@ object TerrainFiles {
             } catch (e: Exception) {
                 Log.error("Could not save terrain to ${current.part}", e)
                 runCatching { Files.deleteIfExists(current.part) }
-                Minecraft.getInstance().execute { Ui.say("Saving stopped: could not write the file (${e.message ?: e.javaClass.simpleName})") }
+                Minecraft.getInstance().execute { tell("Saving stopped: could not write the file (${e.message ?: e.javaClass.simpleName})") }
                 return@execute
             }
             Minecraft.getInstance().execute { saved(current, chunks, skipped, old, size) }
@@ -158,9 +185,11 @@ object TerrainFiles {
 
     private fun saved(current: Saving, chunks: Int, skipped: Int, old: Int, size: Long) {
         if (size < 0) {
-            Ui.say(SharedTerrain.nothingSaved(old, "Nothing of your map there to save: you have not mapped those chunks"))
+            tell(SharedTerrain.nothingSaved(old, "Nothing of your map there to save: you have not mapped those chunks"))
             return
         }
+        notice = "Saved the terrain of $chunks chunks to ${current.file.fileName} (${SharedTerrain.size(size)})"
+        noticeUntil = System.currentTimeMillis() + NOTICE_MILLIS
         Log.info("Saved the terrain of {} chunks ({} regions, {} bytes, {} old-season chunks left out) to {}", chunks, current.regions.get(), size, old, current.file)
         val skippedNote = if (skipped > 0) " ($skipped regions Xaero did not load were left out — see the log)" else ""
         Minecraft.getInstance().player?.sendSystemMessage(SharedTerrain.savedMessage(chunks, current.file, size, old, skippedNote))

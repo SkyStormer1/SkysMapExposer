@@ -7,6 +7,7 @@ import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.OtherDimensionCoords
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.gui.MapBar
@@ -22,7 +23,9 @@ import journeymap.client.ui.fullscreen.Fullscreen
 import net.minecraft.core.BlockPos
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 
 /**
@@ -35,6 +38,22 @@ import net.minecraft.network.chat.Component
  * a world ([forget]).
  */
 internal object JourneyMapMenus {
+
+    /** Starts a save of [area] (null: the whole map) of [dimension]; a big one asks first, then comes back to the map ([parent]). */
+    private fun startSave(parent: Screen, dimension: String, area: ShareFormat.Area?) {
+        val answer = JourneyMapTerrainSave.save(dimension, area, confirmed = false)
+        if (!answer.confirm) return Ui.say(answer.text)
+        Ui.open(ConfirmScreen(
+            { yes ->
+                Ui.open(parent)
+                Ui.say(if (yes) JourneyMapTerrainSave.save(dimension, area, confirmed = true).text else "Not saved")
+            },
+            Component.literal("Save this much?"),
+            Component.literal(answer.text),
+            Component.literal("Save"),
+            CommonComponents.GUI_CANCEL,
+        ))
+    }
 
     /** The full-screen map, while it is open: JourneyMap hands it over with each event. */
     private var fullscreen: IFullscreen? = null
@@ -105,12 +124,15 @@ internal object JourneyMapMenus {
                 else Ui.open(WaypointShareScreen(map.screen, mine.first, mine.second))
             }
             // Xaero's map saves the chunks dragged over; JourneyMap's has no picking, so the region clicked.
-            if (dimension != null && !JourneyMapTerrainSave.busy) {
+            if (dimension != null && JourneyMapTerrainSave.busy) {
+                menu.addMenuItem("Stop saving") { Ui.say(if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No terrain file is being saved") }
+            } else if (dimension != null) {
                 menu.addMenuItem("Save terrain file (this region)") { block ->
                     val rx = Math.floorDiv(block.x, JourneyMapFiles.REGION)
                     val rz = Math.floorDiv(block.z, JourneyMapFiles.REGION)
-                    Ui.say(JourneyMapTerrainSave.save(dimension, rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31))
+                    startSave(map.screen, dimension, ShareFormat.Area(rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31))
                 }
+                menu.addMenuItem("Save whole map") { startSave(map.screen, dimension, null) }
             }
             val other = dimension?.let(WaypointRules::counterpartName)
             if (other != null) {

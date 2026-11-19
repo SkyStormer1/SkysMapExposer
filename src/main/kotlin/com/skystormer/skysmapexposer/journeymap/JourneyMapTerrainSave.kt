@@ -16,7 +16,7 @@ import java.io.DataOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.util.BitSet
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet
 import java.util.concurrent.ThreadLocalRandom
 
 /**
@@ -33,26 +33,43 @@ internal object JourneyMapTerrainSave {
 
     @Volatile
     private var saving = false
+    @Volatile
+    private var cancelled = false
 
     /** Whether a save is going, for the menu and commands. */
     val busy: Boolean get() = saving
 
+    /** Stops the save going on, keeping nothing of it; false if there is none. */
+    fun cancel(): Boolean {
+        if (!saving) return false
+        cancelled = true
+        return true
+    }
+
+    private val CACHE_FILE = Regex("""c\.(-?\d+)\.(-?\d+)\.jmc""")
+
     /**
-     * Saves chunks [left]..[right], [top]..[bottom] (inclusive) of [dimension] from JourneyMap's
-     * cache to a file in the shared maps folder. What to tell you now; the outcome comes in chat.
+     * Saves the chunks of [wanted] (inclusive), or every region JourneyMap has cached when null, of
+     * [dimension] from JourneyMap's cache to a file in the shared maps folder. Anything over
+     * [SharedTerrain.WARN_SIDE] chunks a side comes back as a warning to confirm, unless
+     * [confirmed]; it never starts without room for it. The outcome comes in chat.
      */
-    fun save(dimension: String, left: Int, top: Int, right: Int, bottom: Int): String {
-        if (saving) return "A map is already being saved to a file"
-        val area = ShareFormat.Area(left, top, right, bottom)
-        if (area.width > ShareFormat.MAX_SIDE || area.height > ShareFormat.MAX_SIDE) return "That is too much at once: at most ${ShareFormat.MAX_SIDE} chunks a side"
-        val registries = Minecraft.getInstance().level?.registryAccess() ?: return "Not in a world"
-        val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return "JourneyMap has no map for this world yet"
+    fun save(dimension: String, wanted: ShareFormat.Area?, confirmed: Boolean): SharedTerrain.Answer {
+        if (saving) return SharedTerrain.Answer("A map is already being saved to a file; right-click the map and choose Stop saving to stop it")
+        val registries = Minecraft.getInstance().level?.registryAccess() ?: return SharedTerrain.Answer("Not in a world")
+        val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return SharedTerrain.Answer("JourneyMap has no map for this world yet")
+        val regions = SharedTerrain.regionsIn(wanted, SharedTerrain.regionFiles(folder, CACHE_FILE))
+        if (regions.isEmpty()) return SharedTerrain.Answer("Nothing of JourneyMap's there to save: it has no chunks cached there")
+        val area = wanted ?: SharedTerrain.spanning(regions)!!
+        SharedTerrain.noRoom(regions.size)?.let { return SharedTerrain.Answer(it) }
+        if (!confirmed) SharedTerrain.bigWarning(area.width, area.height, regions.size)?.let { return SharedTerrain.Answer(it, confirm = true) }
         val me = Minecraft.getInstance().player?.gameProfile?.name() ?: "?"
-        val old = oldChunks(dimension, area)
+        val old = oldChunks(dimension, regions)
         saving = true
+        cancelled = false
         Thread({
             val message = try {
-                write(me, dimension, area, folder, registries, old)
+                write(me, dimension, area, regions, folder, registries, old)
             } catch (e: Exception) {
                 Log.error("Could not save terrain from JourneyMap", e)
                 Component.literal("Saving stopped: ${e.message ?: e.javaClass.simpleName}")
@@ -61,33 +78,31 @@ internal object JourneyMapTerrainSave {
             }
             Minecraft.getInstance().execute { Minecraft.getInstance().player?.sendSystemMessage(message) }
         }, "SkysMapExposer JourneyMap terrain file").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
-        return "Saving the terrain of ${area.width} × ${area.height} chunks to a file…"
+        return SharedTerrain.Answer("Saving the terrain of ${area.width} × ${area.height} chunks to a file…")
     }
 
+    private fun key(chunkX: Int, chunkZ: Int): Long = (chunkX.toLong() shl 32) or (chunkZ.toLong() and 0xFFFFFFFFL)
+
     /**
-     * The chunks of [area] from before [dimension]'s season began, by when you last saw them, as
+     * The chunks of [regions] from before [dimension]'s season began, by when you last saw them, as
      * Xaero's save leaves them out; none without a season start. Client thread, where the visit log is.
      */
-    private fun oldChunks(dimension: String, area: ShareFormat.Area): BitSet? {
+    private fun oldChunks(dimension: String, regions: List<Pair<Int, Int>>): LongOpenHashSet? {
         val session = Session.current ?: return null
         val start = session.server.coverBefore[dimension]?.let(Clock::minutesOf) ?: return null
-        val old = BitSet(area.width * area.height)
-        for (cz in area.top..area.bottom) for (cx in area.left..area.right) {
+        val old = LongOpenHashSet()
+        for ((rx, rz) in regions) for (cz in rz * 32 until rz * 32 + 32) for (cx in rx * 32 until rx * 32 + 32) {
             val seen = session.visits.lastSeen(dimension, cx, cz)
-            if (seen != 0 && seen < start) old.set((cz - area.top) * area.width + (cx - area.left))
+            if (seen != 0 && seen < start) old.add(key(cx, cz))
         }
         return old
     }
 
     private fun write(
-        me: String, dimension: String, area: ShareFormat.Area, cacheFolder: Path, registries: RegistryAccess, old: BitSet?,
+        me: String, dimension: String, area: ShareFormat.Area, regions: List<Pair<Int, Int>>, cacheFolder: Path,
+        registries: RegistryAccess, old: LongOpenHashSet?,
     ): Component {
         val (file, part) = SharedTerrain.newFile(dimension, area)
-        val regions = buildList {
-            for (rz in Math.floorDiv(area.top, 32)..Math.floorDiv(area.bottom, 32)) {
-                for (rx in Math.floorDiv(area.left, 32)..Math.floorDiv(area.right, 32)) add(rx to rz)
-            }
-        }
         val shareId = ThreadLocalRandom.current().nextInt(1 shl 30)
         var chunks = 0
         var oldLeftOut = 0
@@ -95,13 +110,15 @@ internal object JourneyMapTerrainSave {
             DataOutputStream(BufferedOutputStream(Files.newOutputStream(part))).use { out ->
                 SharedTerrain.startFile(out, me, dimension, MapLayers.SURFACE, area)
                 for ((index, region) in regions.withIndex()) {
+                    if (cancelled) throw Stopped()
+                    if (SharedTerrain.nearlyFull()) throw java.io.IOException("the drive is nearly full")
                     val (rx, rz) = region
                     val cache = JourneyMapChunkCache.readRegion(JourneyMapChunkCache.file(cacheFolder, rx, rz), registries, withBlocks = true)
                     val writer = SharedTerrain.Writer()
                     for (cz in maxOf(area.top, rz * 32)..minOf(area.bottom, rz * 32 + 31)) {
                         for (cx in maxOf(area.left, rx * 32)..minOf(area.right, rx * 32 + 31)) {
                             val chunk = cache[(cz - rz * 32) * 32 + (cx - rx * 32)] ?: continue
-                            if (old?.get((cz - area.top) * area.width + (cx - area.left)) == true) { oldLeftOut++; continue }
+                            if (old?.contains(key(cx, cz)) == true) { oldLeftOut++; continue }
                             writer.chunk(cx, cz, columns(chunk) ?: continue)
                         }
                     }
@@ -116,6 +133,9 @@ internal object JourneyMapTerrainSave {
                 return Component.literal(SharedTerrain.nothingSaved(oldLeftOut, "Nothing of JourneyMap's there to save: it has no chunks cached there"))
             }
             Files.move(part, file, StandardCopyOption.REPLACE_EXISTING)
+        } catch (e: Stopped) {
+            runCatching { Files.deleteIfExists(part) }
+            return Component.literal("Stopped saving the terrain file; nothing of it was kept")
         } catch (e: Exception) {
             runCatching { Files.deleteIfExists(part) }
             throw e
@@ -152,6 +172,8 @@ internal object JourneyMapTerrainSave {
 
     /** Water itself; a waterlogged block is the ground, as Xaero sees it. */
     private fun isWater(state: BlockState): Boolean = state.block == Blocks.WATER
+
+    private class Stopped : Exception()
 
     /** The deepest a water layer is recorded, as a byte. */
     private const val MAX_DEPTH = 255

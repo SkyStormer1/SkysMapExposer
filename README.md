@@ -322,6 +322,12 @@ nothing more is sent. Everything else travels hidden from both chats.
   onto their game window, then chooses **[Add to unexplored only]** or **[Add all]**. Each of their
   regions is backed up first, the same as a download. In the Nether it saves and adds the cave layer
   the world map is showing, not the roof.
+- **Save whole map**: the same for all of this dimension's map at once. Anything over 512 × 512
+  chunks asks first, saying how big the file may be and how much room the drive has; a save never
+  starts without room for it, and stops (keeping nothing) if the drive fills up. While a save runs,
+  the top of the map says how far it has got, and **Stop saving** takes the place of both entries.
+  `/mapexposer terrain save all` does the same from chat. Files over 512 chunks a side need 1.10 or
+  newer to open.
 
 Messages go out slowly, well under a vanilla server's spam limit. Being muted, or a server without
 `/msg`, stops sharing.
@@ -427,7 +433,8 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
 - **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
   map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
   map, with the same backups and undo. Save one from JourneyMap with "Save terrain file (this
-  region)" on the right-click menu or `/mapexposer terrain save <x1> <z1> <x2> <z2>`: it is read from
+  region)" or "Save whole map" on the right-click menu, `/mapexposer terrain save <x1> <z1> <x2> <z2>`
+  or `/mapexposer terrain save all`, asking first and checking for room as on Xaero's: it is read from
   JourneyMap's chunk cache, so it holds the chunks JourneyMap has cached, and either map can add it.
   A file of a cave layer only goes into Xaero's.
 

@@ -7,10 +7,13 @@ import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapCamera
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
@@ -46,7 +49,7 @@ object MapMenus {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
             options.add(option("Copy coordinates", options.size, target) { Ui.copy(x, null, z, where) })
-            if (selection != null) options.add(saveOption(options.size, target, selection))
+            addSaveOptions(options, target, selection)
             options.add(waypointsOption(options.size, target))
             if (where != null) options.add(pingOption(options.size, target, x, y, z, where))
             if (where != null) addCounterpartOption(options, target, x, z, where)
@@ -126,20 +129,44 @@ object MapMenus {
         return if (wide == 1 && high == 1) "This chunk" else "These $wide × $high chunks"
     }
 
-    /** "Save terrain file" for the chunks Xaero has selected: the whole map of them, to send however you like. */
-    private fun saveOption(index: Int, target: IRightClickableElement, selection: MapTileSelection): RightClickOption {
-        val busy = TerrainFiles.busy
-        val tooltip = listOf(
-            Component.literal("Save terrain to a file"),
-            Component.literal(
-                if (busy) "§7A map file is already being saved."
-                else "§7${sizeOf(selection)} of your map, every block, saved in the \"shared maps\" folder of your game folder. " +
-                    "Send the file to anyone; they drop it onto their game window to add it."
-            ),
-        )
-        return MenuTooltips.Option("Save terrain file", index, target, tooltip) {
-            Ui.say(TerrainFiles.save(selection.left, selection.top, selection.right, selection.bottom))
-        }.also { it.setActive(!busy) }
+    /**
+     * "Save terrain file" for the chunks Xaero has selected and "Save whole map" for every region of
+     * this dimension, each the whole map of them, to send however you like; while one is saving,
+     * "Stop saving" in their place.
+     */
+    private fun addSaveOptions(options: ArrayList<RightClickOption>, target: IRightClickableElement, selection: MapTileSelection?) {
+        if (TerrainFiles.busy) {
+            val tooltip = listOf(Component.literal("Stop saving the terrain file"), Component.literal("§7Nothing of it is kept."))
+            options.add(MenuTooltips.Option("Stop saving", options.size, target, tooltip) {
+                TerrainFiles.tell(if (TerrainFiles.cancel()) "Stopped saving the terrain file; nothing of it was kept" else "No terrain file is being saved")
+            })
+            return
+        }
+        val where = "saved in the \"shared maps\" folder of your game folder. Send the file to anyone; they drop it onto their game window to add it."
+        if (selection != null) {
+            val tooltip = listOf(Component.literal("Save terrain to a file"), Component.literal("§7${sizeOf(selection)} of your map, every block, $where"))
+            options.add(MenuTooltips.Option("Save terrain file", options.size, target, tooltip) { parent ->
+                startSave(parent, ShareFormat.Area(selection.left, selection.top, selection.right, selection.bottom))
+            })
+        }
+        val tooltip = listOf(Component.literal("Save the whole map to a file"), Component.literal("§7All of this dimension's map, every block, $where Asks first if it is big."))
+        options.add(MenuTooltips.Option("Save whole map", options.size, target, tooltip) { parent -> startSave(parent, null) })
+    }
+
+    /** Starts a save of [area] (null: the whole map); a big one asks first, then comes back to the map ([parent]). */
+    private fun startSave(parent: Screen, area: ShareFormat.Area?) {
+        val answer = TerrainFiles.save(area, confirmed = false)
+        if (!answer.confirm) return TerrainFiles.tell(answer.text)
+        Ui.open(ConfirmScreen(
+            { yes ->
+                Ui.open(parent)
+                TerrainFiles.tell(if (yes) TerrainFiles.save(area, confirmed = true).text else "Not saved")
+            },
+            Component.literal("Save this much?"),
+            Component.literal(answer.text),
+            Component.literal("Save"),
+            CommonComponents.GUI_CANCEL,
+        ))
     }
 
     /** "Share waypoints…": pick some of the waypoints of the dimension you are in, then who gets them. */

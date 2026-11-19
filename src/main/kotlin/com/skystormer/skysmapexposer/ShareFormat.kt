@@ -215,9 +215,10 @@ object ShareFormat {
         out.writeInt(area.bottom)
     }
 
-    fun readArea(input: DataInputStream): Area {
+    /** An area written by [writeArea], at most [maxSide] chunks a side: [MAX_SIDE] in chat, more in a terrain file. */
+    fun readArea(input: DataInputStream, maxSide: Int = MAX_SIDE): Area {
         val area = Area(input.readInt(), input.readInt(), input.readInt(), input.readInt())
-        if (area.width <= 0 || area.height <= 0 || area.width > MAX_SIDE || area.height > MAX_SIDE) error("bad area")
+        if (area.width <= 0 || area.height <= 0 || area.width > maxSide || area.height > maxSide) error("bad area")
         return area
     }
 
