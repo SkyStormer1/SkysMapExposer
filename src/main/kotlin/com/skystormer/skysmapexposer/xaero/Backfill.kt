@@ -9,6 +9,7 @@ import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.TilePixels
+import com.skystormer.skysmapexposer.TileIndex
 import com.skystormer.skysmapexposer.TileStore
 import com.skystormer.skysmapexposer.UnshowableRegions
 import com.skystormer.skysmapexposer.TileStore.Mask
@@ -134,8 +135,8 @@ object Backfill {
         var waitingForIndex = 0
         for (tileZ in tilesZ) {
             for (tileX in tilesX) {
-                if (inView > INDEX_ABOVE && layout.lodCount > 1) {
-                    when (indexSays(session, layout, target.mapId, tileX, tileZ)) {
+                if (inView > TileIndex.ABOVE && layout.lodCount > 1) {
+                    when (TileIndex.says(session, layout, target.mapId, tileX, tileZ)) {
                         null -> { waitingForIndex++; continue }
                         false -> continue
                         true -> {}
@@ -294,43 +295,6 @@ object Backfill {
         val usable = TilePixels.factorsFor(tileSize)
         val at = usable.indexOf(factor).coerceAtLeast(0)
         return usable[minOf(at + steps, usable.lastIndex)]
-    }
-
-    /**
-     * Whether BlueMap's coarsest tile says the finest tile ([tileX], [tileZ]) has anything in it:
-     * null while that is not known yet.
-     */
-    private fun indexSays(session: Session, layout: BlueMap.MapLayout, mapId: String, tileX: Int, tileZ: Int): Boolean? {
-        val lod = layout.lodCount
-        val ratio = layout.tileBlocks(lod) / layout.tileSize
-        val indexX = Math.floorDiv(tileX, ratio)
-        val indexZ = Math.floorDiv(tileZ, ratio)
-        val index = session.tiles.get(TileStore.Key(mapId, lod, indexX, indexZ), layout.blocksPerPixel(lod), layout.tileSize)
-        return when (index.state) {
-            TileStore.State.LOADING -> null
-            TileStore.State.EMPTY -> false
-            TileStore.State.FAILED -> true // no index to go by: ask for the fine tile itself
-            TileStore.State.READY -> {
-                val localX = tileX - indexX * ratio
-                val localZ = tileZ - indexZ * ratio
-                val known = index.finerPresence ?: ByteArray(ratio * ratio).also { index.finerPresence = it }
-                val slot = localZ * ratio + localX
-                if (known[slot] == UNKNOWN) {
-                    val span = layout.tileSize / ratio
-                    var any = false
-                    search@ for (z in localZ * span until (localZ + 1) * span) {
-                        for (x in localX * span until (localX + 1) * span) {
-                            if (index.hasDataAt(x, z)) {
-                                any = true
-                                break@search
-                            }
-                        }
-                    }
-                    known[slot] = if (any) SOMETHING else NOTHING
-                }
-                known[slot] == SOMETHING
-            }
-        }
     }
 
     private fun buildMask(
@@ -569,11 +533,7 @@ object Backfill {
 
     private const val NO_HEIGHT = 32767
     private const val LOADED = 2
-    private const val UNKNOWN: Byte = 0
-    private const val NOTHING: Byte = 1
-    private const val SOMETHING: Byte = 2
     private const val MAX_TILES_SCANNED = 40_000L
-    private const val INDEX_ABOVE = 16L
     private const val MAX_TILES_DRAWN = 1024
     private const val MASK_LIFETIME_MS = 5_000L
 

@@ -71,6 +71,7 @@ object JourneyMapAdapter : MapAdapter {
             Triple("journeymap.client.ui.fullscreen.Fullscreen", "getBlockAtMouse", "the block under the mouse (right-click biome entry, other dimension's coordinates)"),
             Triple("journeymap.client.ui.fullscreen.Fullscreen", "getZoom", "BlueMap's terrain over all of the full-screen map at its zoom"),
             Triple("journeymap.client.ui.UIManager", "getOrOpenFullscreenMap", "Go to from the player list"),
+            Triple("journeymap.client.render.draw.DrawUtil", "drawLabel", "Map Exposer's lines beside JourneyMap's own on its map (they go at the top instead)"),
             Triple("journeymap.client.io.FileHandler", "getJMWorldDir", "downloads, clearing, imports, saving and the biome tint (its folders)"),
             Triple("journeymap.client.model.region.RegionImageCache", "getRegionImageSets", "downloads, clearing and imports (which regions it holds)"),
             Triple("journeymap.client.model.block.BlockMD", "get", "shared terrain added in its colours"),

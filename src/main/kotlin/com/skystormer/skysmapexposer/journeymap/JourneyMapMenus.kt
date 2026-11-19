@@ -191,22 +191,76 @@ internal object JourneyMapMenus {
             pendingDimension = null
             map.centerOn(x.toDouble(), z.toDouble())
         }
-        val lines = listOfNotNull(
-            blockAtMouse(map)?.let { OtherDimensionCoords.forWorldMap(it.x, it.z) },
+        val below = listOfNotNull(blockAtMouse(map)?.let { OtherDimensionCoords.forWorldMap(it.x, it.z) }).filter { it.isNotBlank() }
+        val above = listOfNotNull(
             JourneyMapEdits.status() ?: MapPrep.status(),
             BiomePicks.all.keys.takeIf { it.isNotEmpty() }?.joinToString(", ", "Highlighted: ") { BiomePicks.nameOf(it) },
         ).filter { it.isNotBlank() }
         JourneyMapSelection.draw(map, event.graphics)
-        if (lines.isEmpty()) return
+        if (below.isEmpty() && above.isEmpty()) return
+        val drawn = map is Fullscreen && themed && try {
+            drawThemed(map, event.graphics, above, below)
+            true
+        } catch (e: LinkageError) {
+            themed = false
+            Log.warn("This JourneyMap draws its labels differently; Map Exposer's lines go at the top of its map instead: {}", e.toString())
+            false
+        }
+        if (drawn) return
         val graphics = event.graphics
         val font = Minecraft.getInstance().font
         val middle = map.screen.width / 2
         var top = LINES_TOP
-        for (line in lines) {
+        for (line in below + above) {
             val half = font.width(line) / 2 + 4
             graphics.fill(middle - half, top, middle + half, top + 12, 0xA0000000.toInt())
             graphics.centeredText(font, line, middle, top + 2, 0xFFFFFFFF.toInt())
             top += 13
+        }
+    }
+
+    /** Whether JourneyMap's own label drawing is there to use ([drawThemed]). */
+    private var themed = true
+
+    /**
+     * Map Exposer's lines drawn as JourneyMap draws its own two, in its theme's label style and its
+     * full-screen font size: [top] under its line beneath the top bar (you, your position, the
+     * zoom), [bottom] over its line above the bottom bar (the block under the mouse), each stacked
+     * away from it. Laid out the way JourneyMap lays out its own: in its scaled drawing space, a
+     * toolbar margin from the bars.
+     */
+    private fun drawThemed(map: Fullscreen, graphics: net.minecraft.client.gui.GuiGraphicsExtractor, top: List<String>, bottom: List<String>) {
+        val theme = journeymap.client.io.ThemeLoader.getCurrentTheme()
+        val spec = theme.fullscreen.statusLabel
+        val factor = journeymap.client.ui.component.screens.JmUI.calculateScaleFactor()
+        val fontScale = journeymap.client.JourneymapClient.getInstance().fullMapProperties.fontScale.get().toDouble()
+        val margin = theme.container.toolbar.horizontal.margin * factor
+        val font = Minecraft.getInstance().font
+        // One of JourneyMap's labels, top to bottom (its text and padding), and a pixel between.
+        val step = journeymap.client.render.draw.DrawUtil.getLabelHeight(font, spec.shadow) * fontScale + 1
+        val middle = map.width / 2.0 * factor
+        val buttons = map.isButtonsVisable
+        val pose = graphics.pose()
+        pose.pushMatrix()
+        pose.scale((1 / factor).toFloat())
+        try {
+            fun label(text: String, y: Double, valign: journeymap.client.render.draw.DrawUtil.VAlign) =
+                journeymap.client.render.draw.DrawUtil.drawLabel(
+                    graphics, Component.literal(text), spec, middle, y, journeymap.client.render.draw.DrawUtil.HAlign.Center, valign, fontScale, 0.0,
+                )
+            // JourneyMap's own lines show only with its buttons; without them, ours go to the edges.
+            var y = map.optionsToolbarBounds?.takeIf { buttons }?.let { it.maxY + margin + step } ?: margin
+            for (line in top) {
+                label(line, y, journeymap.client.render.draw.DrawUtil.VAlign.Below)
+                y += step
+            }
+            y = map.menuToolbarBounds?.takeIf { buttons }?.let { it.minY - margin - step } ?: (map.height * factor - margin)
+            for (line in bottom) {
+                label(line, y, journeymap.client.render.draw.DrawUtil.VAlign.Above)
+                y -= step
+            }
+        } finally {
+            pose.popMatrix()
         }
     }
 

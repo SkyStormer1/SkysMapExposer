@@ -30,7 +30,8 @@ internal object JourneyMapFiles {
     /** JourneyMap's chunk cache of [dimension] in the world you are in: one file per region, `c.x.z.jmc`. */
     fun chunkCacheFolder(dimension: String): Path? = dimensionFolder(dimension)?.resolve("chunk_cache")
 
-    private fun dimensionFolder(dimension: String): Path? {
+    /** JourneyMap's folder for [dimension] in the world you are in: its map types' folders are inside. */
+    fun dimensionFolder(dimension: String): Path? {
         val world = FileHandler.getJMWorldDir(Minecraft.getInstance()) ?: return null
         return FileHandler.getDimPath(world, JourneyMapAdapter.levelKey(dimension))
     }

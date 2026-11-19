@@ -133,6 +133,13 @@ object AutoTest {
                 "refresh" -> Log.info("AutoTest: refresh pressed: {}", MapRefresh.press())
                 // `zoom out` / `zoom in`: the screen open's own zoomOut() / zoomIn(), as JourneyMap's full-screen map has.
                 "zoom" -> client.gui.screen()?.let { it.javaClass.getMethod(if (rest == "in") "zoomIn" else "zoomOut").invoke(it) }
+                // `gotoplayer`: the map centred on the first player BlueMap lists in your dimension.
+                "gotoplayer" -> {
+                    val dimension = client.level?.dimension()?.identifier()?.toString() ?: return
+                    val session = Session.current ?: return
+                    val player = session.server.mapFor(dimension)?.let(session.markers::players)?.firstOrNull() ?: return Log.info("AutoTest: no players listed")
+                    Log.info("AutoTest: go to {}: {}", player.label, MapMods.adapter?.goTo(dimension, player.x.toInt(), player.z.toInt(), client.gui.screen(), player.uuid))
+                }
                 "goto" -> {
                     val parts = rest.split(' ')
                     val (x, z) = parts.take(2).map { it.toInt() }

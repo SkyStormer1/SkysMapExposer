@@ -169,6 +169,15 @@ internal object JourneyMapPins {
         overlay.setDimension(dimension)
         overlay.setTitle(player.label)
         overlay.setLabel(if (LockedPlayers.isLocked(player.uuid)) player.label else "")
+        // Above the head, as on Xaero's map: white on a see-through dark strip. JourneyMap centres a
+        // label on its marker unless told otherwise, which put the name over the face.
+        overlay.textProperties
+            .setOffsetY((size / 2).toInt() + LABEL_GAP)
+            .setColor(0xFFFFFF)
+            .setBackgroundColor(0x000000)
+            .setBackgroundOpacity(0.6f)
+            .setFontShadow(true)
+            .setScale(1f)
         overlay.setDisplayOrder(PLAYER_ORDER)
         overlay.setActiveUIs(*uisFor(player))
         overlay.setOverlayListener(PlayerMenu("player|$dimensionId|${player.uuid}", player.uuid, dimensionId))
@@ -308,6 +317,8 @@ internal object JourneyMapPins {
     private const val DOT = 8
     private const val MARKER_SIZE = 16.0
     private const val HEAD_SIZE = 16.0
+    /** Between the top of a player's head and the middle of their name above it. */
+    private const val LABEL_GAP = 7
     private const val MAX_STROKE = 8f
     private const val POINT_COLOUR = 0x55FFFF
     private const val PLAYER_COLOUR = 0xFFFFFF
