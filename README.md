@@ -95,7 +95,8 @@ The mod does nothing until you tell it where a server's BlueMap is. You do this 
 2. **Join the server**, then open the settings: press Esc, click **Mods**, find
    **Sky's Map Exposer** and click the cog.
 3. The screen opens on the server you are on, with **Server address** already filled in.
-   Paste the address from step 1 into **BlueMap address**.
+   Paste the address from step 1 into **BlueMap address**. When BlueMap runs on the server's own
+   address, its port alone is enough (`8100`, say): it becomes `http://<server>:8100/`.
 4. The maps are looked up on their own (or press **Find maps**): the line above the buttons lists
    the maps that BlueMap has, and each dimension's box is filled in with the map named for it. Fix
    any it got wrong. Leave a box blank to not use BlueMap there.

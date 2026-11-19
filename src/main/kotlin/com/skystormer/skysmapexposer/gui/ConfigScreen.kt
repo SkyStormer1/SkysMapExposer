@@ -543,9 +543,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
         y += ROW + GAP
         label(left, y, labelWidth, "BlueMap address")
-        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/").also {
+        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/ or just its port").also {
             it.setTooltip(SafeTooltip.of(
-                "The web address of the server's BlueMap: the page you open in a browser to see the map."
+                "The web address of the server's BlueMap: the page you open in a browser to see the map. " +
+                    "Just its port (like 8100) is enough when it runs on the server's own address."
             ))
         }
         y += ROW + GAP
@@ -714,7 +715,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         staleBox?.let { staleDays = it.value }
         val draft = drafts[selected]
         addressBox?.let { draft.addresses = it.value }
-        urlBox?.let { draft.url = it.value }
+        urlBox?.let { box ->
+            draft.url = withPort(box.value, draft.addresses)
+            if (box.value != draft.url) box.value = draft.url
+        }
         for ((dimension, box) in mapBoxes) {
             if (box.value.isBlank()) draft.maps.remove(dimension) else draft.maps[dimension] = box.value.trim()
         }
@@ -743,7 +747,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     /** Asks the BlueMap at the typed address which maps it has, and fills in the overworld if blank. */
     private fun findMaps() {
-        val url = urlBox?.value?.trim() ?: return
+        val box = urlBox ?: return
+        val url = withPort(box.value, addressBox?.value ?: drafts[selected].addresses).trim()
+        if (url != box.value.trim()) box.value = url
         if (url.isEmpty()) {
             show("Type the BlueMap address first: the page you open in a browser.")
             return
@@ -899,6 +905,18 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private fun splitAddresses(text: String): List<String> =
         text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+    /**
+     * [typed] as a BlueMap address: just a port ("25464" or ":25464") becomes
+     * `http://<the server's first address>:<port>/`, as BlueMap usually runs on the same machine as
+     * the game; anything else is left as typed.
+     */
+    private fun withPort(typed: String, addresses: String): String {
+        val port = Regex(""":?(\d{1,5})""").matchEntire(typed.trim())?.groupValues?.get(1)?.toInt() ?: return typed
+        if (port !in 1..65535) return typed
+        val host = splitAddresses(addresses).firstOrNull()?.substringBefore(':')?.takeIf { it.isNotBlank() } ?: return typed
+        return "http://$host:$port/"
+    }
 
     private fun formatDays(days: Double): String =
         if (days == Math.floor(days)) days.toLong().toString() else days.toString()
