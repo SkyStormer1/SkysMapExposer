@@ -177,6 +177,9 @@ object Config {
 
     /** Whether every tile BlueMap has is downloaded and made ready in the background after joining ([MapPrep]), and how many a second at most. */
     var prepareMap: Boolean = true
+
+    /** Whether chat says, once a visit, why BlueMap's terrain is missing while the full-screen map shows caves ([CaveNotice]). */
+    var caveNotice: Boolean = true
     var prepareTilesPerSecond: Int = 4
 
     /** None until you add one in the settings screen. */
@@ -313,6 +316,7 @@ object Config {
             read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
             read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
             read("prepareMap") { prepareMap = it.asBoolean }
+            read("caveNotice") { caveNotice = it.asBoolean }
             read("seaFloorHires") { seaFloorHires = it.asBoolean }
             read("prepareTilesPerSecond") { prepareTilesPerSecond = it.asInt.coerceIn(1, 50) }
             read("servers") { element ->
@@ -415,6 +419,7 @@ object Config {
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
         json.addProperty("textureBudgetMb", textureBudgetMb)
         json.addProperty("prepareMap", prepareMap)
+        json.addProperty("caveNotice", caveNotice)
         json.addProperty("seaFloorHires", seaFloorHires)
         json.addProperty("prepareTilesPerSecond", prepareTilesPerSecond)
         val array = JsonArray()

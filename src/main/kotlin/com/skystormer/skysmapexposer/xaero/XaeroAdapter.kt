@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
+import com.skystormer.skysmapexposer.CaveNotice
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapAdapter
@@ -78,7 +79,7 @@ object XaeroAdapter : MapAdapter {
                 com.skystormer.skysmapexposer.gui.MapBar.addTo(screen)
 
                 ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
-                    val status = BlueMapDownload.status() ?: TerrainFiles.status() ?: MapPrep.status() ?: return@register
+                    val status = BlueMapDownload.status() ?: TerrainFiles.status() ?: MapPrep.status() ?: CaveNotice.line() ?: return@register
                     val font = Screens.getMinecraft(screen).font
                     val half = font.width(status) / 2 + 4
                     val middle = screen.width / 2
@@ -447,6 +448,26 @@ object XaeroAdapter : MapAdapter {
 
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
         MapView.goTo(dimension, x, z, from, player)
+
+    override fun fullMapOpen(screen: Screen?): Boolean = screen?.javaClass?.name == "xaero.map.gui.GuiMap"
+
+    /**
+     * Sets [dimension]'s cave mode type to Off, as the cave mode button on Xaero's world map does:
+     * Xaero then shows the surface even when its cave mode comes on, until that button turns it back.
+     */
+    override fun showSurface(dimension: String): String {
+        val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return "Xaero's World Map has not started for this world yet"
+        val name = Ui.dimensionName(dimension) ?: dimension
+        val mapDimension = try {
+            processor.mapWorld?.getDimension(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, Identifier.parse(dimension)))
+        } catch (e: Exception) {
+            null
+        } ?: return "Xaero's World Map has no map of the $name yet"
+        if (mapDimension.caveModeType == 0) return "Cave mode is already off on Xaero's world map of the $name"
+        repeat(3) { if (mapDimension.caveModeType != 0) mapDimension.toggleCaveModeType(true) }
+        synchronized(processor.uiSync) { mapDimension.saveConfigUnsynced() }
+        return "Cave mode is off on Xaero's world map of the $name, so BlueMap's terrain shows; the cave button on the map turns it back on"
+    }
 
     override fun summary(): String = Overlay.lastSummary
 

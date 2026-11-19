@@ -276,6 +276,24 @@ object JourneyMapAdapter : MapAdapter {
     override fun goTo(dimension: String, x: Int, z: Int, from: Screen?, player: UUID?): Boolean =
         JourneyMapMenus.goTo(dimension, x, z, from)
 
+    override fun fullMapOpen(screen: Screen?): Boolean = screen is journeymap.client.ui.fullscreen.Fullscreen
+
+    /**
+     * Switches off JourneyMap's "show caves" for the full-screen map, which takes it to the cave map
+     * whenever you are underground, and puts it back on the day map.
+     */
+    override fun showSurface(dimension: String): String = try {
+        val properties = journeymap.client.JourneymapClient.getInstance().fullMapProperties
+        properties.showCaves.set(false)
+        properties.save()
+        val state = journeymap.client.ui.fullscreen.Fullscreen.state()
+        if (state.mapType?.isUnderground == true) state.setMapType(journeymap.client.model.map.MapType.day(levelKey(dimension)))
+        "JourneyMap's full-screen map no longer switches to caves when you are underground, so BlueMap's terrain shows; its caves button still shows them when you want"
+    } catch (e: Throwable) {
+        Log.error("Could not switch JourneyMap's full-screen map to the surface", e)
+        "Could not switch JourneyMap's map to the surface; pick the day map at the top of the map instead"
+    }
+
     override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String =
         JourneyMapEdits.addShared(file, unexploredOnly)
 

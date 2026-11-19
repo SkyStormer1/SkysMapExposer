@@ -95,6 +95,7 @@ object MapExposerClient : ClientModInitializer {
             client.execute {
                 Session.start(addressOf(client))
                 MapMods.adapter?.join()
+                CaveNotice.forget()
             }
         }
         // In single player Fabric calls this on the network thread, where textures can't be freed,
@@ -108,6 +109,7 @@ object MapExposerClient : ClientModInitializer {
                 leaving("chat sharing") { ChatShare.forget() }
                 leaving("shared map files") { SharedTerrain.forget() }
                 leaving("pings") { PlayerPings.forget() }
+                leaving("the cave mode note") { CaveNotice.forget() }
                 leaving("the map") { MapMods.adapter?.leave() }
                 leaving("hook errors") { HookErrors.forget() }
             }
@@ -139,6 +141,7 @@ object MapExposerClient : ClientModInitializer {
             PlayerPings.tick()
             while (pingKey.consumeClick()) Ui.say(PlayerPings.sendLookedAt())
             MapPrep.tick(Session.current)
+            CaveNotice.tick(client)
             AutoTest.tick(client)
             val session = Session.current ?: return@register
             ticks++
@@ -230,6 +233,19 @@ object MapExposerClient : ClientModInitializer {
                     )
                     .then(ClientCommands.literal("refresh").executes(::refresh))
                     .then(
+                        ClientCommands.literal("surface").then(
+                            ClientCommands.argument("dimension", StringArgumentType.greedyString()).executes {
+                                val dimension = StringArgumentType.getString(it, "dimension")
+                                Ui.reply(it, MapMods.adapter?.showSurface(dimension) ?: "Neither Xaero's World Map nor JourneyMap is installed")
+                            }
+                        )
+                    )
+                    .then(
+                        ClientCommands.literal("cavenotice")
+                            .then(ClientCommands.literal("on").executes { setCaveNotice(it, true) })
+                            .then(ClientCommands.literal("off").executes { setCaveNotice(it, false) })
+                    )
+                    .then(
                         ClientCommands.literal("prepare")
                             .executes(::prepare)
                             .then(ClientCommands.literal("cancel").executes {
@@ -316,6 +332,14 @@ object MapExposerClient : ClientModInitializer {
         MapMods.adapter?.shownDimension() ?: Minecraft.getInstance().level?.dimension()?.identifier()?.toString(),
         busy = MapMods.adapter?.downloadStatus() != null,
     )
+
+    /** Whether chat says why BlueMap's terrain is missing in cave mode ([CaveNotice]). */
+    private fun setCaveNotice(context: CommandContext<FabricClientCommandSource>, on: Boolean): Int {
+        Config.caveNotice = on
+        Config.save()
+        return Ui.reply(context, if (on) "Chat will say again when cave mode hides BlueMap's terrain" else
+            "Chat won't say again when cave mode hides BlueMap's terrain; the line at the top of the map still does. /mapexposer cavenotice on brings it back")
+    }
 
     /** A map file from the shared maps folder, as if dropped onto the game. */
     private fun openTerrain(context: CommandContext<FabricClientCommandSource>): Int {

@@ -41,6 +41,12 @@ interface MapAdapter {
     /** The dimension shown, while the map shows caves that BlueMap's picture is not drawn over. */
     fun cavesShown(session: Session): String?
 
+    /** Whether [screen] is this map's full-screen map. */
+    fun fullMapOpen(screen: Screen?): Boolean = false
+
+    /** Switches the full-screen map of [dimension] from caves to the surface, for good; what to tell you. */
+    fun showSurface(dimension: String): String = "This map can't be switched to the surface from here"
+
     /**
      * Shows [x], [z] of [dimension] on the full-screen map, opening it over [from] if needed and
      * picking out [player]. False if it can't.

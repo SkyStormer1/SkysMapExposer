@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.skystormer.skysmapexposer.BiomePicks
+import com.skystormer.skysmapexposer.CaveNotice
 import com.skystormer.skysmapexposer.ChatButton
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapPrep
@@ -198,7 +199,7 @@ internal object JourneyMapMenus {
         }
         val below = listOfNotNull(blockAtMouse(map)?.let { OtherDimensionCoords.forWorldMap(it.x, it.z) }).filter { it.isNotBlank() }
         val above = listOfNotNull(
-            JourneyMapEdits.status() ?: MapPrep.status(),
+            JourneyMapEdits.status() ?: MapPrep.status() ?: CaveNotice.line(),
             BiomePicks.all.keys.takeIf { it.isNotEmpty() }?.joinToString(", ", "Highlighted: ") { BiomePicks.nameOf(it) },
         ).filter { it.isNotBlank() }
         JourneyMapSelection.draw(map, event.graphics)
