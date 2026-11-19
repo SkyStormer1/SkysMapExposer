@@ -1,7 +1,12 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.skystormer.skysmapexposer.SafeFiles
+import com.mojang.blaze3d.platform.NativeImage
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.mixin.journeymap.ImageHolderAccessor
 import journeymap.client.io.FileHandler
+import journeymap.client.model.map.MapType
+import journeymap.client.model.region.ImageHolder
 import journeymap.client.model.region.RegionImageCache
 import net.minecraft.client.Minecraft
 import java.awt.image.BufferedImage
@@ -44,6 +49,66 @@ internal object JourneyMapFiles {
             val coord = set.regionCoord
             coord.regionX == regionX && coord.regionZ == regionZ && coord.dimDir == dimensionFolder
         }
+
+    /**
+     * JourneyMap's day picture of region ([regionX], [regionZ]) of [dimension], as it holds it in
+     * memory; null if it does not hold it. Client thread.
+     */
+    fun heldDay(dimensionFolder: Path, dimension: String, regionX: Int, regionZ: Int): ImageHolder? {
+        val set = RegionImageCache.INSTANCE.regionImageSets.firstOrNull { set ->
+            val coord = set.regionCoord
+            coord.regionX == regionX && coord.regionZ == regionZ && coord.dimDir == dimensionFolder
+        } ?: return null
+        return set.getExistingHolder(MapType.day(JourneyMapAdapter.levelKey(dimension)))
+    }
+
+    /** [holder]'s picture, `REGION` square, ARGB; null if it has none to read. Client thread. */
+    fun pixelsOf(holder: ImageHolder): IntArray? {
+        val image = holder.image ?: return null
+        if (image.width != REGION || image.height != REGION) return null
+        val pixels = IntArray(REGION * REGION)
+        for (z in 0 until REGION) for (x in 0 until REGION) pixels[z * REGION + x] = image.getPixel(x, z)
+        return pixels
+    }
+
+    /**
+     * Hands [holder] [pixels] as its new picture, shown at once and saved by JourneyMap
+     * ([ImageHolderAccessor]); false if this JourneyMap does not take it. Client thread.
+     */
+    fun replaceHeld(holder: ImageHolder, pixels: IntArray): Boolean {
+        val accessor = (holder as Any) as? ImageHolderAccessor ?: return false
+        val image = NativeImage(REGION, REGION, false)
+        return try {
+            for (z in 0 until REGION) for (x in 0 until REGION) image.setPixel(x, z, pixels[z * REGION + x])
+            accessor.`skysmapexposer$setImage`(image)
+            true
+        } catch (e: LinkageError) {
+            image.close()
+            false
+        } catch (e: RuntimeException) {
+            image.close()
+            Log.warn("JourneyMap would not take a new picture of a region: {}", e.toString())
+            false
+        }
+    }
+
+    /** Writes [pixels] into [backup] as a held region's picture before it is changed, unless it already has one. */
+    fun backUpHeld(pixels: IntArray, backup: Path) {
+        val absent = backup.resolveSibling(backup.fileName.toString() + ABSENT)
+        if (Files.exists(backup) || Files.exists(absent)) return
+        Files.createDirectories(backup.parent)
+        write(backup, pixels)
+    }
+
+    /** A backup's picture ([backUp], [backUpHeld]): its pixels, all see-through if there was no file; null if there is no backup. */
+    fun backupPixels(backup: Path): IntArray? {
+        val absent = backup.resolveSibling(backup.fileName.toString() + ABSENT)
+        return when {
+            Files.exists(backup) -> read(backup)
+            Files.exists(absent) -> IntArray(REGION * REGION)
+            else -> null
+        }
+    }
 
     /**
      * A region's picture, `REGION` square, ARGB; empty (all see-through) if there is no file yet;

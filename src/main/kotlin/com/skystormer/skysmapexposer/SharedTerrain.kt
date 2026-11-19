@@ -282,6 +282,9 @@ object SharedTerrain {
     /** File [id] opened lately, or null once it has been let go of. */
     fun opened(id: Int): Opened? = opened[id]
 
+    /** The id of the map file opened last, if any is still open. */
+    fun lastOpened(): Int? = opened.keys.lastOrNull()
+
     /** Files dropped onto the game window: opens every `.smemap` one. True if all of [paths] were, so nothing else needs to see the drop. */
     fun dropped(paths: List<Path>): Boolean {
         val ours = paths.filter { it.fileName.toString().lowercase().endsWith(EXTENSION) }

@@ -107,7 +107,8 @@ internal object JourneyMapMenus {
 
     /**
      * Client thread, every tick: once you leave the map, it goes back to your own dimension, as
-     * Xaero's does. The player list closes the map for a moment and counts as still on it.
+     * Xaero's does. The player list and JourneyMap's right-click menu (a screen of its own over the
+     * map) close the map for a moment and count as still on it.
      */
     fun tick(client: Minecraft) {
         // The map Go to opened over another screen has closed: back to that screen.
@@ -118,7 +119,7 @@ internal object JourneyMapMenus {
         }
         if (JourneyMapDimension.chosen == null) return
         val screen = client.gui.screen()
-        val onTheMap = screen != null && (screen === fullscreen?.screen || screen is PlayerListScreen)
+        val onTheMap = screen != null && (screen === fullscreen?.screen || screen is PlayerListScreen || screen is FullScreenPopupMenu)
         if (!onTheMap && pending == null) {
             JourneyMapDimension.forget()
             // Coming back to your own dimension goes to you, as on Xaero's map.

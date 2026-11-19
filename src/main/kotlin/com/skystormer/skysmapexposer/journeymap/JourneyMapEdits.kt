@@ -168,19 +168,29 @@ internal object JourneyMapEdits {
             return "This map is of ${SharedTerrain.layerName(file.layer)} of the $name; JourneyMap's day map is the surface, so only Xaero's map can take it"
         }
         val job = begin("Adding ${file.from}'s map", Session.current, file.dimensionId) ?: return busyOrMissing()
-        Thread({ findShared(job, file, unexploredOnly) }, "SkysMapExposer JourneyMap shared map").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        val biomes = JourneyMapImportedBiomes.folder(file.dimensionId)
+        Thread({ findShared(job, file, unexploredOnly, biomes) }, "SkysMapExposer JourneyMap shared map").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         Log.info("Adding {} ({} regions of the {}) to JourneyMap's map{}", file.path.fileName, file.entries.size, file.dimensionId, if (unexploredOnly) " (unexplored only)" else "")
         return "Adding ${file.from}'s map to JourneyMap's map of the $name…"
     }
 
-    private fun findShared(job: Job, file: SharedTerrain.Opened, unexploredOnly: Boolean) = finding(job) {
+    private fun findShared(job: Job, file: SharedTerrain.Opened, unexploredOnly: Boolean, biomes: Path?) = finding(job) {
         val entries = file.entries.associateBy { it.regionX to it.regionZ }
         job.total = entries.size
         job.finding = false
         for ((rx, rz) in nearestFirst(job, entries.keys)) {
             if (job.cancelled) break
             val picture = try {
-                JourneyMapShared.picture(SharedTerrain.region(file, entries.getValue(rx to rz)))
+                val region = SharedTerrain.region(file, entries.getValue(rx to rz))
+                // Its biomes too, which JourneyMap's pictures have no room for ([JourneyMapImportedBiomes]).
+                biomes?.let { folder ->
+                    try {
+                        JourneyMapImportedBiomes.add(folder, rx, rz, region)
+                    } catch (e: Exception) {
+                        Log.warn("Could not keep the biomes of region {}, {} of {}: {}", rx, rz, file.path.fileName, e.toString())
+                    }
+                }
+                JourneyMapShared.picture(region)
             } catch (e: Exception) {
                 Log.error("Could not read region ${rx}_${rz} of ${file.path}; left it out", e)
                 job.looked.incrementAndGet()
@@ -368,6 +378,9 @@ internal object JourneyMapEdits {
     private fun change(job: Job, edit: Edit) {
         job.looked.incrementAndGet()
         if (JourneyMapFiles.held(job.folder.parent, edit.regionX, edit.regionZ)) {
+            // Open in JourneyMap: changed in its memory, shown at once and saved by it, as Xaero's
+            // regions are refreshed while its map is open. Waits only if this JourneyMap will not take it.
+            if (writeHeld(job, edit)) return
             if (waiting.size < MAX_WAITING) {
                 waiting[edit.regionX to edit.regionZ] = edit
                 waitingFor = job
@@ -386,8 +399,30 @@ internal object JourneyMapEdits {
             JourneyMapFiles.backUp(file, job.backups.resolve(file.fileName))
             JourneyMapFiles.write(file, pixels)
             job.changed++
+            JourneyMapTerrain.changed(job.dimension, edit.regionX, edit.regionZ)
         } catch (e: Exception) {
             Log.warn("Could not change JourneyMap's region {}, {}: {}", edit.regionX, edit.regionZ, e.toString())
+        }
+    }
+
+    /** Changes a region JourneyMap holds, in its memory, after a backup of it as held; false if that cannot be done here. */
+    private fun writeHeld(job: Job, edit: Edit): Boolean {
+        // Held, but not its day picture: nothing of JourneyMap's would be written over the file.
+        val holder = JourneyMapFiles.heldDay(job.folder.parent, job.dimension, edit.regionX, edit.regionZ)
+            ?: return true.also { write(job, edit) }
+        val pixels = JourneyMapFiles.pixelsOf(holder) ?: return false
+        val before = pixels.copyOf()
+        val file = JourneyMapFiles.regionFile(job.folder, edit.regionX, edit.regionZ)
+        return try {
+            if (!edit.apply(pixels, file)) return true
+            JourneyMapFiles.backUpHeld(before, job.backups.resolve(file.fileName))
+            if (!JourneyMapFiles.replaceHeld(holder, pixels)) return false
+            job.changed++
+            JourneyMapTerrain.changed(job.dimension, edit.regionX, edit.regionZ)
+            true
+        } catch (e: Exception) {
+            Log.warn("Could not change JourneyMap's region {}, {}: {}", edit.regionX, edit.regionZ, e.toString())
+            true
         }
     }
 
@@ -399,7 +434,7 @@ internal object JourneyMapEdits {
             "${job.unreadable} left alone (could not be read; the log says why)".takeIf { job.unreadable > 0 },
         )
         val head = "${job.title} ${if (job.cancelled) "stopped" else "done"}: "
-        val message = Component.literal(head + parts.joinToString("; ") + ". Zoom out and back in to see it.  ")
+        val message = Component.literal(head + parts.joinToString("; ") + ".  ")
         if (job.changed > 0) message.append(ChatButton.of("[Undo]", "/mapexposer undo", "Puts the regions back as they were before this."))
         Minecraft.getInstance().player?.sendSystemMessage(message)
     }
@@ -423,13 +458,24 @@ internal object JourneyMapEdits {
                 val name = backup.fileName.toString().removeSuffix(".none")
                 val match = REGION_FILE.matchEntire(name) ?: continue
                 val (rx, rz) = match.destructured
-                if (JourneyMapFiles.held(folder.parent, rx.toInt(), rz.toInt())) { held++; continue }
+                if (JourneyMapFiles.held(folder.parent, rx.toInt(), rz.toInt())) {
+                    // Open in JourneyMap: put back in its memory, as it was changed.
+                    val holder = JourneyMapFiles.heldDay(folder.parent, dimension, rx.toInt(), rz.toInt())
+                    val pixels = JourneyMapFiles.backupPixels(backups.resolve(name))
+                    if (holder != null && pixels != null && JourneyMapFiles.replaceHeld(holder, pixels)) {
+                        restored++
+                        JourneyMapTerrain.changed(dimension, rx.toInt(), rz.toInt())
+                    } else {
+                        held++
+                    }
+                    continue
+                }
                 if (JourneyMapFiles.restore(JourneyMapFiles.regionFile(folder, rx.toInt(), rz.toInt()), backups.resolve(name))) restored++
             }
         }
         if (held == 0) lastBackups = null.also { runCatching { Files.delete(backups.resolve(ORIGIN)) } }
         return "Put back $restored region(s) of JourneyMap's map" +
-            (if (held > 0) "; $held are open in JourneyMap, so move away from them and undo again" else "") + ". Zoom out and back in to see it."
+            (if (held > 0) "; $held are open in JourneyMap, so move away from them and undo again" else "") + "."
     }
 
     /** The newest backup folder of [dimension] on this server, from an earlier game. */
@@ -444,7 +490,7 @@ internal object JourneyMapEdits {
     }
 
     /** This mod's folder for the server you are on, whether or not it has a BlueMap, where backups go. */
-    private fun serverFolder(): Path? = Session.current?.folder
+    fun serverFolder(): Path? = Session.current?.folder
         ?: MapExposerClient.addressOf(Minecraft.getInstance())?.let(Session::folderFor)
 
     private fun here(): String? = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()

@@ -543,7 +543,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
         y += ROW + GAP
         label(left, y, labelWidth, "BlueMap address")
-        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/ or just its port").also {
+        urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/").also {
             it.setTooltip(SafeTooltip.of(
                 "The web address of the server's BlueMap: the page you open in a browser to see the map. " +
                     "Just its port (like 8100) is enough when it runs on the server's own address."

@@ -113,10 +113,11 @@ internal object JourneyMapBiomes {
         val recheck = now - (checkedAt[ui] ?: 0L) > RECHECK_MS
         if (recheck) checkedAt[ui] = now
         val cacheFolder = if (recheck) JourneyMapFiles.chunkCacheFolder(dimension) else null
+        val importFolder = if (recheck) JourneyMapImportedBiomes.folder(dimension) else null
         var built = 0
         for (area in wanted) {
             val grid = grids[area]
-            if (reading.isEmpty() && (grid == null || cacheFolder != null && fileTime(cacheFolder, area) != grid.fileTime)) read(area, registries)
+            if (reading.isEmpty() && (grid == null || cacheFolder != null && stamp(cacheFolder, importFolder, area) != grid.fileTime)) read(area, registries)
             if (grid == null || built >= PER_TICK) continue
             val old = shown[area to ui]
             if (old != null && old.grid === grid && old.version == BiomePicks.version) continue
@@ -143,12 +144,21 @@ internal object JourneyMapBiomes {
         }
         val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return null
         val chunk = Math.floorMod(z shr 4, CHUNKS) * CHUNKS + Math.floorMod(x shr 4, CHUNKS)
-        return try {
+        val own = try {
             JourneyMapChunkCache.readChunk(cacheFile(folder, area), chunk, registries)?.biomeAt(x and 15, z and 15, sliceY(layer))
         } catch (e: Exception) {
             null
         }
+        // Where JourneyMap knows none: a shared map file's, on the surface.
+        return own ?: if (layer == null) JourneyMapImportedBiomes.biomeAt(dimension, x, z) else null
     }
+
+    /**
+     * When [area]'s biomes last changed: JourneyMap's cache file, and on the surface the shared
+     * map files' biomes ([JourneyMapImportedBiomes]) too.
+     */
+    private fun stamp(cacheFolder: Path, importFolder: Path?, area: Area): Long =
+        fileTime(cacheFolder, area) * 31 + (if (area.layer == null && importFolder != null) JourneyMapImportedBiomes.fileTime(importFolder, area.x, area.z) else 0L)
 
     private fun cacheFile(folder: Path, area: Area): Path = JourneyMapChunkCache.file(folder, area.x, area.z)
 
@@ -165,13 +175,15 @@ internal object JourneyMapBiomes {
     /** Off the client thread: [area]'s grid, from JourneyMap's chunk cache. */
     private fun read(area: Area, registries: RegistryAccess) {
         val folder = JourneyMapFiles.chunkCacheFolder(area.dimension) ?: return
+        val importFolder = if (area.layer == null) JourneyMapImportedBiomes.folder(area.dimension) else null
         reading.add(area)
         val generation = generation
         worker.execute {
             val grid = try {
                 // The file's date first: a write while this reads is caught by the next check.
-                val fileTime = fileTime(folder, area)
-                gridOf(JourneyMapChunkCache.readRegion(cacheFile(folder, area), registries), area.layer, fileTime)
+                val fileTime = stamp(folder, importFolder, area)
+                val own = gridOf(JourneyMapChunkCache.readRegion(cacheFile(folder, area), registries), area.layer, fileTime)
+                importFolder?.let { JourneyMapImportedBiomes.read(it, area.x, area.z) }?.let { withImported(own, it) } ?: own
             } catch (e: Exception) {
                 Log.warn("Could not read JourneyMap's biomes for region {}, {}: {}", area.x, area.z, e.toString())
                 null
@@ -199,6 +211,21 @@ internal object JourneyMapBiomes {
             }
         }
         return Grid(palette, cells, fileTime)
+    }
+
+    /** [grid] with a shared map file's biomes where JourneyMap knows none. */
+    private fun withImported(grid: Grid, imported: JourneyMapImportedBiomes.Grid): Grid {
+        val palette = ArrayList(grid.palette)
+        val indexOf = HashMap<ResourceKey<Biome>, Int>().apply { palette.forEachIndexed { i, key -> put(key, i) } }
+        val cells = grid.cells.copyOf()
+        for (cellZ in 0 until CELLS) for (cellX in 0 until CELLS) {
+            val index = cellIndex(cellX, cellZ)
+            if (cells[index] >= 0) continue
+            val biome = imported.at(cellX, cellZ) ?: continue
+            val at = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
+            if (at <= Short.MAX_VALUE) cells[index] = at.toShort()
+        }
+        return Grid(palette, cells, grid.fileTime)
     }
 
     /** Client thread: [area]'s tint on [ui], replacing the old one. */

@@ -6,8 +6,10 @@
   "client": [
     "FullscreenMapTypeMixin",
     "FullscreenToolbarMixin",
+    "ImageHolderAccessor",
     "MapStateMixin",
-    "OutlinePassMixin"
+    "OutlinePassMixin",
+    "SnapshotBiomeMixin"
   ],
   "injectors": {
     "defaultRequire": 0

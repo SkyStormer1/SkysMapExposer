@@ -108,6 +108,7 @@ object JourneyMapAdapter : MapAdapter {
         JourneyMapPins.forget()
         JourneyMapTerrain.forget()
         JourneyMapBiomes.forget()
+        JourneyMapImportedBiomes.forget()
         JourneyMapMinimap.forget()
         JourneyMapMenus.forget()
     }

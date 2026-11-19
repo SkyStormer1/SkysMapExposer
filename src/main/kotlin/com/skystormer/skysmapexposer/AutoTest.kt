@@ -140,6 +140,12 @@ object AutoTest {
                     val player = session.server.mapFor(dimension)?.let(session.markers::players)?.firstOrNull() ?: return Log.info("AutoTest: no players listed")
                     Log.info("AutoTest: go to {}: {}", player.label, MapMods.adapter?.goTo(dimension, player.x.toInt(), player.z.toInt(), client.gui.screen(), player.uuid))
                 }
+                // `addshared blank|all`: the map file opened last, added to the map in use, as its chat button would.
+                "addshared" -> {
+                    val id = SharedTerrain.lastOpened() ?: return Log.info("AutoTest: no map file open")
+                    val file = SharedTerrain.opened(id) ?: return
+                    Log.info("AutoTest: add shared: {}", MapMods.adapter?.addSharedTerrain(file, id, rest != "all", true))
+                }
                 "goto" -> {
                     val parts = rest.split(' ')
                     val (x, z) = parts.take(2).map { it.toInt() }
@@ -156,6 +162,22 @@ object AutoTest {
                 }
                 // The right mouse button on the screen open, where the mouse is: down, dragged to where
                 // the mouse is now, up; through the same hooks as a real one.
+                // Real mouse input, through Minecraft's own handler as a mouse would send it:
+                // `button left|right down|up`, `moveto x y` (window pixels).
+                "button", "moveto" -> {
+                    val handler = client.mouseHandler
+                    val window = client.window.handle()
+                    if (verb == "moveto") {
+                        val (x, y) = rest.split(' ').map { it.toDouble() }
+                        val move = handler.javaClass.declaredMethods.first { it.name == "onMove" && it.parameterCount == 3 }.apply { isAccessible = true }
+                        move.invoke(handler, window, x, y)
+                    } else {
+                        val (which, how) = rest.split(' ')
+                        val press = handler.javaClass.declaredMethods.first { it.name == "onButton" && it.parameterCount == 3 }.apply { isAccessible = true }
+                        press.invoke(handler, window, net.minecraft.client.input.MouseButtonInfo(if (which == "right") com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT else com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, 0), if (how == "down") 1 else 0)
+                    }
+                    Log.info("AutoTest: {} {}", verb, rest)
+                }
                 "rightdown", "rightdrag", "rightup" -> {
                     val screen = client.gui.screen() ?: return
                     // `rightdown 300 200`: the mouse put there first (window pixels), as the script's
@@ -167,7 +189,7 @@ object AutoTest {
                     }
                     val scale = client.window.guiScale.toDouble()
                     val event = net.minecraft.client.input.MouseButtonEvent(
-                        client.mouseHandler.xpos() / scale, client.mouseHandler.ypos() / scale, net.minecraft.client.input.MouseButtonInfo(1, 0),
+                        client.mouseHandler.xpos() / scale, client.mouseHandler.ypos() / scale, net.minecraft.client.input.MouseButtonInfo(com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT, 0),
                     )
                     screen.mouseMoved(event.x(), event.y())
                     when (verb) {

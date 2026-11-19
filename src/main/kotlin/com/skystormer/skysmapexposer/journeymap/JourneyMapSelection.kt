@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.mojang.blaze3d.platform.InputConstants
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.ShareFormat
 import journeymap.api.v2.client.event.FullscreenMapEvent
@@ -27,7 +28,11 @@ import net.minecraft.core.BlockPos
  */
 internal object JourneyMapSelection {
 
-    private const val RIGHT = 1
+    /**
+     * The right button as this game numbers it: 1 up to 26.2, 3 from 26.3, whose mouse input
+     * numbers buttons as SDL does (left 1, right 3). Never a bare number: 1 is the left button there.
+     */
+    private const val RIGHT = InputConstants.MOUSE_BUTTON_RIGHT
     /** How long the right button must be held, and how far in window pixels the mouse must move, to start picking an area. */
     private const val HOLD_MS = 250L
     private const val DRAG_PIXELS = 8.0
