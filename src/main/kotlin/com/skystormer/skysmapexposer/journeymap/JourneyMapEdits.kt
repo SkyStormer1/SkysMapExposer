@@ -6,6 +6,7 @@ import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.CoarseScan
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapExposerClient
+import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.MapBorder
 import com.skystormer.skysmapexposer.MapLayers
@@ -76,8 +77,8 @@ internal object JourneyMapEdits {
 
     // ---- download ----
 
-    /** Downloads BlueMap into the dimension you are in; [region] for one region only. What to tell you. */
-    fun download(unexploredOnly: Boolean, region: Pair<Int, Int>? = null): String {
+    /** Downloads BlueMap into the dimension you are in; [area] (chunks, inclusive) for those chunks only. What to tell you. */
+    fun download(unexploredOnly: Boolean, area: ShareFormat.Area? = null): String {
         val session = Session.current ?: return "This server has no BlueMap set up"
         val dimension = here() ?: return "Not in a world"
         val mapId = session.server.markersFor(dimension)
@@ -87,23 +88,23 @@ internal object JourneyMapEdits {
             return "BlueMap's map here shows the inside, which JourneyMap keeps in its cave maps; only the surface can be downloaded"
         }
         val job = begin("Download", session, dimension) ?: return busyOrMissing()
-        Thread({ findDownload(job, mapId, region, unexploredOnly) }, "SkysMapExposer JourneyMap download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        Thread({ findDownload(job, mapId, area, unexploredOnly) }, "SkysMapExposer JourneyMap download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         Log.info("Download from BlueMap map '{}' into JourneyMap's {} started: {}{}", mapId, dimension,
-            region?.let { "region ${it.first}, ${it.second}" } ?: "everything BlueMap has", if (unexploredOnly) " (unexplored only)" else "")
+            area?.let { "blocks ${it.left * 16}, ${it.top * 16} to ${it.right * 16 + 15}, ${it.bottom * 16 + 15}" } ?: "everything BlueMap has", if (unexploredOnly) " (unexplored only)" else "")
         return "Downloading from BlueMap into JourneyMap's map…"
     }
 
-    private fun findDownload(job: Job, mapId: String, region: Pair<Int, Int>?, unexploredOnly: Boolean) = finding(job) {
+    private fun findDownload(job: Job, mapId: String, area: ShareFormat.Area?, unexploredOnly: Boolean) = finding(job) {
         val blueMap = job.session!!.blueMap
         val layout = blueMap.layout(mapId)
         val size = layout.tileSize
         val finest: Set<Pair<Int, Int>>
         val regions: List<Pair<Int, Int>>
-        if (region != null) {
-            val x = region.first * JourneyMapFiles.REGION
-            val z = region.second * JourneyMapFiles.REGION
-            finest = BlueMapPicture.tilesOver(x, z, x + JourneyMapFiles.REGION - 1, z + JourneyMapFiles.REGION - 1, size).toSet()
-            regions = listOf(region)
+        // The blocks wanted, left, top, right, bottom; everything when no area was picked.
+        val blocks = area?.let { intArrayOf(it.left * 16, it.top * 16, it.right * 16 + 15, it.bottom * 16 + 15) }
+        if (blocks != null) {
+            finest = BlueMapPicture.tilesOver(blocks[0], blocks[1], blocks[2], blocks[3], size).toSet()
+            regions = BlueMapPicture.regionsOver(blocks[0], blocks[1], blocks[2], blocks[3]).toList()
         } else {
             // BlueMap's coarsest level is a few tiles for a whole world, and says where the finest ones have anything.
             val scan = CoarseScan.scan(layout, job.centreX, job.centreZ, { job.cancelled }) { tx, tz -> blueMap.tile(mapId, layout.lodCount, tx, tz) } ?: return@finding
@@ -134,6 +135,7 @@ internal object JourneyMapEdits {
                     val px = tx * size + x - originX
                     val pz = tz * size + z - originZ
                     if (px !in 0 until JourneyMapFiles.REGION || pz !in 0 until JourneyMapFiles.REGION) continue
+                    if (blocks != null && (originX + px !in blocks[0]..blocks[2] || originZ + pz !in blocks[1]..blocks[3])) continue
                     picture[pz * JourneyMapFiles.REGION + px] = colour
                     any = true
                 }

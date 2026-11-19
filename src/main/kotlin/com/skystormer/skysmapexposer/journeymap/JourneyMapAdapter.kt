@@ -136,6 +136,13 @@ object JourneyMapAdapter : MapAdapter {
                             .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, regionOf(it))) })
                     )
                 ))
+                // The chunks between two block positions: the area picked on the map ([JourneyMapSelection]).
+                .then(ClientCommands.literal("area").then(ClientCommands.argument("x1", IntegerArgumentType.integer())
+                    .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
+                        .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
+                            .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
+                                .executes { Ui.reply(it, JourneyMapEdits.download(true, areaOf(it))) }
+                                .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, areaOf(it))) }))))))
                 .then(ClientCommands.literal("cancel").executes {
                     Ui.reply(it, if (JourneyMapEdits.cancel()) "Stopping after the region it is on" else "Nothing is being written into JourneyMap's map")
                 })
@@ -180,10 +187,7 @@ object JourneyMapAdapter : MapAdapter {
     /** The chunks between two block positions, inclusive, or the whole map ([whole]) shown, to a terrain file; a big one asks first. */
     private fun saveTerrain(context: CommandContext<FabricClientCommandSource>, whole: Boolean, confirmed: Boolean): Int {
         val dimension = shownDimension() ?: return Ui.reply(context, "Not in a world")
-        val area = if (whole) null else {
-            fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
-            ShareFormat.Area(minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")), maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")))
-        }
+        val area = if (whole) null else areaOf(context)
         return SharedTerrain.reply(context, JourneyMapTerrainSave.save(dimension, area, confirmed))
     }
 
@@ -216,9 +220,18 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     /** The region holding block (`x`, `z`) of a command. */
-    private fun regionOf(context: CommandContext<FabricClientCommandSource>): Pair<Int, Int> =
-        Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION) to
-            Math.floorDiv(IntegerArgumentType.getInteger(context, "z"), JourneyMapFiles.REGION)
+    /** The region around block x, z, as the chunks it covers. */
+    private fun regionOf(context: CommandContext<FabricClientCommandSource>): ShareFormat.Area {
+        val rx = Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION)
+        val rz = Math.floorDiv(IntegerArgumentType.getInteger(context, "z"), JourneyMapFiles.REGION)
+        return ShareFormat.Area(rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31)
+    }
+
+    /** The chunks between block positions x1, z1 and x2, z2, inclusive. */
+    private fun areaOf(context: CommandContext<FabricClientCommandSource>): ShareFormat.Area {
+        fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
+        return ShareFormat.Area(minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")), maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")))
+    }
 
     private fun boxOf(context: CommandContext<FabricClientCommandSource>, centred: Boolean) = MapBorder.Box(
         IntegerArgumentType.getInteger(context, "radius"),

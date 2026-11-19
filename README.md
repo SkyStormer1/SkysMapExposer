@@ -420,9 +420,14 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
 - **Right-click on the map:** Copy coordinates, Ping here, Share waypoints…, a temporary waypoint
   in the other dimension, Players… and Download BlueMap…. The other dimension's coordinates of the
   block under the mouse show at the top, and a dimension button sits with JourneyMap's own.
+- **Picking an area** as on Xaero's map: drag with the right mouse button held. The chunks it covers
+  are outlined, and the menu that opens when you let go saves or downloads just those; a plain
+  right-click picks nothing, and the menu works on the whole map.
 - **Waypoints** saved, shared and received go into JourneyMap's waypoints, in a "Map Exposer" group.
 - **Downloading** writes BlueMap into JourneyMap's own map files, region by region, backing each
-  one up first: `/mapexposer download unexplored|all|region <x> <z>`, and `/mapexposer undo` puts
+  one up first: Download BlueMap… on the right-click menu (the picked area, or the region clicked),
+  `/mapexposer download unexplored|all|region <x> <z>|area <x1> <z1> <x2> <z2>` (add `all` to the
+  last two to go over your own map too), and `/mapexposer undo` puts
   them back. Regions JourneyMap has open wait until it lets go of them.
 - **Seasons and clearing:** `/mapexposer clear oldseason` and `/mapexposer clear border`, with the
   same backups and undo.
@@ -433,7 +438,8 @@ API. It behaves as it does on Xaero's map wherever JourneyMap allows:
 - **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
   map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
   map, with the same backups and undo. Save one from JourneyMap with "Save terrain file" on
-  the right-click menu (the whole map) or `/mapexposer terrain save <x1> <z1> <x2> <z2>` (an area),
+  the right-click menu (the picked area, or the whole map), `/mapexposer terrain save <x1> <z1> <x2>
+  <z2>` or `/mapexposer terrain save all`,
   asking first and checking for room as on Xaero's: it is read from
   JourneyMap's chunk cache, so it holds the chunks JourneyMap has cached, and either map can add it.
   A file of a cave layer only goes into Xaero's.

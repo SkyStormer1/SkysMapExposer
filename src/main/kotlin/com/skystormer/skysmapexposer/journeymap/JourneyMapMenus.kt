@@ -71,6 +71,7 @@ internal object JourneyMapMenus {
     fun register() {
         FullscreenEventRegistry.FULLSCREEN_POPUP_MENU_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { menu(it) } }
         FullscreenEventRegistry.FULLSCREEN_RENDER_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { render(it) } }
+        JourneyMapSelection.register()
         // The map bar, as on Xaero's world map.
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
             if (screen is Fullscreen) guard { MapBar.attachTo(screen) }
@@ -87,6 +88,7 @@ internal object JourneyMapMenus {
     fun forget() {
         fullscreen = null
         pending = null
+        JourneyMapSelection.forget()
         JourneyMapDimension.forget()
     }
 
@@ -123,12 +125,13 @@ internal object JourneyMapMenus {
                 if (mine == null || mine.second.isEmpty()) Ui.say("You have no saved waypoints here to share")
                 else Ui.open(WaypointShareScreen(map.screen, mine.first, mine.second))
             }
-            // As Xaero's after a plain right-click: the whole map. JourneyMap's has no dragging to pick
-            // an area; `/mapexposer terrain save` takes one.
+            // As Xaero's: the area dragged over with the right button ([JourneyMapSelection]), else the
+            // whole map. JourneyMap's menu has no tooltips, so the entry says which.
+            val picked = JourneyMapSelection.area
             if (dimension != null && JourneyMapTerrainSave.busy) {
                 menu.addMenuItem("Stop saving") { Ui.say(if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No terrain file is being saved") }
             } else if (dimension != null) {
-                menu.addMenuItem("Save terrain file") { startSave(map.screen, dimension, null) }
+                menu.addMenuItem(if (picked != null) "Save terrain file (area)" else "Save terrain file (whole map)") { startSave(map.screen, dimension, picked) }
             }
             val other = dimension?.let(WaypointRules::counterpartName)
             if (other != null) {
@@ -146,7 +149,7 @@ internal object JourneyMapMenus {
         if (Session.current != null) {
             menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
             if (!JourneyMapEdits.running) {
-                menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z) }
+                menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z, JourneyMapSelection.area) }
                 // As on Xaero's map: what would go is said in chat, with the button to go ahead.
                 menu.addMenuItem("Clear old season…") { offerClear(JourneyMapEdits.Clear.OLD_SEASON) }
                 menu.addMenuItem("Clear past border…") { offerClear(JourneyMapEdits.Clear.BORDER) }
@@ -190,10 +193,19 @@ internal object JourneyMapMenus {
      * Xaero's map; nothing is written from here. Into the dimension you are in, which is the map
      * JourneyMap keeps for this world.
      */
-    private fun offerDownload(x: Int, z: Int) {
+    private fun offerDownload(x: Int, z: Int, picked: ShareFormat.Area?) {
         Ui.open(null)
+        val here = if (picked != null) {
+            val blocks = "${picked.left * 16} ${picked.top * 16} ${picked.right * 16 + 15} ${picked.bottom * 16 + 15}"
+            val size = "the ${picked.width} × ${picked.height} chunks you picked"
+            ChatButton.of("[Picked area, unexplored]", "/mapexposer download area $blocks", "Only where JourneyMap has nothing, in $size.")
+                .copy().append(" ")
+                .append(ChatButton.of("[Picked area]", "/mapexposer download area $blocks all", "All of $size, over your own map too."))
+        } else {
+            ChatButton.of("[This region, unexplored]", "/mapexposer download region $x $z", "Only where JourneyMap has nothing, in the 512-block region you clicked.")
+        }
         val message = Component.literal("Download BlueMap into JourneyMap's map, backing up each region first: ")
-            .append(ChatButton.of("[This region, unexplored]", "/mapexposer download region $x $z", "Only where JourneyMap has nothing, in the 512-block region you clicked."))
+            .append(here)
             .append(" ")
             .append(ChatButton.of("[Everything, unexplored]", "/mapexposer download unexplored", "Only where JourneyMap has nothing, everywhere BlueMap has the map."))
             .append(" ")

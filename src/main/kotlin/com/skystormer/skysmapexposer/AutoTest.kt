@@ -145,6 +145,33 @@ object AutoTest {
                     /*org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.window.handle(), x, y)
                     *///?}
                 }
+                // The right mouse button on the screen open, where the mouse is: down, dragged to where
+                // the mouse is now, up; through the same hooks as a real one.
+                "rightdown", "rightdrag", "rightup" -> {
+                    val screen = client.gui.screen() ?: return
+                    // `rightdown 300 200`: the mouse put there first (window pixels), as the script's
+                    // own mouse moves do not reach Minecraft's idea of where the mouse is.
+                    rest.split(' ').filter { it.isNotBlank() }.map { it.toDouble() }.takeIf { it.size == 2 }?.let { (x, y) ->
+                        for ((name, value) in listOf("xpos" to x, "ypos" to y)) {
+                            client.mouseHandler.javaClass.getDeclaredField(name).apply { isAccessible = true }.setDouble(client.mouseHandler, value)
+                        }
+                    }
+                    val scale = client.window.guiScale.toDouble()
+                    val event = net.minecraft.client.input.MouseButtonEvent(
+                        client.mouseHandler.xpos() / scale, client.mouseHandler.ypos() / scale, net.minecraft.client.input.MouseButtonInfo(1, 0),
+                    )
+                    screen.mouseMoved(event.x(), event.y())
+                    when (verb) {
+                        "rightdown" -> screen.mouseClicked(event, false)
+                        "rightdrag" -> if (net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents.allowMouseDrag(screen).invoker().allowMouseDrag(screen, event, 1.0, 1.0)) {
+                            screen.mouseDragged(event, 1.0, 1.0)
+                        }
+                        else -> if (net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents.allowMouseRelease(screen).invoker().allowMouseRelease(screen, event)) {
+                            screen.mouseReleased(event)
+                        }
+                    }
+                    Log.info("AutoTest: {} at {}, {}", verb, event.x(), event.y())
+                }
                 "close" -> {
                     Log.info("AutoTest: closing {}", client.gui.screen()?.javaClass?.simpleName)
                     client.gui.setScreen(null)
