@@ -300,7 +300,7 @@ object JourneyMapAdapter : MapAdapter {
         properties.save()
         val state = journeymap.client.ui.fullscreen.Fullscreen.state()
         if (state.mapType?.isUnderground == true) state.setMapType(journeymap.client.model.map.MapType.day(levelKey(dimension)))
-        "JourneyMap's full-screen map no longer switches to caves when you are underground, so BlueMap's terrain shows; its caves button still shows them when you want"
+        "JourneyMap's full-screen map no longer switches to caves when you go underground, so BlueMap's terrain shows; its caves button turns that back on"
     } catch (e: Throwable) {
         Log.error("Could not switch JourneyMap's full-screen map to the surface", e)
         "Could not switch JourneyMap's map to the surface; pick the day map at the top of the map instead"

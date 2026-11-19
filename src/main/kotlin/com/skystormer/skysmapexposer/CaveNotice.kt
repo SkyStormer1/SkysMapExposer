@@ -29,11 +29,12 @@ object CaveNotice {
     /**
      * Each tick: notes the full-screen map showing caves where BlueMap would draw the surface (in a
      * dimension without a roof), and once back in the game after it did, says so in chat, once a visit.
+     * Not with the Terrain switch off ([Config.enabled]): then no BlueMap terrain is wanted anyway.
      */
     fun tick(client: Minecraft) {
         val session = Session.current
         val adapter = MapMods.adapter
-        if (session != null && adapter != null && adapter.fullMapOpen(client.gui.screen())) {
+        if (Config.enabled && session != null && adapter != null && adapter.fullMapOpen(client.gui.screen())) {
             adapter.cavesShown(session)?.takeUnless { SeaFloor.hasCeiling(it) }?.let { dimension ->
                 seenDimension = dimension
                 seenAt = System.currentTimeMillis()
