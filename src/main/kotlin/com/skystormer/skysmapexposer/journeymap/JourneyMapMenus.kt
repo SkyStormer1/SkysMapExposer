@@ -196,6 +196,7 @@ internal object JourneyMapMenus {
             JourneyMapEdits.status() ?: MapPrep.status(),
             BiomePicks.all.keys.takeIf { it.isNotEmpty() }?.joinToString(", ", "Highlighted: ") { BiomePicks.nameOf(it) },
         ).filter { it.isNotBlank() }
+        JourneyMapSelection.draw(map, event.graphics)
         if (lines.isEmpty()) return
         val graphics = event.graphics
         val font = Minecraft.getInstance().font
