@@ -18,7 +18,6 @@ import xaero.map.WorldMapSession
 import xaero.map.region.MapBlock
 import xaero.map.region.MapRegion
 import xaero.map.region.Overlay
-import xaero.map.world.MapDimension
 
 /**
  * Xaero's map terrain in [ShareFormat]'s files: read out of your map a region at a time
@@ -103,7 +102,6 @@ object TerrainFormat {
      */
     class RegionReader private constructor(
         private val from: String,
-        private val dimension: MapDimension,
         val dimensionId: String,
         private val folder: Path,
         /** Xaero's cave layer the map was read from: the one it was showing. */
@@ -133,7 +131,7 @@ object TerrainFormat {
         override fun next(): Step {
             if (batch >= parts.size) return Step.Done
             val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return Step.Waiting
-            if (processor.mapWorld?.currentDimension !== dimension) {
+            if (processor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() != dimensionId) {
                 return Step.Failed("the world map switched dimension while your map was being read")
             }
             val (part, regions) = parts[batch]
@@ -210,7 +208,7 @@ object TerrainFormat {
                     }
                 }
                 if (parts.isEmpty()) return null to "Nothing of your map there to share: you have not mapped those chunks"
-                return RegionReader(from, shown.dimension, shown.dimensionId, folder, layer, area, parts) to null
+                return RegionReader(from, shown.dimensionId, folder, layer, area, parts) to null
             }
         }
     }

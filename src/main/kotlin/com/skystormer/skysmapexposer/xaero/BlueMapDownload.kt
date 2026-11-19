@@ -18,7 +18,6 @@ import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
 import xaero.map.WorldMapSession
 import xaero.map.region.MapRegion
-import xaero.map.world.MapDimension
 import java.nio.file.Path
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -73,7 +72,6 @@ object BlueMapDownload {
     private class Job(
         /** Null for a shared map, which needs no BlueMap. */
         val session: Session?,
-        val dimension: MapDimension,
         val dimensionId: String,
         val mapId: String?,
         /** The region folder of [layer]. */
@@ -152,7 +150,7 @@ object BlueMapDownload {
         val layer = into ?: return note!!
         val player = Minecraft.getInstance().player
         val started = Job(
-            session, dimension, dimensionId, mapId, XaeroWriter.layerFolder(base, layer), area, unexploredOnly,
+            session, dimensionId, mapId, XaeroWriter.layerFolder(base, layer), area, unexploredOnly,
             player?.blockX ?: 0, player?.blockZ ?: 0, layer = layer,
         )
         // Each download backs up into a folder of its own, so it can be put back in one go.
@@ -208,7 +206,7 @@ object BlueMapDownload {
         if (shown.dimensionId != dimensionId) return no("That map is of the $name; switch the world map to the $name and try again")
         val player = Minecraft.getInstance().player
         val started = Job(
-            null, shown.dimension, dimensionId, null, XaeroWriter.layerFolder(shown.base, layer), null, unexploredOnly,
+            null, dimensionId, null, XaeroWriter.layerFolder(shown.base, layer), null, unexploredOnly,
             player?.blockX ?: 0, player?.blockZ ?: 0,
             title = title, doing = doing, source = source, capacity = Int.MAX_VALUE,
             layer = layer, summary = summary, afterword = afterword,
@@ -368,14 +366,17 @@ object BlueMapDownload {
             saved || now - since > SAVE_WAIT
         }
 
-        if (processor.mapWorld?.currentDimension !== job.dimension) {
+        // By name: Xaero can make its dimensions anew while you play (on SiteB, after a trip to the
+        // Nether and back), so the one the job started with may no longer be the one it shows.
+        val dimension = processor.mapWorld?.currentDimension
+        if (dimension == null || dimension.dimId?.identifier()?.toString() != job.dimensionId) {
             job.message = "${job.title} paused: switch the world map back to the ${job.name} to carry on"
             return
         }
         // On a server with several worlds behind a proxy, Xaero can switch map folders (its
         // multiworld) within the same dimension; the job's regions are in the folder it started in.
-        val multiworld = job.dimension.currentMultiworld
-        val base = multiworld?.let { job.dimension.mainFolderPath?.resolve(it) }
+        val multiworld = dimension.currentMultiworld
+        val base = multiworld?.let { dimension.mainFolderPath?.resolve(it) }
         if (base == null || !job.folder.startsWith(base)) {
             job.message = "${job.title} paused: Xaero is showing another map folder of the ${job.name}; switch back to the one it started in to carry on"
             return
