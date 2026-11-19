@@ -1,11 +1,14 @@
 package com.skystormer.skysmapexposer
 
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 /**
@@ -39,6 +42,37 @@ object SafeFiles {
     fun writeString(path: Path, text: String) = write(path, text.toByteArray(Charsets.UTF_8))
 
     /** A gzipped file of whatever [content] writes. */
+    /**
+     * Reads a small record file of this mod's ([writeRecord]): [magic], a format number, then what
+     * [body] reads. A missing file reads as nothing; a damaged one is logged and read no further,
+     * so the [what] record starts afresh.
+     */
+    fun readRecord(path: Path, magic: Int, what: String, body: (DataInputStream) -> Unit) {
+        if (Files.notExists(path)) return
+        try {
+            DataInputStream(BufferedInputStream(GZIPInputStream(Files.newInputStream(path)))).use { input ->
+                check(input.readInt() == magic) { "not a $what file" }
+                input.readInt() // format version, 1 so far
+                body(input)
+            }
+        } catch (e: Exception) {
+            Log.error("Could not read $path; starting that dimension's $what record afresh", e)
+        }
+    }
+
+    /** Writes a record file for [readRecord]: [magic], format 1, then what [body] writes; a failure is logged. */
+    fun writeRecord(path: Path, magic: Int, body: (DataOutputStream) -> Unit) {
+        try {
+            writeGzip(path) { output ->
+                output.writeInt(magic)
+                output.writeInt(1)
+                body(output)
+            }
+        } catch (e: Exception) {
+            Log.error("Could not save $path", e)
+        }
+    }
+
     fun writeGzip(path: Path, content: (DataOutputStream) -> Unit) {
         val bytes = ByteArrayOutputStream()
         DataOutputStream(GZIPOutputStream(bytes)).use(content)

@@ -16,5 +16,14 @@ object Log {
 
     fun error(message: String, cause: Throwable) = LOGGER.error(prefix(message), cause)
 
+    /** Runs [block], writing [failure] and the error to the log if it throws anything; nothing more is done about it. */
+    inline fun guarded(failure: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Throwable) {
+            error(failure, e)
+        }
+    }
+
     private fun prefix(message: String) = "[Sky's Map Exposer] $message"
 }

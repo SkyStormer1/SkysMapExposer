@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Ui
@@ -40,7 +41,7 @@ object JourneyMapDimension {
     fun showNext(map: IFullscreen) {
         val shown = map.uiState?.dimension?.identifier()?.toString()
         val next = CYCLE[(CYCLE.indexOf(shown) + 1) % CYCLE.size]
-        show(map, JourneyMapAdapter.levelKey(next))
+        show(map, levelKey(next))
         Ui.say("Showing the ${Ui.dimensionName(next)}")
     }
 

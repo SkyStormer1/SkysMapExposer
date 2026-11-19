@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.terrain
 
+import com.skystormer.skysmapexposer.background
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.Log
@@ -146,14 +147,14 @@ object TerrainFill {
         val z = player.blockZ
         val blocks = radius
         val known = checkedHere(session)
-        Thread({
+        background("SkysMapExposer terrain check") {
             val answer = known[map] ?: findTiles(session, map, x, z)
             val estimate = if (answer.problem != null) null else estimate(session, map, x, z, blocks, answer.averageBytes, chosen)
             minecraft.execute {
                 if (checkedFor === session) known[map] = answer
                 done(answer.problem, estimate)
             }
-        }, "SkysMapExposer terrain check").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        }
     }
 
     /** Whether [map] has its 3D layout and a 3D tile near block ([x], [z]): the player's tile, then a little wider. */
@@ -229,7 +230,7 @@ object TerrainFill {
             { minY, height -> ChunkRebuilder(blocks, biomes, factory, minY, height) },
             level.minY, level.height, targets)
         job = started
-        Thread({ work(started) }, "SkysMapExposer terrain fill").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        background("SkysMapExposer terrain fill") { work(started) }
         val names = targets.joinToString(", ") { it.name }
         return "Filling $names from BlueMap, $radius blocks around you" + if (notes.isEmpty()) "" else " (skipped ${notes.joinToString("; ")})"
     }

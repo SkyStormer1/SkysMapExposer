@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
@@ -21,13 +22,9 @@ import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
-import net.minecraft.network.chat.Component
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
-import net.minecraft.resources.ResourceKey
-import net.minecraft.world.level.Level
 import java.util.UUID
 
 /**
@@ -52,14 +49,25 @@ object JourneyMapAdapter : MapAdapter {
     override fun init() = JourneyMapMenus.register()
 
     /**
-     * This mod's two hooks into JourneyMap and the internals it calls ([missingInternals]), checked
-     * once at start as Xaero's hooks are: whatever is missing is said in the log and in `/mapexposer`.
+     * This mod's optional hooks into JourneyMap and the internals it calls ([missingInternals]),
+     * checked once at start as Xaero's hooks are: whatever is missing is said in the log, and the
+     * internals in `/mapexposer` too.
      */
     override fun checkHooks() {
         if (!dimensionHooked()) Log.warn("Could not hook JourneyMap's full-screen map; its dimension button will snap back to yours")
         if (!minimapHooked()) Log.warn("Could not hook JourneyMap's minimap; BlueMap's terrain and the biome tint will not show on it")
+        for ((type, hook, lost) in OPTIONAL_HOOKS) {
+            if (!MapExposerClient.injected(type, hook)) Log.warn("Could not hook JourneyMap's {}; {}", type.substringAfterLast('.'), lost)
+        }
         missingInternals.forEach { Log.warn("This JourneyMap has no {}; {}", it.first, it.second) }
     }
+
+    /** Hooks that may not apply to another JourneyMap (`require = 0`): where, the hook's name, and what goes without it. */
+    private val OPTIONAL_HOOKS = listOf(
+        Triple("journeymap.client.ui.fullscreen.layer.BlockInfoLayer", "keptBiome", "its line under the mouse will not name the biome of downloaded and shared areas"),
+        Triple("journeymap.client.data.SnapshotBlockDataAccessor", "sharedBiome", "downloaded and shared areas will not have their biomes in its own lookups"),
+        Triple("journeymap.client.ui.component.dropdown.PopupMenu", "barUnderMenu", "the map bar will not show while its right-click menu is open"),
+    )
 
     /**
      * JourneyMap's own classes and methods this mod calls beyond its API, each with what goes without
@@ -77,6 +85,10 @@ object JourneyMapAdapter : MapAdapter {
             Triple("journeymap.client.model.block.BlockMD", "get", "shared terrain added in its colours"),
             Triple("journeymap.client.render.JmRenderRouter", "addGuiElement", "BlueMap's terrain and the biome tint on the minimap"),
             Triple("journeymap.client.render.map.Renderer", "markOverlaySurfaceDirty", "the minimap redrawing when this mod's pictures change"),
+            Triple("journeymap.common.chunk.JMChunkCache", "getMemOnly", "downloaded and shared areas in saved terrain files (its chunk cache)"),
+            Triple("journeymap.common.chunk.JMChunkStorage", "write", "downloaded and shared areas in saved terrain files (its chunk cache)"),
+            Triple("journeymap.client.JourneymapClient", "getFullMapProperties", "the cave notice's Show the surface button"),
+            Triple("journeymap.client.ui.fullscreen.Fullscreen", "state", "the cave notice's Show the surface button"),
         ).filter { (type, method, _) ->
             try {
                 Class.forName(type).methods.none { it.name == method }
@@ -309,8 +321,6 @@ object JourneyMapAdapter : MapAdapter {
     /** How long after joining before leftover temporary waypoints are looked for: a server sends its waypoints a moment after you join. */
     private const val TIDY_DELAY_MS = 5_000L
 
-    /** The game's key for dimension [id] ("minecraft:the_nether"). */
-    fun levelKey(id: String): ResourceKey<Level> = ResourceKey.create(Registries.DIMENSION, Identifier.parse(id))
 
     private fun fullscreen() = api?.getUIState(Context.UI.Fullscreen)?.takeIf { it.active }
 }

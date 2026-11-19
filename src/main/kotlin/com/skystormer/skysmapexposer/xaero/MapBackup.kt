@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
@@ -10,9 +11,6 @@ import com.skystormer.skysmapexposer.Session
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import net.minecraft.client.Minecraft
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
-import net.minecraft.resources.ResourceKey
 import xaero.map.WorldMapSession
 import xaero.map.region.MapRegion
 import xaero.map.world.MapDimension
@@ -446,7 +444,7 @@ object MapBackup {
 
     /** Xaero's map of dimension [id], whether or not the world map is showing it. */
     private fun dimensionOf(id: String): MapDimension? = try {
-        WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.getDimension(ResourceKey.create(Registries.DIMENSION, Identifier.parse(id)))
+        WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.getDimension(levelKey(id))
     } catch (e: Throwable) {
         null
     }

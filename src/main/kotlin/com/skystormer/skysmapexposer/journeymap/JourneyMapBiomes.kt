@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.lruMap
 import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Config
@@ -44,9 +45,7 @@ internal object JourneyMapBiomes {
     private class Grid(val palette: List<ResourceKey<Biome>>, val cells: ShortArray, val fileTime: Long)
 
     /** Lately read grids, least lately used first. Client thread only. */
-    private val grids = object : LinkedHashMap<Area, Grid>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Area, Grid>) = size > MAX_GRIDS
-    }
+    private val grids = lruMap<Area, Grid>(MAX_GRIDS)
 
     /** An area's tint on one of the maps, from [grid] with the picks of [version]; no [picture] where nothing picked is. */
     private class Tint(val grid: Grid, val version: Int, val picture: RegionPicture?)

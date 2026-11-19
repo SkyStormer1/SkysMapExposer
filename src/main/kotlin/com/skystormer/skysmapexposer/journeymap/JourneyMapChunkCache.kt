@@ -91,14 +91,15 @@ internal object JourneyMapChunkCache {
 
     /**
      * Every chunk of the region file [file] (index `z * 32 + x` within it), null where it has none;
-     * [withBlocks] to read blocks and light too. Off the client thread.
+     * [withBlocks] to read blocks and light too, [withLight] for light without the blocks. Off the
+     * client thread.
      */
-    fun readRegion(file: Path, registries: RegistryAccess, withBlocks: Boolean = false): Array<Chunk?> {
+    fun readRegion(file: Path, registries: RegistryAccess, withBlocks: Boolean = false, withLight: Boolean = withBlocks): Array<Chunk?> {
         val chunks = arrayOfNulls<Chunk>(CHUNKS)
         if (!Files.isRegularFile(file)) return chunks
         val bytes = Files.readAllBytes(file)
         val (offsets, lengths) = index(ByteBuffer.wrap(bytes), bytes.size.toLong()) ?: return chunks
-        val decoder = Decoder(registries, withBlocks)
+        val decoder = Decoder(registries, withBlocks, withLight)
         for (i in 0 until CHUNKS) {
             if (lengths[i] == 0) continue
             chunks[i] = try {
@@ -123,7 +124,7 @@ internal object JourneyMapChunkCache {
             channel.position(offsets[index].toLong())
             while (data.hasRemaining() && channel.read(data) > 0) { /* fill */ }
             if (data.hasRemaining()) return null
-            return Decoder(registries, false).chunk(inflate(data.array(), 0, data.capacity()))
+            return Decoder(registries, withBlocks = false, withLight = false).chunk(inflate(data.array(), 0, data.capacity()))
         }
     }
 
@@ -155,7 +156,7 @@ internal object JourneyMapChunkCache {
     }
 
     /** Decodes chunks with the game's own readers (biome codec, block states), made once per batch. */
-    private class Decoder(registries: RegistryAccess, private val withBlocks: Boolean) {
+    private class Decoder(registries: RegistryAccess, private val withBlocks: Boolean, private val withLight: Boolean) {
         private val codec = PalettedContainerFactory.create(registries).biomeContainerCodec()
         private val blockLookup = registries.lookupOrThrow(Registries.BLOCK)
 
@@ -185,7 +186,7 @@ internal object JourneyMapChunkCache {
                 val heights = IntArray(256) { input.readShort().toInt() }
                 if (Heightmap.Types.entries.getOrNull(type) == Heightmap.Types.WORLD_SURFACE) surface = heights
             }
-            val light = if (withBlocks) arrayOfNulls<DataLayer>(sectionCount) else null
+            val light = if (withLight) arrayOfNulls<DataLayer>(sectionCount) else null
             if (light != null) {
                 repeat(input.readUnsignedByte()) {
                     val index = input.readUnsignedByte()

@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.background
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BiomeGuide
 import com.skystormer.skysmapexposer.BlueMap
@@ -156,7 +157,7 @@ object BlueMapDownload {
         // Each download backs up into a folder of its own, so it can be put back in one go.
         MapBackup.forget()
         job = started
-        Thread({ work(started) }, "SkysMapExposer download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        background("SkysMapExposer download") { work(started) }
         Log.info(
             "Download from BlueMap map '{}' into the {} started: {}{}", mapId, started.name,
             area?.let { "blocks ${it.minX}, ${it.minZ} to ${it.maxX}, ${it.maxZ}" } ?: "everything BlueMap has",
@@ -292,15 +293,8 @@ object BlueMapDownload {
             }
             for ((rx, rz) in ordered) {
                 if (job.cancelled) break
-                val picture = BlueMapPicture.RegionPicture(rx, rz)
                 val a = job.area
-                val minX = maxOf(picture.originX, a?.minX ?: Int.MIN_VALUE)
-                val minZ = maxOf(picture.originZ, a?.minZ ?: Int.MIN_VALUE)
-                val maxX = minOf(picture.originX + BlueMapPicture.REGION - 1, a?.maxX ?: Int.MAX_VALUE)
-                val maxZ = minOf(picture.originZ + BlueMapPicture.REGION - 1, a?.maxZ ?: Int.MAX_VALUE)
-                for ((tx, tz) in BlueMapPicture.tilesOver(minX, minZ, maxX, maxZ, size)) {
-                    source.tile(tx, tz)?.let { picture.fill(it.tile, minX, minZ, maxX, maxZ) }
-                }
+                val picture = BlueMapPicture.region(rx, rz, size, a?.minX, a?.minZ, a?.maxX, a?.maxZ) { tx, tz -> source.tile(tx, tz)?.tile }
                 if (picture.count == 0) {
                     job.done.incrementAndGet()
                     continue

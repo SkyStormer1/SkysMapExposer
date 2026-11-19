@@ -8,7 +8,6 @@ import com.skystormer.skysmapexposer.ShareFormat.Source
 import com.skystormer.skysmapexposer.ShareFormat.Step
 import com.skystormer.skysmapexposer.ShareFormat.pack
 import com.skystormer.skysmapexposer.mixin.MapPixelAccess
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ThreadLocalRandom
 import net.minecraft.world.level.block.Blocks
@@ -20,7 +19,7 @@ import xaero.map.region.Overlay
 
 /**
  * Xaero's map terrain in [ShareFormat]'s files: read out of your map a region at a time
- * ([RegionReader]), and read back in to be written into it ([readTerrain], [SharedRegion]). Every
+ * ([RegionReader]), and read back in to be written into it ([SharedTerrain.readBatch], [SharedRegion]). Every
  * block as Xaero keeps it, so this part works with Xaero's World Map only.
  */
 object TerrainFormat {

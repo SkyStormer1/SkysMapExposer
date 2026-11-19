@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.packXZ
 import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.VisitLog
@@ -59,7 +60,7 @@ class MapAge private constructor(
 
     /** The minute Xaero's file for the region was last written, or 0 if there is none. */
     private fun regionMinute(regionX: Int, regionZ: Int): Int =
-        regionMinutes.getOrPut((regionX.toLong() shl 32) or (regionZ.toLong() and 0xFFFFFFFFL)) {
+        regionMinutes.getOrPut(packXZ(regionX, regionZ)) {
             try {
                 val file = folder.resolve(MapBackup.regionFile(regionX, regionZ))
                 if (Files.exists(file)) Clock.minutesOf(Files.getLastModifiedTime(file).toMillis()) else 0

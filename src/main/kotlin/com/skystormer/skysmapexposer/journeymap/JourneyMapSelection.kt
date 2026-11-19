@@ -162,11 +162,5 @@ internal object JourneyMapSelection {
         graphics.fill(right - 1, top, right, bottom, LINE)
     }
 
-    private inline fun guard(block: () -> Unit) {
-        try {
-            block()
-        } catch (e: Throwable) {
-            Log.error("JourneyMap area picking failed", e)
-        }
-    }
+    private inline fun guard(block: () -> Unit) = Log.guarded("JourneyMap area picking failed", block)
 }

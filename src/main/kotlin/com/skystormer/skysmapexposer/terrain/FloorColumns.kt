@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.terrain
 
+import com.skystormer.skysmapexposer.multiplyColour
 import com.skystormer.skysmapexposer.TilePixels
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -143,10 +144,7 @@ class FloorColumns(val size: Int) {
         }
 
         /** [colour] (0xAARRGGBB) times [tint] (0xRRGGBB), keeping the alpha. */
-        fun tinted(colour: Int, tint: Int): Int {
-            fun channel(shift: Int) = ((colour shr shift) and 0xFF) * ((tint shr shift) and 0xFF) / 255
-            return (colour and -0x1000000) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
-        }
+        fun tinted(colour: Int, tint: Int): Int = multiplyColour(colour, tint)
 
         /**
          * What Xaero's World Map draws for water [depth] blocks deep over a bed of [bedColour]

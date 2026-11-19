@@ -1,12 +1,8 @@
 package com.skystormer.skysmapexposer
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
-import java.io.BufferedInputStream
-import java.io.DataInputStream
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executor
-import java.util.zip.GZIPInputStream
 
 /**
  * When you last had each chunk loaded, per dimension, for one server.
@@ -44,6 +40,7 @@ class VisitLog(private val folder: Path, private val io: Executor) {
         changed.clear()
     }
 
+    // Not [packXZ]: these keys are saved, in this order (z high), so it stays as it is.
     private fun key(chunkX: Int, chunkZ: Int): Long =
         (chunkX.toLong() and 0xFFFFFFFFL) or (chunkZ.toLong() shl 32)
 
@@ -56,34 +53,17 @@ class VisitLog(private val folder: Path, private val io: Executor) {
     private fun read(path: Path): Long2IntOpenHashMap {
         val visits = Long2IntOpenHashMap()
         visits.defaultReturnValue(0)
-        if (Files.notExists(path)) return visits
-        try {
-            DataInputStream(BufferedInputStream(GZIPInputStream(Files.newInputStream(path)))).use { input ->
-                check(input.readInt() == MAGIC) { "not a visit file" }
-                input.readInt() // format version, 1 so far
-                repeat(input.readInt()) { visits.put(input.readLong(), input.readInt()) }
-            }
-        } catch (e: Exception) {
-            Log.error("Could not read $path; starting that dimension's visit record afresh", e)
-        }
+        SafeFiles.readRecord(path, MAGIC, "visit") { input -> repeat(input.readInt()) { visits.put(input.readLong(), input.readInt()) } }
         return visits
     }
 
-    private fun write(path: Path, visits: Long2IntOpenHashMap) {
-        try {
-            SafeFiles.writeGzip(path) { output ->
-                output.writeInt(MAGIC)
-                output.writeInt(1)
-                output.writeInt(visits.size)
-                val entries = visits.long2IntEntrySet().fastIterator()
-                while (entries.hasNext()) {
-                    val entry = entries.next()
-                    output.writeLong(entry.longKey)
-                    output.writeInt(entry.intValue)
-                }
-            }
-        } catch (e: Exception) {
-            Log.error("Could not save $path", e)
+    private fun write(path: Path, visits: Long2IntOpenHashMap) = SafeFiles.writeRecord(path, MAGIC) { output ->
+        output.writeInt(visits.size)
+        val entries = visits.long2IntEntrySet().fastIterator()
+        while (entries.hasNext()) {
+            val entry = entries.next()
+            output.writeLong(entry.longKey)
+            output.writeInt(entry.intValue)
         }
     }
 

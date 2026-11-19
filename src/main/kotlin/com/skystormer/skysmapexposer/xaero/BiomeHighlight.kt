@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.packXZ
 import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Config
@@ -177,7 +178,7 @@ object BiomeHighlight {
      * texture's own pixels, remembered.
      */
     private fun rectsOf(slot: Int, squareX: Int, squareZ: Int, texture: RegionTexture<*>, step: Int): IntArray {
-        val key = (squareX.toLong() shl 32) or (squareZ.toLong() and 0xFFFFFFFFL)
+        val key = packXZ(squareX, squareZ)
         val known = squares[slot][key]
         val textureVersion = texture.textureVersion
         if (known != null && known.texture === texture && known.textureVersion == textureVersion &&

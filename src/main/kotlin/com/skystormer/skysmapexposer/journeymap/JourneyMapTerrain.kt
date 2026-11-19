@@ -1,5 +1,7 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
+import com.skystormer.skysmapexposer.packXZ
 import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.Clock
@@ -231,7 +233,7 @@ internal object JourneyMapTerrain {
                 now - held.checkedAt > (if (nearYou) RECHECK_MS else HELD_RECHECK_MS) ||
                 now - held.decidedAt > (if (nearYou) RECHECK_MS else FAR_RECHECK_MS)
             if (!due) {
-                if (!held!!.complete) waiting++
+                if (!held.complete) waiting++
                 continue
             }
             if (System.nanoTime() - started > SLICE_NS) { waiting++; continue }
@@ -377,7 +379,7 @@ internal object JourneyMapTerrain {
      * where it holds no picture, which is a gap on its map.
      */
     private fun mappedIn(region: Region, pass: Pass, near: Boolean): BitSet {
-        val set = pass.holding[regionKey(region.x, region.z)]
+        val set = pass.holding[packXZ(region.x, region.z)]
         val holder = try {
             pass.mapType?.let { set?.getExistingHolder(it) }
         } catch (e: LinkageError) {
@@ -430,7 +432,7 @@ internal object JourneyMapTerrain {
             val found = HashMap<Long, RegionImageSet>()
             for (set in RegionImageCache.INSTANCE.regionImageSets) {
                 val coord = set.regionCoord ?: continue
-                if (coord.dimDir == dimensionFolder) found[regionKey(coord.regionX, coord.regionZ)] = set
+                if (coord.dimDir == dimensionFolder) found[packXZ(coord.regionX, coord.regionZ)] = set
             }
             found
         } catch (e: LinkageError) {
@@ -444,13 +446,11 @@ internal object JourneyMapTerrain {
 
     /** JourneyMap's own name for [folder]'s map, to find its pictures by; null if this JourneyMap has none. */
     private fun mapTypeOf(folder: Folder): MapType? = try {
-        val key = JourneyMapAdapter.levelKey(folder.dimension)
+        val key = levelKey(folder.dimension)
         if (folder.type == Context.MapType.Underground) MapType.underground(folder.slice ?: 0, key) else MapType.day(key)
     } catch (e: LinkageError) {
         null
     }
-
-    private fun regionKey(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
 
     /**
      * Region ([regionX], [regionZ]) of [dimension] was just written into ([JourneyMapEdits]): its

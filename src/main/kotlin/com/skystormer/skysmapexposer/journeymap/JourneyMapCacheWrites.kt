@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.isWaterBlock
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SharedTerrain
 import journeymap.common.chunk.JMChunkCache
@@ -13,7 +14,6 @@ import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.biome.Biome
-import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.chunk.DataLayer
 import net.minecraft.world.level.chunk.LevelChunkSection
 import net.minecraft.world.level.chunk.PalettedContainerFactory
@@ -24,7 +24,6 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.EnumMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 /**
  * Downloaded and shared map areas written into JourneyMap's chunk cache, as JourneyMap writes the
@@ -77,7 +76,7 @@ internal object JourneyMapCacheWrites {
         Log.warn("Downloaded and shared areas will not be kept in JourneyMap's chunk cache ({}): {}", why, e.toString())
     }
 
-    /** Which kind chunk [chunk] of [JourneyMapChunkCache] is, read with blocks (for its light). */
+    /** Which kind chunk [chunk] of [JourneyMapChunkCache] is, read with its light. */
     fun kindOf(chunk: JourneyMapChunkCache.Chunk?): Kind {
         chunk ?: return Kind.ABSENT
         return kindByLight { x, z -> chunk.lightAt(x, chunk.minBuild, z) }
@@ -131,6 +130,8 @@ internal object JourneyMapCacheWrites {
                         val cx = region.regionX * 32 + (index and 31)
                         val cz = region.regionZ * 32 + (index shr 5)
                         val snapshot = target.build(cx, cz, chunk, { keep(index, it) }, ADDED) ?: continue
+                        // JourneyMap may have mapped it for real since the region was read.
+                        if (!target.stillFree(cx, cz)) continue
                         target.put(snapshot)
                         written++
                         lines.append(cx).append(' ').append(cz).append('\n')
@@ -188,12 +189,19 @@ internal object JourneyMapCacheWrites {
 
     /** Where [dimension]'s chunks go: JourneyMap's own open cache, or a store of the folder. */
     private class Target(
+        private val dimension: String,
         private val folder: Path,
         private val registries: RegistryAccess,
         private val minBuild: Int,
         private val maxBuild: Int,
-        private val open: Boolean,
     ) {
+        /**
+         * Whether JourneyMap has this dimension's cache open (you are in it), asked at each use: a
+         * trip through a portal during a job changes it, and its files must never have two writers.
+         */
+        private val open: Boolean
+            get() = Minecraft.getInstance().level?.dimension()?.identifier()?.toString() == dimension
+
         private val factory = PalettedContainerFactory.create(registries)
         private val biomes = registries.lookupOrThrow(Registries.BIOME)
         private val holders = HashMap<ResourceKey<Biome>, Holder<Biome>?>()
@@ -205,7 +213,7 @@ internal object JourneyMapCacheWrites {
                 val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return null
                 val open = level.dimension().identifier().toString() == dimension
                 val (min, max) = if (open) level.minY to level.maxY + 1 else heights(level.registryAccess(), dimension)
-                return Target(folder, level.registryAccess(), min, max, open)
+                return Target(dimension, folder, level.registryAccess(), min, max)
             }
 
             /** The build heights of [dimension], from its dimension type; the usual ones if unknown. */
@@ -222,13 +230,21 @@ internal object JourneyMapCacheWrites {
 
         /** Each chunk of region ([rx], [rz]) by kind, `z * 32 + x`: from the file, and JourneyMap's memory where it has newer. */
         fun kinds(rx: Int, rz: Int): Array<Kind> {
-            val read = JourneyMapChunkCache.readRegion(JourneyMapChunkCache.file(folder, rx, rz), registries, withBlocks = true)
+            // Only the light is needed, for the mark: the blocks are left undecoded.
+            val read = JourneyMapChunkCache.readRegion(JourneyMapChunkCache.file(folder, rx, rz), registries, withLight = true)
             val kinds = Array(32 * 32) { kindOf(read[it]) }
             if (open) for (i in kinds.indices) {
                 val snapshot = JMChunkCache.INSTANCE.getMemOnly(ChunkPos(rx * 32 + (i and 31), rz * 32 + (i shr 5))) ?: continue
                 kinds[i] = kindOf(snapshot)
             }
             return kinds
+        }
+
+        /** False if JourneyMap now holds a chunk of its own at ([cx], [cz]) in memory. */
+        fun stillFree(cx: Int, cz: Int): Boolean {
+            if (!open) return true
+            val held = JMChunkCache.INSTANCE.getMemOnly(ChunkPos(cx, cz)) ?: return true
+            return kindOf(held) != Kind.REAL
         }
 
         /**
@@ -260,9 +276,9 @@ internal object JourneyMapCacheWrites {
                 // layer (ice, glass, leaves) a block each at the top.
                 val overlays = chunk.overlays[i].orEmpty()
                 var top = maxOf(ground, chunk.top[i].toInt())
-                if (top == ground && overlays.isNotEmpty()) top = ground + overlays.sumOf { if (isWater(it.state)) it.opacity.coerceAtLeast(1) else 1 }
-                val solid = overlays.filterNot { isWater(it.state) }
-                val water = overlays.firstOrNull { isWater(it.state) }
+                if (top == ground && overlays.isNotEmpty()) top = ground + overlays.sumOf { if (isWaterBlock(it.state)) it.opacity.coerceAtLeast(1) else 1 }
+                val solid = overlays.filterNot { isWaterBlock(it.state) }
+                val water = overlays.firstOrNull { isWaterBlock(it.state) }
                 var y = ground + 1
                 val waterTop = top - solid.size
                 if (water != null) while (y <= waterTop) set(x, y++, z, water.state)
@@ -293,6 +309,9 @@ internal object JourneyMapCacheWrites {
 
         fun put(snapshot: JMChunkSnapshot) {
             if (open) {
+                // JourneyMap opened it since this job began: this job's own store lets go first.
+                store?.let { it.flush(); it.close() }
+                store = null
                 JMChunkCache.INSTANCE.put(snapshot, registries)
             } else {
                 (store ?: JMChunkStorage(folder).also { store = it }).write(snapshot, registries)
@@ -306,8 +325,6 @@ internal object JourneyMapCacheWrites {
         }
 
         private fun holder(key: ResourceKey<Biome>): Holder<Biome>? = holders.getOrPut(key) { biomes.get(key).orElse(null) }
-
-        private fun isWater(state: net.minecraft.world.level.block.state.BlockState) = state.block == Blocks.WATER
     }
 
     /** The ledger of a job whose backups go in [backups], listing the chunks it put in the cache. */

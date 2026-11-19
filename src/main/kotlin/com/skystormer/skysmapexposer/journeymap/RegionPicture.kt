@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.Log
 import journeymap.api.v2.client.IClientAPI
@@ -60,7 +61,7 @@ internal class RegionPicture private constructor(
             if (!fullscreen) return RegionPicture(texture, side, scale, westX, northZ, null)
             val reach = side * scale
             val overlay = ImageOverlay(JourneyMapAdapter.MOD_ID, BlockPos(westX, 0, northZ), BlockPos(westX + reach, 0, northZ + reach), MapImage(texture, side, side))
-            overlay.setDimension(JourneyMapAdapter.levelKey(dimension))
+            overlay.setDimension(levelKey(dimension))
             overlay.setDisplayOrder(order)
             overlay.setActiveUIs(Context.UI.Fullscreen)
             return try {

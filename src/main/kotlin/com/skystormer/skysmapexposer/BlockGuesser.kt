@@ -231,10 +231,7 @@ open class BlockGuesser(
             Tint.DryFoliage -> biome(key)?.dryFoliageColor
             Tint.Water -> biome(key)?.waterColor
         } ?: return base
-        val r = ((by shr 16) and 0xFF) * ((base shr 16) and 0xFF) / 255
-        val g = ((by shr 8) and 0xFF) * ((base shr 8) and 0xFF) / 255
-        val b = (by and 0xFF) * (base and 0xFF) / 255
-        return (r shl 16) or (g shl 8) or b
+        return multiplyColour(base, by and 0xFFFFFF)
     }
 
     private fun biome(key: ResourceKey<Biome>): Biome? = biomes.getOrPut(key) {

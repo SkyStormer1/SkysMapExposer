@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.CaveNotice
 import com.skystormer.skysmapexposer.ChatButton
@@ -74,7 +75,7 @@ internal object JourneyMapMenus {
     /** Switches [map] to [dimension] if it is showing another ([JourneyMapDimension]). */
     private fun showIfOther(map: IFullscreen, dimension: String) {
         if (map.uiState?.dimension?.identifier()?.toString() == dimension) return
-        JourneyMapDimension.show(map, JourneyMapAdapter.levelKey(dimension))
+        JourneyMapDimension.show(map, levelKey(dimension))
     }
 
     fun register() {
@@ -369,15 +370,7 @@ internal object JourneyMapMenus {
         }
     }
 
-    private inline fun guard(block: () -> Unit) {
-        try {
-            block()
-        } catch (e: Exception) {
-            Log.error("Something of this mod's on JourneyMap's map failed", e)
-        } catch (e: LinkageError) {
-            Log.error("Something of this mod's on JourneyMap's map failed", e)
-        }
-    }
+    private inline fun guard(block: () -> Unit) = Log.guarded("Something of this mod's on JourneyMap's map failed", block)
 
     /** Under JourneyMap's own line of where you are, at the top of the map. */
     private const val LINES_TOP = 70

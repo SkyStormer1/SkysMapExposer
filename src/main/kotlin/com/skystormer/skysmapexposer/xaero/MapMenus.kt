@@ -254,11 +254,5 @@ object MapMenus {
             override fun onAction(screen: Screen) = action(screen)
         }
 
-    private inline fun guard(block: () -> Unit) {
-        try {
-            block()
-        } catch (e: Throwable) {
-            Log.error("Could not add options to Xaero's right-click menu", e)
-        }
-    }
+    private inline fun guard(block: () -> Unit) = Log.guarded("Could not add options to Xaero's right-click menu", block)
 }

@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-import java.io.IOException
 
 /**
  * BlueMap's finest tiles read as data rather than as a picture: for every block, its colour, the
@@ -28,12 +27,12 @@ object BlueMapPicture {
      * the height in the low 16 bits (signed) and the block light in bits 16 to 23. The extra
      * column and row belong to the next tile and are dropped.
      */
-    fun decode(tileX: Int, tileZ: Int, size: Int, bytes: ByteArray): Tile {
-        val image = BlueMap.readTile(bytes, size)
-        val width = image.width
-        val half = image.height / 2
-        if (width != half || width < size) throw IOException("unexpected tile shape ${width}x${image.height}")
-        val source = image.getRGB(0, 0, width, image.height, null, 0, width)
+    fun decode(tileX: Int, tileZ: Int, size: Int, bytes: ByteArray): Tile = decode(tileX, tileZ, size, TilePixels.read(bytes, size))
+
+    /** [decode] from a tile already read ([TilePixels.read]). */
+    fun decode(tileX: Int, tileZ: Int, size: Int, source: IntArray): Tile {
+        val width = size + 1
+        val half = width
         val colour = IntArray(size * size)
         val height = ShortArray(size * size)
         val light = ByteArray(size * size)
@@ -108,6 +107,23 @@ object BlueMapPicture {
     }
 
     /** The finest tiles ([tileX] to [tileX], [tileZ] likewise) a block rectangle overlaps. */
+    /**
+     * What BlueMap has for region ([regionX], [regionZ]) from its tiles of [size] blocks ([tile], null
+     * where it has none), only inside the blocks [minX]..[maxX], [minZ]..[maxZ] when given: what a
+     * download writes, into either map.
+     */
+    fun region(
+        regionX: Int, regionZ: Int, size: Int, minX: Int?, minZ: Int?, maxX: Int?, maxZ: Int?, tile: (Int, Int) -> Tile?,
+    ): RegionPicture {
+        val picture = RegionPicture(regionX, regionZ)
+        val left = maxOf(picture.originX, minX ?: Int.MIN_VALUE)
+        val top = maxOf(picture.originZ, minZ ?: Int.MIN_VALUE)
+        val right = minOf(picture.originX + REGION - 1, maxX ?: Int.MAX_VALUE)
+        val bottom = minOf(picture.originZ + REGION - 1, maxZ ?: Int.MAX_VALUE)
+        for ((tx, tz) in tilesOver(left, top, right, bottom, size)) tile(tx, tz)?.let { picture.fill(it, left, top, right, bottom) }
+        return picture
+    }
+
     fun tilesOver(minX: Int, minZ: Int, maxX: Int, maxZ: Int, size: Int): List<Pair<Int, Int>> {
         val out = ArrayList<Pair<Int, Int>>()
         for (tx in Math.floorDiv(minX, size)..Math.floorDiv(maxX, size)) {

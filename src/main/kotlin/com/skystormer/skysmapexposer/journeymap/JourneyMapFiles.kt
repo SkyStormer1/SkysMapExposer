@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.SafeFiles
 import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.Log
@@ -38,7 +39,7 @@ internal object JourneyMapFiles {
     /** JourneyMap's folder for [dimension] in the world you are in: its map types' folders are inside. */
     fun dimensionFolder(dimension: String): Path? {
         val world = FileHandler.getJMWorldDir(Minecraft.getInstance()) ?: return null
-        return FileHandler.getDimPath(world, JourneyMapAdapter.levelKey(dimension))
+        return FileHandler.getDimPath(world, levelKey(dimension))
     }
 
     fun regionFile(folder: Path, regionX: Int, regionZ: Int): Path = folder.resolve("$regionX,$regionZ.png")
@@ -59,7 +60,7 @@ internal object JourneyMapFiles {
             val coord = set.regionCoord
             coord.regionX == regionX && coord.regionZ == regionZ && coord.dimDir == dimensionFolder
         } ?: return null
-        return set.getExistingHolder(MapType.day(JourneyMapAdapter.levelKey(dimension)))
+        return set.getExistingHolder(MapType.day(levelKey(dimension)))
     }
 
     /** [holder]'s picture, `REGION` square, ARGB; null if it has none to read. Client thread. */

@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.LockedPlayers
@@ -91,7 +92,7 @@ internal object JourneyMapPins {
 
     private fun update(api: IClientAPI, dimension: String?, pins: List<Markers.Pin>, outlines: List<Markers.Outline>?) {
         dimension ?: return
-        val key = runCatching { JourneyMapAdapter.levelKey(dimension) }.getOrNull() ?: return
+        val key = runCatching { levelKey(dimension) }.getOrNull() ?: return
         val wanted = HashSet<String>()
         outlines?.forEach { outline -> keep(api, wanted, outlineKey(dimension, outline)) { outlineOverlay(key, outline) } }
         for (pin in pins) {

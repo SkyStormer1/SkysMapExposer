@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.multiplyColour
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.journeymap.JourneyMapFiles.REGION
 import journeymap.client.model.block.BlockFlag
@@ -101,14 +102,7 @@ internal object JourneyMapShared {
             md.isFoliage -> biome?.foliageColor ?: DEFAULT_FOLIAGE
             else -> return texture
         }
-        return multiply(texture, tint and 0xFFFFFF)
-    }
-
-    private fun multiply(a: Int, b: Int): Int {
-        val r = ((a shr 16) and 0xFF) * ((b shr 16) and 0xFF) / 255
-        val g = ((a shr 8) and 0xFF) * ((b shr 8) and 0xFF) / 255
-        val bl = (a and 0xFF) * (b and 0xFF) / 255
-        return (r shl 16) or (g shl 8) or bl
+        return multiplyColour(texture, tint and 0xFFFFFF)
     }
 
     private fun shade(colour: Int, factor: Float): Int {

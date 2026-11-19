@@ -203,7 +203,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 columns,
             )
             text.setTooltip(SafeTooltip.of(
-                "${player.label}\n$coordinates in ${dimensionName(entry.dimension)}\n" +
+                "${player.label}\n$coordinates in ${Ui.dimensionName(entry.dimension) ?: entry.dimension}\n" +
                     if (locked) "Locked on: their head follows them in the world." else "Not locked on."
             ))
             row(text)
@@ -212,7 +212,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
             rowButton(
                 "Go to", x, y, buttonWidth,
                 (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
-                else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
+                else "Switch the world map to the ${Ui.dimensionName(entry.dimension) ?: entry.dimension} and zoom in on " +
                     "${player.label}. It switches back when you leave the map.") +
                     " Their head gets a rainbow outline until you leave the map.",
                 refresh = false,
@@ -283,7 +283,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
             distanceTo(entry)?.let { append(it.toInt()).append("m away") }
             if (allDimensions) {
                 if (isNotEmpty()) append(" · ")
-                append(dimensionName(entry.dimension))
+                append(Ui.dimensionName(entry.dimension) ?: entry.dimension)
             }
         }
         return coordinates to distance
@@ -335,8 +335,6 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     }
 
     companion object {
-        fun dimensionName(dimension: String): String = Ui.dimensionName(dimension) ?: dimension
-
         private const val MAX_WIDTH = 420
         // ARGB: these are drawn onto the screen by PlayerRowWidget, not put in a Component.
         private const val NAME = 0xFFFFFFFF.toInt()

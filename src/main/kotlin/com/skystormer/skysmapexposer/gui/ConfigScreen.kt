@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.background
 import com.skystormer.skysmapexposer.xaero.DownloadScreen
 import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.Ui
@@ -430,7 +431,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun countCache() {
         val session = Session.current
         val root = minecraft.gameDirectory.toPath().resolve("skysmapexposer")
-        Thread({
+        background("SkysMapExposer cache size") {
             val line = try {
                 val all = TileCache.measureAll(root)
                 if (session == null) "Tile cache, all servers: $all"
@@ -439,7 +440,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 "Tile cache: could not count it (${e.message ?: e.javaClass.simpleName})"
             }
             minecraft.execute { cacheLine = line }
-        }, "SkysMapExposer cache size").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        }
     }
 
     /** What is shown on the maps, how big, and the players. */
@@ -755,7 +756,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             return
         }
         show("Asking $url…")
-        Thread({
+        background("SkysMapExposer find maps", Thread.NORM_PRIORITY) {
             val result = runCatching { BlueMap(url).use { it.maps() } }
             minecraft.execute {
                 result.onSuccess { maps ->
@@ -768,7 +769,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 }
                 result.onFailure { show("Could not reach BlueMap at $url: ${it.message ?: it.javaClass.simpleName}") }
             }
-        }, "SkysMapExposer find maps").apply { isDaemon = true }.start()
+        }
     }
 
     /**

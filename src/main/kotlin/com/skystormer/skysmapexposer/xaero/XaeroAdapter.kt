@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.MapBorder
 import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.mojang.brigadier.arguments.IntegerArgumentType
@@ -459,7 +460,7 @@ object XaeroAdapter : MapAdapter {
         val processor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return "Xaero's World Map has not started for this world yet"
         val name = Ui.dimensionName(dimension) ?: dimension
         val mapDimension = try {
-            processor.mapWorld?.getDimension(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, Identifier.parse(dimension)))
+            processor.mapWorld?.getDimension(levelKey(dimension))
         } catch (e: Exception) {
             null
         } ?: return "Xaero's World Map has no map of the $name yet"

@@ -1,5 +1,8 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.background
+import com.skystormer.skysmapexposer.isWaterBlock
+import com.skystormer.skysmapexposer.packXZ
 import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapLayers
@@ -9,8 +12,6 @@ import com.skystormer.skysmapexposer.SharedTerrain
 import net.minecraft.client.Minecraft
 import net.minecraft.core.RegistryAccess
 import net.minecraft.network.chat.Component
-import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.block.state.BlockState
 import java.io.BufferedOutputStream
 import java.io.DataOutputStream
 import java.nio.file.Files
@@ -67,7 +68,7 @@ internal object JourneyMapTerrainSave {
         val old = oldChunks(dimension, regions)
         saving = true
         cancelled = false
-        Thread({
+        background("SkysMapExposer JourneyMap terrain file") {
             val message = try {
                 write(me, dimension, area, regions, folder, registries, old)
             } catch (e: Exception) {
@@ -77,11 +78,9 @@ internal object JourneyMapTerrainSave {
                 saving = false
             }
             Minecraft.getInstance().execute { Minecraft.getInstance().player?.sendSystemMessage(message) }
-        }, "SkysMapExposer JourneyMap terrain file").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        }
         return SharedTerrain.Answer("Saving the terrain of ${area.width} × ${area.height} chunks to a file…")
     }
-
-    private fun key(chunkX: Int, chunkZ: Int): Long = (chunkX.toLong() shl 32) or (chunkZ.toLong() and 0xFFFFFFFFL)
 
     /**
      * The chunks of [regions] from before [dimension]'s season began, by when you last saw them, as
@@ -93,7 +92,7 @@ internal object JourneyMapTerrainSave {
         val old = LongOpenHashSet()
         for ((rx, rz) in regions) for (cz in rz * 32 until rz * 32 + 32) for (cx in rx * 32 until rx * 32 + 32) {
             val seen = session.visits.lastSeen(dimension, cx, cz)
-            if (seen != 0 && seen < start) old.add(key(cx, cz))
+            if (seen != 0 && seen < start) old.add(packXZ(cx, cz))
         }
         return old
     }
@@ -120,7 +119,7 @@ internal object JourneyMapTerrainSave {
                             val chunk = cache[(cz - rz * 32) * 32 + (cx - rx * 32)] ?: continue
                             // A downloaded or shared chunk taken back by an undo: empty, not yours.
                             if (JourneyMapCacheWrites.kindOf(chunk) == JourneyMapCacheWrites.Kind.WITHDRAWN) continue
-                            if (old?.contains(key(cx, cz)) == true) { oldLeftOut++; continue }
+                            if (old?.contains(packXZ(cx, cz)) == true) { oldLeftOut++; continue }
                             writer.chunk(cx, cz, columns(chunk) ?: continue)
                         }
                     }
@@ -158,7 +157,7 @@ internal object JourneyMapTerrainSave {
             val topState = chunk.blockAt(x, top, z)
             // Water is a layer over the ground, as deep as it is, as Xaero keeps it.
             var ground = top
-            while (ground > chunk.minBuild && isWater(chunk.blockAt(x, ground, z))) ground--
+            while (ground > chunk.minBuild && isWaterBlock(chunk.blockAt(x, ground, z))) ground--
             val state = chunk.blockAt(x, ground, z)
             val depth = top - ground
             out.state[i] = state
@@ -173,9 +172,6 @@ internal object JourneyMapTerrainSave {
         }
         return out
     }
-
-    /** Water itself; a waterlogged block is the ground, as Xaero sees it. */
-    private fun isWater(state: BlockState): Boolean = state.block == Blocks.WATER
 
     private class Stopped : Exception()
 

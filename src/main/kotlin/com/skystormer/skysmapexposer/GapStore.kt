@@ -1,12 +1,8 @@
 package com.skystormer.skysmapexposer
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet
-import java.io.BufferedInputStream
-import java.io.DataInputStream
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executor
-import java.util.zip.GZIPInputStream
 
 /**
  * The chunks Xaero was last seen to have nothing for, per dimension, for one server, kept on disk.
@@ -45,31 +41,14 @@ class GapStore(private val folder: Path, private val io: Executor) {
 
     private fun read(path: Path): LongOpenHashSet {
         val gaps = LongOpenHashSet()
-        if (Files.notExists(path)) return gaps
-        try {
-            DataInputStream(BufferedInputStream(GZIPInputStream(Files.newInputStream(path)))).use { input ->
-                check(input.readInt() == MAGIC) { "not a gap file" }
-                input.readInt() // format version, 1 so far
-                repeat(input.readInt()) { gaps.add(input.readLong()) }
-            }
-        } catch (e: Exception) {
-            Log.error("Could not read $path; starting that dimension's gap record afresh", e)
-        }
+        SafeFiles.readRecord(path, MAGIC, "gap") { input -> repeat(input.readInt()) { gaps.add(input.readLong()) } }
         return gaps
     }
 
-    private fun write(path: Path, gaps: LongOpenHashSet) {
-        try {
-            SafeFiles.writeGzip(path) { output ->
-                output.writeInt(MAGIC)
-                output.writeInt(1)
-                output.writeInt(gaps.size)
-                val each = gaps.iterator()
-                while (each.hasNext()) output.writeLong(each.nextLong())
-            }
-        } catch (e: Exception) {
-            Log.error("Could not save $path", e)
-        }
+    private fun write(path: Path, gaps: LongOpenHashSet) = SafeFiles.writeRecord(path, MAGIC) { output ->
+        output.writeInt(gaps.size)
+        val each = gaps.iterator()
+        while (each.hasNext()) output.writeLong(each.nextLong())
     }
 
     private companion object {

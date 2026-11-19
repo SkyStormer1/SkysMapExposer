@@ -35,16 +35,14 @@ class LowresSource(
         }
     }
 
-    private val cache = object : LinkedHashMap<Long, Lowres?>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Lowres?>) = size > KEEP
-    }
+    private val cache = lruMap<Long, Lowres?>(KEEP)
 
     private var lastKey = Long.MIN_VALUE
     private var last: Lowres? = null
 
     /** Tile ([tileX], [tileZ]), or null if BlueMap has nothing there. */
     fun tile(tileX: Int, tileZ: Int): Lowres? {
-        val key = (tileX.toLong() shl 32) or (tileZ.toLong() and 0xFFFFFFFFL)
+        val key = packXZ(tileX, tileZ)
         if (key == lastKey) return last
         val found = if (cache.containsKey(key)) cache[key] else load(tileX, tileZ)?.let { Lowres(it, hasSea) }.also { cache[key] = it }
         lastKey = key

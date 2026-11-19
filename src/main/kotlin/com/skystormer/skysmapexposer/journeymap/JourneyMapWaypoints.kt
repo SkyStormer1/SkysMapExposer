@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.Markers
@@ -105,7 +106,7 @@ internal object JourneyMapWaypoints {
      * delete it or leave the world. Those carry [TEMPORARY], by which they go on leaving ([tidy]).
      */
     private fun add(api: IClientAPI, dimension: String, name: String, x: Int, y: Int, z: Int, rgb: Int, temporary: Boolean) {
-        val waypoint = WaypointFactory.createWaypoint(JourneyMapAdapter.MOD_ID, BlockPos(x, y, z), name, JourneyMapAdapter.levelKey(dimension), true)
+        val waypoint = WaypointFactory.createWaypoint(JourneyMapAdapter.MOD_ID, BlockPos(x, y, z), name, levelKey(dimension), true)
         waypoint.setColor(rgb)
         if (temporary) waypoint.setCustomData(TEMPORARY, "1")
         group(api).addWaypoint(waypoint)
@@ -124,7 +125,7 @@ internal object JourneyMapWaypoints {
             dimension == Config.OVERWORLD && here == Config.NETHER -> Math.floorDiv(x, Config.NETHER_SCALE) to Math.floorDiv(z, Config.NETHER_SCALE)
             else -> x to z
         }
-        return api.getAllWaypoints(JourneyMapAdapter.levelKey(dimension)).any { it.x == sx && it.z == sz && it.name == name }
+        return api.getAllWaypoints(levelKey(dimension)).any { it.x == sx && it.z == sz && it.name == name }
     }
 
     /** JourneyMap's "Map Exposer" group, made the first time it is needed. */

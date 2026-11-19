@@ -72,7 +72,7 @@ object MapPrep {
         if (maps.isEmpty()) return "No BlueMap map's terrain is used on this server"
         val started = Job(session, maps)
         job = started
-        Thread({ work(started) }, "SkysMapExposer prepare").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        background("SkysMapExposer prepare") { work(started) }
         Log.info("Preparing BlueMap's maps in the background: {}", maps.joinToString { "'${it.second}'" })
         return "Preparing the map in the background"
     }

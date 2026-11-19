@@ -1,13 +1,11 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.ShareFormat
 import net.minecraft.client.resources.language.I18n
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
-import net.minecraft.resources.ResourceKey
 import xaero.common.minimap.waypoints.Waypoint
 import xaero.hud.minimap.BuiltInHudModules
 import xaero.hud.minimap.waypoint.WaypointColor
@@ -54,7 +52,7 @@ object WaypointShare {
         if (!Waypoints.available()) return "Adding waypoints needs Xaero's Minimap"
         val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
         val name = Ui.dimensionName(dimensionId) ?: dimensionId
-        val target = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimensionId))
+        val target = levelKey(dimensionId)
         val world = Waypoints.worldFor(target) ?: return "Xaero's Minimap has no waypoints for the $name yet; go there once first"
         val set = world.currentWaypointSet ?: return "Xaero's Minimap has no waypoint set selected for the $name"
         var added = 0

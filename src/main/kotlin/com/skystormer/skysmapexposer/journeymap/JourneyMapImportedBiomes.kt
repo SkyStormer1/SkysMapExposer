@@ -61,21 +61,27 @@ internal object JourneyMapImportedBiomes {
      * Keeps the biomes of a shared file's [region] at JourneyMap's region ([regionX], [regionZ]),
      * over what an earlier file left there. Off the client thread.
      */
-    fun add(folder: Path, regionX: Int, regionZ: Int, region: SharedTerrain.Region) {
+    fun add(folder: Path, regionX: Int, regionZ: Int, region: SharedTerrain.Region) =
+        keep(folder, regionX, regionZ, overKept = true) { x, z -> region.chunks[(z shr 4) * 32 + (x shr 4)]?.biome?.get((x and 15) * 16 + (z and 15)) }
+
+    /**
+     * Region ([regionX], [regionZ])'s kept biomes with [biomeAt] (block x, z in the region, read at
+     * each cell's middle as the biome tint reads JourneyMap's own) put in: over cells already kept
+     * only if [overKept]. Saved if anything changed.
+     */
+    private fun keep(folder: Path, regionX: Int, regionZ: Int, overKept: Boolean, biomeAt: (Int, Int) -> ResourceKey<Biome>?) {
         val old = read(folder, regionX, regionZ)
         val palette = ArrayList(old?.palette.orEmpty())
         val indexOf = HashMap<ResourceKey<Biome>, Int>().apply { palette.forEachIndexed { i, key -> put(key, i) } }
         val cells = old?.cells?.copyOf() ?: ShortArray(CELLS * CELLS)
         var any = false
         for (cellZ in 0 until CELLS) for (cellX in 0 until CELLS) {
-            // The middle of the cell, as the biome tint reads JourneyMap's own.
-            val x = cellX * 4 + 2
-            val z = cellZ * 4 + 2
-            val chunk = region.chunks[(z shr 4) * 32 + (x shr 4)] ?: continue
-            val biome = chunk.biome[(x and 15) * 16 + (z and 15)] ?: continue
-            val index = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
-            if (index >= MAX_BIOMES) continue
-            cells[cellZ * CELLS + cellX] = (index + 1).toShort()
+            val index = cellZ * CELLS + cellX
+            if (!overKept && cells[index] > 0) continue
+            val biome = biomeAt(cellX * 4 + 2, cellZ * 4 + 2) ?: continue
+            val at = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
+            if (at >= MAX_BIOMES) continue
+            cells[index] = (at + 1).toShort()
             any = true
         }
         if (any) save(folder, regionX, regionZ, palette, cells)
@@ -104,26 +110,11 @@ internal object JourneyMapImportedBiomes {
      * file's real biomes are never written over by a guess. Off the client thread.
      */
     fun addGuess(folder: Path, regionX: Int, regionZ: Int, guess: BiomeGuide.Guess, drawn: (Int, Int) -> Boolean) {
-        val old = read(folder, regionX, regionZ)
-        val palette = ArrayList(old?.palette.orEmpty())
-        val indexOf = HashMap<ResourceKey<Biome>, Int>().apply { palette.forEachIndexed { i, key -> put(key, i) } }
-        val cells = old?.cells?.copyOf() ?: ShortArray(CELLS * CELLS)
         val keys = HashMap<String, ResourceKey<Biome>?>()
-        var any = false
-        for (cellZ in 0 until CELLS) for (cellX in 0 until CELLS) {
-            val index = cellZ * CELLS + cellX
-            if (cells[index] > 0) continue
-            val x = cellX * 4 + 2
-            val z = cellZ * 4 + 2
-            if (!drawn(x, z)) continue
-            val name = guess.at(x, z) ?: continue
-            val biome = keys.getOrPut(name) { runCatching { ResourceKey.create(Registries.BIOME, Identifier.parse(name)) }.getOrNull() } ?: continue
-            val at = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
-            if (at >= MAX_BIOMES) continue
-            cells[index] = (at + 1).toShort()
-            any = true
+        keep(folder, regionX, regionZ, overKept = false) { x, z ->
+            if (!drawn(x, z)) null
+            else guess.at(x, z)?.let { name -> keys.getOrPut(name) { runCatching { ResourceKey.create(Registries.BIOME, Identifier.parse(name)) }.getOrNull() } }
         }
-        if (any) save(folder, regionX, regionZ, palette, cells)
     }
 
     /** Region ([regionX], [regionZ])'s grid, or null where no shared file left any biomes. Any thread; reads the file the first time. */

@@ -1,12 +1,11 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapCamera
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
-import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import xaero.map.WorldMapSession
@@ -273,7 +272,7 @@ object MapView {
     private fun stillOnTheMap(screen: Screen?): Boolean = onTheMap(screen) || screen is PlayerListScreen
 
     private fun keyOf(dimension: String): ResourceKey<Level>? = try {
-        ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension))
+        levelKey(dimension)
     } catch (e: Exception) {
         Log.warn("Not a dimension id: {}", dimension)
         null

@@ -86,16 +86,22 @@ object MapBar {
     /** The bar on the map screen open now, for the scroll hook in `GuiMapMixin`. */
     private var current = WeakReference<Panel>(null)
 
-    fun addTo(screen: Screen) {
-        val widgets = Screens.getWidgets(screen)
+    /** A bar for [screen] and its search box, wired to each other, as the bar of the map open now. */
+    private fun newBar(screen: Screen): Pair<Panel, SearchBox> {
         val search = SearchBox()
         val panel = Panel(screen, search)
         search.setResponder { panel.searched() }
         search.covered = panel::covered
+        current = WeakReference(panel)
+        return panel to search
+    }
+
+    fun addTo(screen: Screen) {
+        val widgets = Screens.getWidgets(screen)
+        val (panel, search) = newBar(screen)
         // The panel before the box, so the box hears its own clicks once the panel passes them on.
         widgets.add(panel)
         widgets.add(search)
-        current = WeakReference(panel)
     }
 
     /**
@@ -105,11 +111,7 @@ object MapBar {
      * events. What the bar or its search box takes, the map underneath never sees.
      */
     fun attachTo(screen: Screen) {
-        val search = SearchBox()
-        val panel = Panel(screen, search)
-        search.setResponder { panel.searched() }
-        search.covered = panel::covered
-        current = WeakReference(panel)
+        val (panel, search) = newBar(screen)
         under = null
         ScreenEvents.afterExtract(screen).register { _, graphics, mouseX, mouseY, partialTick ->
             panel.extractRenderState(graphics, mouseX, mouseY, partialTick)
