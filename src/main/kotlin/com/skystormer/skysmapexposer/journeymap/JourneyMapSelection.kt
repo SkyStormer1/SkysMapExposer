@@ -18,7 +18,8 @@ import net.minecraft.core.BlockPos
 /**
  * Picking an area on JourneyMap's full-screen map as on Xaero's: hold the right button and drag,
  * and the chunks it covers are picked (a quick click picks nothing), boxed on the map ([draw]), for the right-click menu's Save terrain
- * file and Download BlueMap…, until the next right-click or the map closes.
+ * file and Download BlueMap…, until the next right-click, a left-click on the map (as on Xaero's,
+ * where clicking off a picked area lets it go; dragging the map starts with one too), or the map closes.
  *
  * JourneyMap opens its menu the moment the right button goes down, so that press is held back here
  * and handed to JourneyMap when the button comes up, drag or not: the menu then opens where the
@@ -33,6 +34,7 @@ internal object JourneyMapSelection {
      * numbers buttons as SDL does (left 1, right 3). Never a bare number: 1 is the left button there.
      */
     private const val RIGHT = InputConstants.MOUSE_BUTTON_RIGHT
+    private const val LEFT = InputConstants.MOUSE_BUTTON_LEFT
     /** How long the right button must be held, and how far in window pixels the mouse must move, to start picking an area. */
     private const val HOLD_MS = 250L
     private const val DRAG_PIXELS = 8.0
@@ -86,7 +88,13 @@ internal object JourneyMapSelection {
     }
 
     private fun pressed(event: FullscreenMapEvent.ClickEvent) {
-        if (event.stage != FullscreenMapEvent.Stage.PRE || event.button != RIGHT || replaying) return
+        if (event.stage != FullscreenMapEvent.Stage.PRE || replaying) return
+        // A left-click off it lets the picked area go, as on Xaero's map; the click still does its own thing.
+        if (event.button == LEFT) {
+            if (!holding) picked = null
+            return
+        }
+        if (event.button != RIGHT) return
         event.cancel()
         start = event.location
         end = event.location

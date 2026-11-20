@@ -26,6 +26,13 @@ object JourneyMapDimension {
     @JvmStatic
     fun keep(actual: ResourceKey<Level>): ResourceKey<Level> = chosen ?: actual
 
+    /** Whether the full-screen map shows a dimension other than the one you are in: your arrow and radar are left off it. */
+    @JvmStatic
+    fun showingOther(): Boolean {
+        val picked = chosen ?: return false
+        return picked != Minecraft.getInstance().level?.dimension()
+    }
+
     /** Switches [map] to [dimension]; your own dimension clears the choice. */
     fun show(map: IFullscreen, dimension: ResourceKey<Level>) {
         val here = Minecraft.getInstance().level?.dimension()

@@ -67,6 +67,8 @@ object JourneyMapAdapter : MapAdapter {
         Triple("journeymap.client.ui.fullscreen.layer.BlockInfoLayer", "keptBiome", "its line under the mouse will not name the biome of downloaded and shared areas"),
         Triple("journeymap.client.data.SnapshotBlockDataAccessor", "sharedBiome", "downloaded and shared areas will not have their biomes in its own lookups"),
         Triple("journeymap.client.ui.component.dropdown.PopupMenu", "barUnderMenu", "the map bar will not show while its right-click menu is open"),
+        Triple("journeymap.client.ui.fullscreen.Fullscreen", "selfOnlyAtHome", "your arrow will show on another dimension's map"),
+        Triple("journeymap.client.model.map.MapState", "radarOnlyAtHome", "the creatures and players around you will show on another dimension's map"),
     )
 
     /**
