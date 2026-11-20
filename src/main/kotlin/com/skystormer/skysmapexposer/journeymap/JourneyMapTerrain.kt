@@ -36,7 +36,7 @@ import java.util.concurrent.Executors
  * it until JourneyMap has loaded it, as Xaero's map never shows a gap while it loads. Nothing is
  * asked of JourneyMap's one task thread, which it needs for loading its own map.
  *
- * Built to keep up with Xaero's map however far out you zoom:
+ * Built to keep up with Xaero's map however far out you zoom, and never to show a gap while zooming:
  *  - A picture covers more of the world the further out you are ([groupFor]): one JourneyMap region
  *    close up, up to 32 by 32 regions far out, so there are tens of pictures on screen, each a few
  *    hundred pixels across.
@@ -46,6 +46,10 @@ import java.util.concurrent.Executors
  *    are ([TileIndex]), and tiles are not checked with the server, as on Xaero's map.
  *  - Pictures fill in nearest first; a tile still on its way is stood in for by the coarsest one,
  *    blurry, where JourneyMap shows nothing.
+ *  - A picture zoomed or panned away from is kept aside, off the map, and goes straight back up when
+ *    wanted again; once all on screen is up, the next zoom out is built ahead, kept aside too, over
+ *    twice the room. So zooming out shows it at once, as Xaero's map has its tiles ready at every
+ *    size, and zooming in shows the coarser pictures until the sharper ones are up.
  *
  * Pictures come from the tiles [TileStore] keeps on disk; nothing is cached here but the pictures on
  * screen, which stay within the texture budget ([Config.textureBudgetMb]) and are let go once off
@@ -77,6 +81,10 @@ internal object JourneyMapTerrain {
         var checkedAt = 0L
         var decidedAt = 0L
         var complete = false
+        /** Built or kept off the map: a square of the next zoom out made ahead, or one zoomed away from. */
+        var hidden = false
+        /** When it was last on screen (or built ahead), for letting the oldest kept ones go. */
+        var lastWanted = 0L
     }
 
     private val squares = HashMap<Square, State>()
@@ -194,14 +202,27 @@ internal object JourneyMapTerrain {
         if (wanted.size > MAX_SQUARES) wanted.subList(MAX_SQUARES, wanted.size).clear()
         val wantedSet = wanted.toHashSet()
 
-        // Off screen: gone. A picture of another zoom stays until every new one over it is up.
-        for ((square, held) in squares.entries.filter { (it, _) -> it.ui == ui && it !in wantedSet }) {
+        // Off screen: kept aside, or gone. A picture of another zoom stays up until every new one over it is.
+        for ((square, held) in squares.entries.filter { (it, held) -> it.ui == ui && it !in wantedSet && !held.hidden }) {
             val onScreen = square.dimension == dimension && square.westX < maxX && square.westX + square.span > minX &&
                 square.northZ < maxZ && square.northZ + square.span > minZ
             val replaced = !onScreen || square.group == group || held.picture == null ||
                 wanted.none { it.overlaps(square) && squares[it]?.let { new -> new.made == null } ?: true }
-            if (replaced) forget(api, square)
+            if (replaced) keepAside(api, square, held, dimension)
         }
+        // Back on screen: a kept picture goes straight back up, as Xaero's tiles do, and is checked as usual.
+        for (square in wanted) {
+            val held = squares[square] ?: continue
+            held.lastWanted = now
+            if (!held.hidden) continue
+            held.hidden = false
+            if (held.picture?.unhide(api) == false) {
+                held.picture?.release()
+                held.picture = null
+                held.made = null
+            }
+        }
+        if (fullscreen) letGoOfKept(api)
 
         // What JourneyMap holds of this map just now, by region: what it is drawing.
         val folder = Folder(dimension, state.mapType, if (state.mapType == Context.MapType.Underground) state.chunkY else null)
@@ -241,6 +262,12 @@ internal object JourneyMapTerrain {
             if (squares[square]?.complete != true) waiting++
         }
         say(if (waiting > 0) "filling in $waiting of ${wanted.size} squares" else "")
+        // Once everything on screen is up: the next zoom out, over twice the room, built ahead and kept
+        // aside, so zooming out shows it at once rather than filling in from the middle.
+        if (fullscreen && waiting == 0 && building.isEmpty()) {
+            buildAhead(api, session, dimension, map, layout, folder, holding, factors, step, blocksPerPixel, seaFloor, now, ::isNear,
+                minX, maxX, minZ, maxZ, centreX, centreZ, started)
+        }
         if (mapped.size > MAX_REMEMBERED) mapped.entries.removeIf { now - it.value.at > FORGET_MS }
         if (seen.size > MAX_REMEMBERED) seen.entries.removeIf { now - it.value.at > FORGET_MS }
     }
@@ -467,6 +494,67 @@ internal object JourneyMapTerrain {
         }
     }
 
+    /**
+     * A square no longer on screen: on the full-screen map its picture is kept aside, off the map, to
+     * go straight back up if it is wanted again (zooming back, panning back); anything else is let go.
+     */
+    private fun keepAside(api: IClientAPI, square: Square, held: State, dimension: String) {
+        val picture = held.picture
+        if (square.ui != Context.UI.Fullscreen || square.dimension != dimension || picture == null) return forget(api, square)
+        building.remove(square)
+        picture.hide(api)
+        held.hidden = true
+    }
+
+    /** Kept-aside pictures beyond half the texture budget are let go, those wanted longest ago first. */
+    private fun letGoOfKept(api: IClientAPI) {
+        val kept = squares.entries.filter { (square, held) -> held.hidden && square.ui == Context.UI.Fullscreen }
+        var bytes = kept.sumOf { (_, held) -> held.picture?.let { it.side.toLong() * it.side * 4 } ?: 0L }
+        if (bytes <= budget() / 2) return
+        for ((square, held) in kept.sortedBy { it.value.lastWanted }) {
+            if (bytes <= budget() / 2) break
+            bytes -= held.picture?.let { it.side.toLong() * it.side * 4 } ?: 0L
+            forget(api, square)
+        }
+    }
+
+    /**
+     * The squares of the next zoom out, around what is on screen and twice as wide, worked out and
+     * built off the map, nearest first within what is left of this tick's slice; skipped if they would
+     * not fit half the texture budget.
+     */
+    private fun buildAhead(
+        api: IClientAPI, session: Session, dimension: String, map: String, layout: BlueMap.MapLayout, folder: Folder,
+        holding: Map<Long, RegionImageSet>, factors: List<Int>, step: Int, blocksPerPixel: Double, seaFloor: Boolean, now: Long,
+        isNear: (Int, Int) -> Boolean, minX: Double, maxX: Double, minZ: Double, maxZ: Double, centreX: Double, centreZ: Double, started: Long,
+    ) {
+        val aheadStep = factors.indexOfLast { it <= (blocksPerPixel * 2).coerceAtLeast(1.0) }
+        if (aheadStep <= step) return
+        val scale = factors[aheadStep]
+        val group = groupFor(scale)
+        val span = REGION * group
+        val width = maxX - minX
+        val height = maxZ - minZ
+        val aMinX = centreX - width
+        val aMaxX = centreX + width
+        val aMinZ = centreZ - height
+        val aMaxZ = centreZ + height
+        val ahead = ArrayList<Square>()
+        for (z in Math.floorDiv(aMinZ.toInt(), span)..Math.floorDiv(aMaxZ.toInt(), span)) {
+            for (x in Math.floorDiv(aMinX.toInt(), span)..Math.floorDiv(aMaxX.toInt(), span)) ahead.add(Square(dimension, x, z, group, Context.UI.Fullscreen))
+        }
+        if (ahead.size > MAX_SQUARES || ahead.size * pictureBytes(span, scale) > budget() / 2) return
+        ahead.sortBy { val dx = it.westX + it.span / 2.0 - centreX; val dz = it.northZ + it.span / 2.0 - centreZ; dx * dx + dz * dz }
+        val useIndex = layout.lodCount > 1 && ((aMaxX - aMinX) / layout.tileSize + 1) * ((aMaxZ - aMinZ) / layout.tileSize + 1) > TileIndex.ABOVE
+        val pass = Pass(session, map, layout, scale, holding, mapTypeOf(folder), useIndex, seaFloor, now, isNear, aMinX, aMaxX, aMinZ, aMaxZ, centreX, centreZ)
+        for (square in ahead) {
+            if (System.nanoTime() - started > SLICE_NS) return
+            if (square in building || squares.containsKey(square)) continue
+            val held = State().also { it.hidden = true; it.lastWanted = now; squares[square] = it }
+            decide(api, square, held, pass, folder, nearYou = false)
+        }
+    }
+
     /** Leaving a world: JourneyMap drops our overlays ([JourneyMapAdapter.leave]); this frees the pictures. */
     fun forget() {
         generation++
@@ -613,7 +701,7 @@ internal object JourneyMapTerrain {
         }
         building.remove(square)
         val fullscreen = square.ui == Context.UI.Fullscreen
-        val picture = RegionPicture.show(api, "terrain", square.dimension, square.westX, square.northZ, scale, image, fullscreen, TERRAIN_ORDER)
+        val picture = RegionPicture.show(api, "terrain", square.dimension, square.westX, square.northZ, scale, image, fullscreen, TERRAIN_ORDER, visible = !held.hidden)
         held.picture?.let { remove(api, square, it) }
         held.picture = picture
         held.made = made
@@ -626,7 +714,7 @@ internal object JourneyMapTerrain {
 
     /** "6 pictures of terrain" on JourneyMap now, and why not more if something is in the way, for `/mapexposer`. */
     fun summary(): String {
-        val full = squares.count { (square, held) -> square.ui == Context.UI.Fullscreen && held.picture != null }
+        val full = squares.count { (square, held) -> square.ui == Context.UI.Fullscreen && held.picture != null && !held.hidden }
         val mini = squares.count { (square, held) -> square.ui == Context.UI.Minimap && held.picture != null }
         return "$full picture${if (full == 1) "" else "s"} of terrain" + (if (note.isEmpty()) "" else " ($note)") +
             ", $mini on the minimap" + (if (minimapNote.isEmpty()) "" else " ($minimapNote)")
