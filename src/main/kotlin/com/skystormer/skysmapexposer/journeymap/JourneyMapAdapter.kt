@@ -89,6 +89,8 @@ object JourneyMapAdapter : MapAdapter {
             Triple("journeymap.common.chunk.JMChunkStorage", "write", "downloaded and shared areas in saved terrain files (its chunk cache)"),
             Triple("journeymap.client.JourneymapClient", "getFullMapProperties", "the cave notice's Show the surface button"),
             Triple("journeymap.client.ui.fullscreen.Fullscreen", "state", "the cave notice's Show the surface button"),
+            Triple("journeymap.client.model.region.LodChainRegistry", "registerRegion", "downloads, imports and undo showing at once (they show after rejoining)"),
+            Triple("journeymap.client.model.region.LodRegionCache", "invalidate", "downloads, imports and undo showing zoomed out at once"),
         ).filter { (type, method, _) ->
             try {
                 Class.forName(type).methods.none { it.name == method }

@@ -8,6 +8,9 @@ import com.skystormer.skysmapexposer.mixin.journeymap.ImageHolderAccessor
 import journeymap.client.io.FileHandler
 import journeymap.client.model.map.MapType
 import journeymap.client.model.region.ImageHolder
+import journeymap.client.model.region.LodChainRegistry
+import journeymap.client.model.region.LodRegionCache
+import journeymap.client.model.region.RegionCoord
 import journeymap.client.model.region.RegionImageCache
 import net.minecraft.client.Minecraft
 import java.awt.image.BufferedImage
@@ -155,6 +158,33 @@ internal object JourneyMapFiles {
             else -> false
         }
     }
+
+    /**
+     * Tells JourneyMap that [dimension]'s day map region ([regionX], [regionZ]) in [folder] was written
+     * ([exists]) or taken away outside it, as it tells itself when it saves one: the region goes on (or
+     * off) the list of files it draws, which it reads once and so would never show a region new since
+     * (a download into a cleared map stayed black at every zoom), and its zoomed-out copies are made
+     * again, or it would keep drawing the old ones zoomed out.
+     */
+    fun written(dimension: String, folder: Path, regionX: Int, regionZ: Int, exists: Boolean) {
+        try {
+            val type = MapType.day(levelKey(dimension))
+            if (exists) LodChainRegistry.INSTANCE.registerRegion(type, regionX, regionZ)
+            else LodChainRegistry.INSTANCE.removeRegion(type, regionX, regionZ)
+            LodChainRegistry.INSTANCE.invalidate(type, regionX, regionZ, folder.toFile())
+            val world = FileHandler.getJMWorldDir(Minecraft.getInstance()) ?: return
+            val coord = RegionCoord.fromRegionPos(world, regionX, regionZ, type.dimension)
+            for (lod in 1..MAX_LOD) LodRegionCache.INSTANCE.invalidate(coord, type, lod)
+        } catch (e: Throwable) {
+            if (!warnedWritten) Log.warn("Could not tell JourneyMap about a region written into its map; it shows once you rejoin: {}", e.toString())
+            warnedWritten = true
+        }
+    }
+
+    @Volatile private var warnedWritten = false
+
+    /** JourneyMap's levels of zoomed-out copies, as its own regions invalidate them. */
+    private const val MAX_LOD = 7
 
     /** Beside a backup: there was no file before. */
     private const val ABSENT = ".none"

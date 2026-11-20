@@ -490,6 +490,7 @@ internal object JourneyMapEdits {
             if (!changed) return
             JourneyMapFiles.backUp(file, job.backups.resolve(file.fileName))
             JourneyMapFiles.write(file, pixels)
+            JourneyMapFiles.written(job.dimension, job.folder, edit.regionX, edit.regionZ, exists = true)
             job.changed++
             JourneyMapTerrain.changed(job.dimension, edit.regionX, edit.regionZ)
         } catch (e: Exception) {
@@ -565,7 +566,12 @@ internal object JourneyMapEdits {
                     }
                     continue
                 }
-                if (JourneyMapFiles.restore(JourneyMapFiles.regionFile(folder, rx.toInt(), rz.toInt()), backups.resolve(name))) restored++
+                val file = JourneyMapFiles.regionFile(folder, rx.toInt(), rz.toInt())
+                if (JourneyMapFiles.restore(file, backups.resolve(name))) {
+                    restored++
+                    JourneyMapFiles.written(dimension, folder, rx.toInt(), rz.toInt(), exists = Files.exists(file))
+                    JourneyMapTerrain.changed(dimension, rx.toInt(), rz.toInt())
+                }
             }
         }
         // The chunks it put in JourneyMap's chunk cache, taken back too, off the client thread.
