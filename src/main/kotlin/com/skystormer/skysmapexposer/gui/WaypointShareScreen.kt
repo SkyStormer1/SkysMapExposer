@@ -5,6 +5,8 @@ import com.skystormer.skysmapexposer.gui.SafeTooltip
 import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.MapMods
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
@@ -15,16 +17,17 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
- * Picks waypoints to share: every one of the dimension you are in, from all its sets, a page at a
- * time, narrowed by a search box; click a row to tick it. "Share with…" then picks the player
+ * Picks waypoints to share: every one of a dimension, from all its sets (the one you are in to
+ * start with; the line under the title goes to the next), a page at a time, narrowed by a search
+ * box; click a row to tick it. "Share with…" then picks the player
  * ([ShareScreen]) and sends them in chat ([ChatShare.shareWaypoints]).
  *
  * Only opened with Xaero's Minimap installed.
  */
 class WaypointShareScreen(
     private val parent: Screen?,
-    private val dimensionId: String,
-    private val entries: List<ShareableWaypoint>,
+    private var dimensionId: String,
+    private var entries: List<ShareableWaypoint>,
 ) : Screen(Component.literal("Share waypoints")) {
 
     private val picked: MutableSet<ShareableWaypoint> = Collections.newSetFromMap(IdentityHashMap())
@@ -40,15 +43,16 @@ class WaypointShareScreen(
     override fun init() {
         val width = minOf(WIDTH, this.width - 32)
         val left = (this.width - width) / 2
-        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 110) / 2)
+        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 122) / 2)
         val sets = entries.map { it.set }.distinct().size
         val name = Ui.dimensionName(dimensionId) ?: dimensionId
 
         addRenderableWidget(StringWidget(left, y, width, font.lineHeight, title, font))
         y += font.lineHeight + GAP
-        addRenderableWidget(StringWidget(left, y, width, font.lineHeight,
-            Component.literal("§7${entries.size} in the $name" + if (sets > 1) ", from $sets sets" else ""), font))
-        y += font.lineHeight + GAP * 2
+        // The dimension's waypoints, any of the three, wherever you are: click for the next.
+        addRenderableWidget(Button.builder(Component.literal("${entries.size} in the $name" + (if (sets > 1) ", from $sets sets" else "") + "  ▸")) { nextDimension() }
+            .bounds(left, y, width, ROW).tooltip(SafeTooltip.of("Shows the waypoints of the next of the Overworld, the Nether and the End.")).build())
+        y += ROW + GAP * 2
 
         val box = EditBox(font, left, y, width, ROW, Component.literal("Search"))
         box.setHint(Component.literal("Search waypoints"))
@@ -86,6 +90,16 @@ class WaypointShareScreen(
         fill()
     }
 
+    /** The waypoints of the next of the Overworld, the Nether and the End; none where the map has none for it yet. */
+    private fun nextDimension() {
+        val next = DIMENSIONS[(DIMENSIONS.indexOf(dimensionId) + 1) % DIMENSIONS.size]
+        dimensionId = next
+        entries = MapMods.adapter?.myWaypoints(next)?.second.orEmpty()
+        picked.clear()
+        page = 0
+        rebuildWidgets()
+    }
+
     private fun toggle(row: Int) {
         val entry = shown.getOrNull(page * ROWS + row) ?: return
         if (!picked.add(entry)) picked.remove(entry)
@@ -108,7 +122,7 @@ class WaypointShareScreen(
             rows.first().apply {
                 visible = true
                 active = false
-                message = Component.literal(if (entries.isEmpty()) "You have no waypoints here" else "None by that name")
+                message = Component.literal(if (entries.isEmpty()) "You have no waypoints there" else "None by that name")
             }
         }
         pageLabel?.message = Component.literal("§7Page ${page + 1} of $pages · ${picked.size} ticked")
@@ -121,7 +135,8 @@ class WaypointShareScreen(
     private fun next() {
         // In the order they are listed, not the order they were ticked.
         val chosen = entries.filter { it in picked }.map { it.waypoint }
-        Ui.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent) { name ->
+        Ui.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent,
+            everyone = { ChatShare.shareWaypointsWithEveryone(dimensionId, chosen) }) { name ->
             ChatShare.shareWaypoints(name, dimensionId, chosen)
         })
     }
@@ -142,5 +157,6 @@ class WaypointShareScreen(
         const val ROWS = 8
         const val ROW = 20
         const val GAP = 4
+        val DIMENSIONS = listOf(Config.OVERWORLD, Config.NETHER, Config.END)
     }
 }

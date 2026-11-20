@@ -27,7 +27,9 @@ import java.util.concurrent.ThreadLocalRandom
  *
  * Nobody without this mod is sent any of that. A player not yet known to have it first gets one
  * readable line saying what this is; their client, if it has the mod, hides it and answers, and
- * only then does the rest follow. With no answer, nothing more is sent.
+ * only then does the rest follow. With no answer, waypoints go instead as Xaero's own waypoint
+ * lines ([ChatCoords.xaeroLine]), which Xaero's Minimap and JourneyMap read; nothing else is sent.
+ * Waypoints can also go to everyone, as those lines in chat ([shareWaypointsWithEveryone]).
  *
  * Pings ([PlayerPings]) go the same way at the same pace, one message each, without asking first:
  * they only go to players you put on your trusted list, and read as a ping if they lack the mod.
@@ -45,6 +47,8 @@ object ChatShare {
     private val MUTED = Regex("(you are|you're|you have been) (now )?muted([^a-z]|$)", RegexOption.IGNORE_CASE)
     private val NO_MSG = Regex("unknown (or incomplete )?command", RegexOption.IGNORE_CASE)
     private const val KEEP_RECEIVED = 5
+    /** Most waypoints sent as Xaero's lines, a chat line each. */
+    private const val MAX_PLAIN = 25
 
     // ---- sending ----
 
@@ -52,6 +56,8 @@ object ChatShare {
         /** Who it goes to, by private message. */
         val to: String,
         val source: ShareFormat.Source,
+        /** Waypoints only: the same as Xaero's waypoint lines ([ChatCoords.xaeroLine]), sent instead to someone without this mod. */
+        val plain: List<String>? = null,
     ) {
         var messages: List<String>? = null
         var next = 0
@@ -65,12 +71,16 @@ object ChatShare {
     /** Pings waiting for their turn: who to, and the message. */
     private val pings = ArrayDeque<Pair<String, String>>()
 
+    /** Xaero's waypoint lines waiting for their turn: who to (null for everyone, in chat), and the line. */
+    private val plain = ArrayDeque<Pair<String?, String>>()
+    private var plainSent = 0
+
     private var ticks = 0
     private var lastSent = -CLOCK_STOPPED
     /** The world's clock at the last message, which follows the server's ticks. */
     private var lastSentTime = Long.MIN_VALUE / 2
 
-    val sending: Boolean get() = outgoing != null
+    val sending: Boolean get() = outgoing != null || plain.isNotEmpty()
 
     /** The names of everyone else on the server, to share with. */
     fun others(): List<String> {
@@ -81,9 +91,12 @@ object ChatShare {
 
     private fun me(): String = Minecraft.getInstance().player?.gameProfile?.name() ?: "?"
 
-    /** Shares [waypoints] of [dimensionId] with player [to]. */
+    /**
+     * Shares [waypoints] of [dimensionId] with player [to]: packed small if they have this mod, else
+     * as Xaero's waypoint lines (at most [MAX_PLAIN]), which Xaero's Minimap and JourneyMap read.
+     */
     fun shareWaypoints(to: String, dimensionId: String, waypoints: List<ShareFormat.SharedWaypoint>): String {
-        if (outgoing != null) return busy()
+        if (sending) return busy()
         val name = others().firstOrNull { it.equals(to, ignoreCase = true) } ?: return "$to is not on the server"
         if (waypoints.isEmpty()) return "No waypoints picked"
         if (waypoints.size > ShareFormat.MAX_WAYPOINTS) return "That is ${waypoints.size} waypoints; pick at most ${ShareFormat.MAX_WAYPOINTS}"
@@ -95,8 +108,22 @@ object ChatShare {
             it.width <= ShareFormat.MAX_SIDE && it.height <= ShareFormat.MAX_SIDE
         } ?: ShareFormat.Area(area.left, area.top, area.left, area.top))
         val source = ShareFormat.WaypointSource(ShareFormat.packWaypoints(header, waypoints), waypoints.size)
-        outgoing = Outgoing(name, source)
+        val lines = waypoints.takeIf { it.size <= MAX_PLAIN }?.map { ChatCoords.xaeroLine(dimensionId, it) }
+        outgoing = Outgoing(name, source, lines)
         return "Sharing ${source.label} with $name…"
+    }
+
+    /**
+     * Shares [waypoints] of [dimensionId] with everyone, in chat, as Xaero's waypoint lines: anyone
+     * with Xaero's Minimap or JourneyMap can add them, this mod or not.
+     */
+    fun shareWaypointsWithEveryone(dimensionId: String, waypoints: List<ShareFormat.SharedWaypoint>): String {
+        if (sending) return busy()
+        if (waypoints.isEmpty()) return "No waypoints picked"
+        if (waypoints.size > MAX_PLAIN) return "That is ${waypoints.size} waypoints; in chat for everyone, pick at most $MAX_PLAIN"
+        waypoints.mapTo(plain) { null to ChatCoords.xaeroLine(dimensionId, it) }
+        plainSent = 0
+        return "Sharing ${waypoints.size} waypoint${if (waypoints.size == 1) "" else "s"} in chat…"
     }
 
     private fun busy() = "Already sharing with someone; /mapexposer share cancel stops it"
@@ -119,6 +146,10 @@ object ChatShare {
     }
 
     fun cancel(): Boolean {
+        if (plain.isNotEmpty()) {
+            plain.clear()
+            return true
+        }
         val out = outgoing ?: return false
         outgoing = null
         Log.info("Sharing with {} cancelled after {} messages", out.to, out.sent)
@@ -129,6 +160,7 @@ object ChatShare {
     fun forget() {
         outgoing = null
         pings.clear()
+        plain.clear()
         inbox.forget()
         receivedWaypoints.clear()
     }
@@ -136,6 +168,7 @@ object ChatShare {
     fun tick() {
         ticks++
         tickPings()
+        tickPlain()
         outgoing?.let { tickOutgoing(it) }
         inbox.tick()
     }
@@ -160,6 +193,20 @@ object ChatShare {
         connection.sendCommand("msg $to $body")
         lastSent = ticks
         lastSentTime = Minecraft.getInstance().level?.gameTime ?: 0L
+    }
+
+    /** The next of Xaero's waypoint lines, in chat or by private message; once all are out, says so. */
+    private fun tickPlain() {
+        if (plain.isEmpty() || !mayTalk()) return
+        val connection = Minecraft.getInstance().player?.connection ?: return
+        val (to, line) = plain.removeFirst()
+        if (to == null) connection.sendChat(line)
+        else if (others().any { it == to }) connection.sendCommand("msg $to $line")
+        else return stop("Sharing stopped: $to left the server").also { plain.clear() }
+        lastSent = ticks
+        lastSentTime = Minecraft.getInstance().level?.gameTime ?: 0L
+        plainSent++
+        if (plain.isEmpty()) Ui.say("Shared $plainSent waypoint${if (plainSent == 1) "" else "s"}" + (to?.let { " with $it" } ?: " in chat"))
     }
 
     private fun tickPings() {
@@ -187,7 +234,13 @@ object ChatShare {
                 out.askedAt = now
                 Ui.say("Checking that ${out.to} has Sky's Map Exposer…")
             } else if (out.askedAt != 0L && now - out.askedAt > ANSWER_WAIT) {
-                stop("${out.to} did not answer, so they probably do not have Sky's Map Exposer; nothing was sent")
+                val lines = out.plain
+                if (lines == null) return stop("${out.to} did not answer, so they probably do not have Sky's Map Exposer; nothing was sent")
+                // Without this mod, as Xaero's own waypoint lines, which their map reads.
+                outgoing = null
+                lines.mapTo(plain) { out.to to it }
+                plainSent = 0
+                Ui.say("${out.to} has no Sky's Map Exposer, so the waypoints go as Xaero's waypoint lines, which Xaero's Minimap and JourneyMap read")
             }
             return
         }

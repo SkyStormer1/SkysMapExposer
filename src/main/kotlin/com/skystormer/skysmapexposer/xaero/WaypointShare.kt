@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.levelKey
+import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.ShareableWaypoint
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Log
@@ -23,10 +24,14 @@ object WaypointShare {
     /** A set's name as Xaero shows it: its default set is named by a translation key, which this turns into words. */
     fun setName(name: String): String = I18n.get(name)
 
-    /** The dimension you are in and its waypoints, every set, without temporary ones; null if Xaero has none open. */
-    fun mine(): Pair<String, List<ShareableWaypoint>>? {
-        val world = BuiltInHudModules.MINIMAP.currentSession?.worldManager?.currentWorld ?: return null
-        val dimensionId = world.dimId?.identifier()?.toString() ?: return null
+    /**
+     * [dimension] (the one you are in when null) and its waypoints, every set, without temporary
+     * ones; null if Xaero has none for it (one you have never been to).
+     */
+    fun mine(dimension: String? = null): Pair<String, List<ShareableWaypoint>>? {
+        val world = (if (dimension == null) BuiltInHudModules.MINIMAP.currentSession?.worldManager?.currentWorld
+        else Waypoints.worldFor(levelKey(dimension))) ?: return null
+        val dimensionId = dimension ?: world.dimId?.identifier()?.toString() ?: return null
         val entries = ArrayList<ShareableWaypoint>()
         for (set in world.iterableWaypointSets) {
             for (waypoint in set.waypoints) {
@@ -42,6 +47,20 @@ object WaypointShare {
             }
         }
         return dimensionId to entries
+    }
+
+    /**
+     * [original] (one of Xaero's Minimap's waypoints, as the world map holds it) to share, with the
+     * dimension whose waypoints it is among; null if it is in none of the three.
+     */
+    fun shareable(original: Any?): Pair<String, ShareFormat.SharedWaypoint>? {
+        val waypoint = original as? Waypoint ?: return null
+        val dimension = listOfNotNull(MarkerElements.worldMapDimension(), Config.OVERWORLD, Config.NETHER, Config.END).distinct().firstOrNull { dimension ->
+            Waypoints.worldFor(levelKey(dimension))?.iterableWaypointSets?.any { set -> set.waypoints.any { it === waypoint } } == true
+        } ?: return null
+        return dimension to ShareFormat.SharedWaypoint(
+            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
+        )
     }
 
     /**

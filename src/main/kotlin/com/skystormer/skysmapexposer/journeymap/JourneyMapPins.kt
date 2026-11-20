@@ -250,7 +250,7 @@ internal object JourneyMapPins {
         val api = JourneyMapAdapter.api ?: return
         menu.addMenuItem("Save as waypoint") { Ui.say(JourneyMapWaypoints.save(api, pin, dimension, temporary = false)) }
         menu.addMenuItem("Set temporary waypoint") { Ui.say(JourneyMapWaypoints.save(api, pin, dimension, temporary = true)) }
-        menu.addMenuItem("Copy coordinates") { Ui.copy(pin.x, pin.y, pin.z, dimension) }
+        menu.addMenuItem("Copy coordinates") { Ui.copy(pin.x, pin.y, pin.z, dimension, pin.label) }
     }
 
     // ---- pictures ----

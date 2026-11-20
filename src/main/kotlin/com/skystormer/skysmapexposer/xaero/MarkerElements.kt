@@ -150,7 +150,7 @@ object MarkerElements {
             // dimension their coordinates are in.
             options.add(
                 MapMenus.option("Copy coordinates", options.size, target) {
-                    Ui.copy(pin.x, pin.y, pin.z, worldMapDimension())
+                    Ui.copy(pin.x, pin.y, pin.z, worldMapDimension(), pin.label)
                 }
             )
             if (FabricLoader.getInstance().isModLoaded("skysmapshapes")) {

@@ -44,22 +44,21 @@ object Ui {
     }
 
     /**
-     * Puts a position on the clipboard, as `-350 72 200 (Overworld)` — the numbers first, the way
-     * `/tp` and most chat messages want them, and the dimension after, because coordinates from a
-     * map you can switch between dimensions mean nothing without it.
+     * Puts a position on the clipboard as JourneyMap's Chat Position writes it,
+     * `[name:"Base", x:-350, y:72, z:200, dim:minecraft:overworld]` ([ChatCoords]), so pasted in
+     * chat it is clickable for players of either map: to save as a waypoint, or to show on the map.
      *
      * Answers on the action bar, which only this client sees.
      */
-    fun copy(x: Double, y: Double?, z: Double, dimension: String?) =
-        copy(floor(x).toInt(), y?.let { floor(it).toInt() }, floor(z).toInt(), dimension)
+    fun copy(x: Double, y: Double?, z: Double, dimension: String?, name: String? = null) =
+        copy(floor(x).toInt(), y?.let { floor(it).toInt() }, floor(z).toInt(), dimension, name)
 
-    fun copy(x: Int, y: Int?, z: Int, dimension: String?) {
-        val position = if (y == null) "$x $z" else "$x $y $z"
-        val name = dimensionName(dimension)
-        val text = if (name == null) position else "$position ($name)"
+    fun copy(x: Int, y: Int?, z: Int, dimension: String?, name: String? = null) {
+        val where = dimension ?: Minecraft.getInstance().level?.dimension()?.identifier()?.toString() ?: Config.OVERWORLD
+        val text = ChatCoords.format(name, x, y, z, where)
         try {
             Minecraft.getInstance().keyboardHandler.setClipboard(text)
-            say("Copied $text")
+            say("Copied ${name?.let { "$it, " } ?: ""}${x}, ${y ?: "~"}, $z in the ${dimensionName(where)}: paste it in chat to share")
         } catch (e: Throwable) {
             Log.error("Could not copy $text to the clipboard", e)
             say("Could not copy $text to the clipboard")

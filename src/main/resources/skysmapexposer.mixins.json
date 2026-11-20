@@ -4,6 +4,7 @@
   "package": "com.skystormer.skysmapexposer.mixin",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
+    "ChatComponentMixin",
     "GuiMapMixin",
     "MapPixelAccess",
     "MinimapElementWrapperMixin",

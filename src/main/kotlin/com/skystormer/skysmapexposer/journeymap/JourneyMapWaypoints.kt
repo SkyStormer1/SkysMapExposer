@@ -73,28 +73,23 @@ internal object JourneyMapWaypoints {
     }
 
     /** Your waypoints of the dimension you are in, but not this mod's temporary ones, with the group each is in, to share. */
-    fun mine(api: IClientAPI): Pair<String, List<ShareableWaypoint>>? {
+    fun mine(api: IClientAPI, dimension: String? = null): Pair<String, List<ShareableWaypoint>>? {
         val level = Minecraft.getInstance().level ?: return null
-        val dimension = level.dimension().identifier().toString()
-        val waypoints = api.getAllWaypoints(level.dimension()).filter { !isTemporary(it) }
-        return dimension to waypoints.map { w ->
+        val wanted = dimension ?: level.dimension().identifier().toString()
+        val waypoints = api.getAllWaypoints(levelKey(wanted)).filter { !isTemporary(it) }
+        return wanted to waypoints.map { w ->
             val group = w.groupId?.let { api.getWaypointGroup(it)?.name } ?: "JourneyMap"
-            ShareableWaypoint(group, shareable(w))
+            ShareableWaypoint(group, shareable(w, wanted))
         }
     }
 
     /**
-     * [waypoint] to share, where JourneyMap's full-screen map shows it: JourneyMap gives a waypoint's
-     * place at the scale of where you are, and on a map of another dimension at that one's
-     * ([JourneyMapDimension.shownForWaypoints]). Client thread.
+     * [waypoint] to share as in [dimension]: JourneyMap gives a waypoint's place at the scale of
+     * where you are, so a Nether one read from the Overworld comes out eight times too far; read at
+     * [dimension]'s scale ([JourneyMapDimension.inScaleOf]). Client thread.
      */
-    fun shareable(waypoint: Waypoint): ShareFormat.SharedWaypoint {
-        JourneyMapDimension.enterShown()
-        try {
-            return ShareFormat.SharedWaypoint(waypoint.name, WaypointRules.initials(waypoint.name), waypoint.x, waypoint.y, waypoint.z, true, WaypointRules.nearest(waypoint.color))
-        } finally {
-            JourneyMapDimension.leaveShown()
-        }
+    fun shareable(waypoint: Waypoint, dimension: String): ShareFormat.SharedWaypoint = JourneyMapDimension.inScaleOf(levelKey(dimension)) {
+        ShareFormat.SharedWaypoint(waypoint.name, WaypointRules.initials(waypoint.name), waypoint.x, waypoint.y, waypoint.z, true, WaypointRules.nearest(waypoint.color))
     }
 
     /** Leaving a world: this mod's temporary waypoints go, as Xaero's do. */

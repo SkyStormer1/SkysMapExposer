@@ -34,7 +34,9 @@ import java.nio.file.Path
  * - `key <key>` presses a key once, by the game's name for it, e.g. `key.keyboard.m`
  * - `screenshot` takes a screenshot (F2's), into `screenshots/`
  * - `waypoint <x> <y> <z> <name>` adds a waypoint where you are, as an added shared one is
+ * - `waypointin <dimension> <x> <y> <z> <name>` adds one to that dimension's waypoints
  * - `mywaypoints` logs the waypoints the installed map would offer to share
+ * - `shareeveryone [dimension]` shares two of your waypoints of a dimension with everyone, in chat
  * - `click <text>` runs the newest chat button reading that, e.g. `click [Add waypoints]`
  * - `fill <blocks>` starts a terrain fill that far around you, as the settings button does
  * - `fillwait` waits for a terrain fill to finish, then logs how it went
@@ -119,7 +121,11 @@ object AutoTest {
                     val name = parts.getOrElse(4) { "Test" }
                     Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(parts[0], "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
                 }
-                "mywaypoints" ->Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
+                "shareeveryone" -> {
+                    val mine = MapMods.adapter?.myWaypoints(rest.ifBlank { null })
+                    Log.info("AutoTest: {}", mine?.let { ChatShare.shareWaypointsWithEveryone(it.first, it.second.take(2).map { w -> w.waypoint }) } ?: "no waypoints")
+                }
+                "mywaypoints" -> Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
                 "click" -> {
                     val command = buttonCommand(client, rest)
                     if (command == null) Log.warn("AutoTest: no chat button '{}'", rest)

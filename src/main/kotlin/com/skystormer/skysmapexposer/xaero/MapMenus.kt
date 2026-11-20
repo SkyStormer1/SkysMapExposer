@@ -9,6 +9,8 @@ import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
+import com.skystormer.skysmapexposer.gui.ShareScreen
+import com.skystormer.skysmapexposer.mixin.menu.RightClickOptionAccess
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.ConfirmScreen
@@ -48,7 +50,7 @@ object MapMenus {
     ) {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
-            options.add(option("Copy coordinates", options.size, target) { Ui.copy(x, null, z, where) })
+            options.add(option("Copy coordinates", options.size, target) { Ui.copy(x, y, z, where) })
             addSaveOptions(options, target, selection)
             options.add(waypointsOption(options.size, target))
             if (where != null) options.add(pingOption(options.size, target, x, y, z, where))
@@ -178,7 +180,7 @@ object MapMenus {
                 when {
                     !Waypoints.available() -> "§7Needs Xaero's Minimap."
                     busy -> "§7Something is already being shared; /mapexposer share cancel stops it."
-                    else -> "§7Pick waypoints of the dimension you are in, then a player who has this mod. Sent by private message."
+                    else -> "§7Pick waypoints of any dimension, then a player or everyone. A player with this mod gets them packed by private message; anyone else gets Xaero's waypoint lines."
                 }
             ),
         )
@@ -248,6 +250,24 @@ object MapMenus {
     }
 
 
+
+    /**
+     * A waypoint's menu on the world map (`WaypointMenuMixin`): Xaero's Share, which posts it in
+     * global chat, becomes this mod's, to one player or to everyone ([ShareScreen]).
+     */
+    @JvmStatic
+    fun replaceWaypointShare(options: ArrayList<RightClickOption>, waypoint: xaero.map.mods.gui.Waypoint, target: IRightClickableElement) {
+        guard {
+            val at = options.indexOfFirst { (it as? RightClickOptionAccess)?.`skysmapexposer$name`() == "gui.xaero_right_click_waypoint_share" }
+            if (at < 0 || !Waypoints.available()) return@guard
+            val (dimension, shared) = WaypointShare.shareable(waypoint.original) ?: return@guard
+            options[at] = option("Share…", at, target) { parent ->
+                Ui.open(ShareScreen(parent, "Share ${shared.name} with…", everyone = { ChatShare.shareWaypointsWithEveryone(dimension, listOf(shared)) }) { name ->
+                    ChatShare.shareWaypoints(name, dimension, listOf(shared))
+                })
+            }
+        }
+    }
 
     fun option(name: String, index: Int, target: IRightClickableElement, action: (Screen) -> Unit) =
         object : RightClickOption(name, index, target) {

@@ -6,7 +6,9 @@
   "client": [
     "DropDownWidgetAccess",
     "DropDownWidgetMixin",
-    "RightClickMenuAccess"
+    "RightClickMenuAccess",
+    "RightClickOptionAccess",
+    "WaypointMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 0

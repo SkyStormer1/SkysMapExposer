@@ -11,14 +11,15 @@ import net.minecraft.network.chat.Component
 
 /**
  * Picks who to share with: everyone else on the server, a page at a time (the arrows or the
- * scroll wheel), narrowed by a search box. Picking a name
- * hands it to [share], goes to [after] (the map) and says what [share] said; Cancel goes back to
- * [parent].
+ * scroll wheel), narrowed by a search box; or, given [everyone], everyone at once in chat. Picking
+ * hands the name to [share] (or calls [everyone]), goes to [after] (the map) and says what it said;
+ * Cancel goes back to [parent].
  */
 class ShareScreen(
     private val parent: Screen?,
     title: String,
     private val after: Screen? = parent,
+    private val everyone: (() -> String)? = null,
     private val share: (String) -> String,
 ) : Screen(Component.literal(title)) {
 
@@ -33,7 +34,8 @@ class ShareScreen(
     override fun init() {
         val width = minOf(WIDTH, this.width - 32)
         val left = (this.width - width) / 2
-        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 76) / 2)
+        val extra = if (everyone != null) ROW + GAP else 0
+        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 76 + extra) / 2)
 
         addRenderableWidget(StringWidget(left, y, width, font.lineHeight, title, font))
         y += font.lineHeight + GAP * 2
@@ -47,6 +49,11 @@ class ShareScreen(
         previous = addRenderableWidget(Button.builder(Component.literal("<")) { turn(-1) }.bounds(left + width - arrows * 2 + GAP, y, ROW, ROW).build())
         nextPage = addRenderableWidget(Button.builder(Component.literal(">")) { turn(1) }.bounds(left + width - arrows + GAP, y, ROW, ROW).build())
         y += ROW + GAP * 2
+        everyone?.let { toAll ->
+            addRenderableWidget(Button.builder(Component.literal("Everyone, in chat")) { done(toAll()) }.bounds(left, y, width, ROW)
+                .tooltip(SafeTooltip.of("Posts them in chat as Xaero's waypoint lines: anyone with Xaero's Minimap or JourneyMap can add them, with this mod or without.")).build())
+            y += ROW + GAP
+        }
         rows.clear()
         repeat(ROWS) {
             val row = Button.builder(Component.empty()) { button -> pick(button.message.string) }.bounds(left, y, width, ROW).build()
@@ -90,8 +97,9 @@ class ShareScreen(
         }
     }
 
-    private fun pick(name: String) {
-        val said = share(name)
+    private fun pick(name: String) = done(share(name))
+
+    private fun done(said: String) {
         Ui.open(after)
         Ui.say(said)
     }

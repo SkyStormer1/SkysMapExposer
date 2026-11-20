@@ -324,7 +324,7 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun cancelDownload(): Boolean = JourneyMapEdits.cancel()
 
-    override fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = api?.let(JourneyMapWaypoints::mine)
+    override fun myWaypoints(dimension: String?): Pair<String, List<ShareableWaypoint>>? = api?.let { JourneyMapWaypoints.mine(it, dimension) }
 
     override fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =
         api?.let { JourneyMapWaypoints.addShared(it, dimension, from, waypoints) } ?: "JourneyMap has not started this mod's plugin"

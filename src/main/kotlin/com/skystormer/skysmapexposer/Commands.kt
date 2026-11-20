@@ -93,6 +93,11 @@ object Commands {
                 )
                 .then(ClientCommands.literal("refresh").executes(::refresh))
                 .then(
+                    // What a clickable position in chat runs ([ChatCoords]).
+                    ClientCommands.literal("chatpos").then(ClientCommands.argument("id", IntegerArgumentType.integer(0))
+                        .executes { ChatCoords.clicked(IntegerArgumentType.getInteger(it, "id"))?.let { text -> Ui.reply(it, text) } ?: 1 })
+                )
+                .then(
                     ClientCommands.literal("surface").then(
                         ClientCommands.argument("dimension", StringArgumentType.greedyString()).executes {
                             val dimension = StringArgumentType.getString(it, "dimension")

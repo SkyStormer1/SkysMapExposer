@@ -65,8 +65,8 @@ interface MapAdapter {
     /** Bumped whenever another of [unknownBiomes] turns up. */
     val unknownBiomesVersion: Int get() = 0
 
-    /** Your waypoints of the dimension you are in, to share; null with none to read. */
-    fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? = null
+    /** Your waypoints of [dimension] (the one you are in when null), to share; null with none to read. */
+    fun myWaypoints(dimension: String? = null): Pair<String, List<ShareableWaypoint>>? = null
 
     /** Adds waypoints [from] someone else to [dimension]; what to tell you. */
     fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =

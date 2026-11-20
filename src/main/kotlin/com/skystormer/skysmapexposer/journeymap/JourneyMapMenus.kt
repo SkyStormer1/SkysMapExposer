@@ -142,8 +142,10 @@ internal object JourneyMapMenus {
         val map = event.fullscreen ?: return
         val dimension = map.uiState?.dimension?.identifier()?.toString() ?: return
         event.popupMenu.addMenuItem("Share…") {
-            val shared = JourneyMapWaypoints.shareable(waypoint)
-            Ui.open(ShareScreen(map.screen, "Share ${waypoint.name} with…") { name -> ChatShare.shareWaypoints(name, dimension, listOf(shared)) })
+            val shared = JourneyMapWaypoints.shareable(waypoint, dimension)
+            Ui.open(ShareScreen(map.screen, "Share ${waypoint.name} with…", everyone = { ChatShare.shareWaypointsWithEveryone(dimension, listOf(shared)) }) { name ->
+                ChatShare.shareWaypoints(name, dimension, listOf(shared))
+            })
         }
     }
 
@@ -154,7 +156,7 @@ internal object JourneyMapMenus {
         fullscreen = map
         val dimension = map.uiState?.dimension?.identifier()?.toString()
         val menu = event.popupMenu
-        menu.addMenuItem("Copy coordinates") { block -> Ui.copy(block.x, null, block.z, dimension) }
+        menu.addMenuItem("Copy coordinates") { block -> Ui.copy(block.x, block.y, block.z, dimension) }
         if (dimension != null && PlayerPings.recipients().isNotEmpty()) {
             menu.addMenuItem("Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, null)) }
         }

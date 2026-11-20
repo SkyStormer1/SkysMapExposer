@@ -472,8 +472,8 @@ object XaeroAdapter : MapAdapter {
 
     override fun summary(): String = Overlay.lastSummary
 
-    override fun myWaypoints(): Pair<String, List<ShareableWaypoint>>? =
-        if (!Waypoints.available()) null else WaypointShare.mine()
+    override fun myWaypoints(dimension: String?): Pair<String, List<ShareableWaypoint>>? =
+        if (!Waypoints.available()) null else WaypointShare.mine(dimension)
 
     override fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =
         WaypointShare.add(dimension, from, waypoints)
