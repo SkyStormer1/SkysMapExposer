@@ -208,23 +208,41 @@ internal object JourneyMapCacheWrites {
         private var store: JMChunkStorage? = null
 
         companion object {
+            /** Where [dimension]'s chunks go; null, after saying so once in the log, if its build heights are not known. */
             fun of(dimension: String): Target? {
                 val level = Minecraft.getInstance().level ?: return null
                 val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return null
                 val open = level.dimension().identifier().toString() == dimension
-                val (min, max) = if (open) level.minY to level.maxY + 1 else heights(level.registryAccess(), dimension)
+                val (min, max) = (if (open) level.minY to level.maxY + 1 else heights(level.registryAccess(), folder, dimension))
+                    ?: return null.also {
+                        if (unknownHeights.add(dimension)) Log.warn("Not keeping downloaded and shared areas of {} in JourneyMap's chunk cache: its build heights are not known until you visit it", dimension)
+                    }
                 return Target(dimension, folder, level.registryAccess(), min, max)
             }
 
-            /** The build heights of [dimension], from its dimension type; the usual ones if unknown. */
-            private fun heights(registries: RegistryAccess, dimension: String): Pair<Int, Int> {
+            private val unknownHeights = java.util.Collections.synchronizedSet(HashSet<String>())
+
+            /**
+             * The build heights of [dimension], which you are not in: as JourneyMap's own cached chunks of
+             * it record them, else its dimension type's where that has the same name (as the game's
+             * own dimensions do); null if neither knows. Never guessed: chunks of the wrong height would
+             * be wrong for JourneyMap.
+             */
+            private fun heights(registries: RegistryAccess, folder: Path, dimension: String): Pair<Int, Int>? {
+                val cached = try {
+                    SharedTerrain.regionFiles(folder, JourneyMapChunkCache.FILE_NAME).firstNotNullOfOrNull { (rx, rz) ->
+                        JourneyMapChunkCache.readRegion(JourneyMapChunkCache.file(folder, rx, rz), registries).firstOrNull { it != null }
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+                if (cached != null) return cached.minBuild to cached.maxBuild
                 val type = try {
                     registries.lookupOrThrow(Registries.DIMENSION_TYPE).getValue(Identifier.parse(dimension))
                 } catch (e: Exception) {
                     null
                 }
-                if (type != null) return type.minY() to type.minY() + type.height()
-                return if (dimension == "minecraft:overworld") -64 to 320 else 0 to 256
+                return type?.let { it.minY() to it.minY() + it.height() }
             }
         }
 

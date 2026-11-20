@@ -89,6 +89,9 @@ internal object JourneyMapChunkCache {
     /** Region ([regionX], [regionZ])'s file in the chunk cache folder [folder]. */
     fun file(folder: Path, regionX: Int, regionZ: Int): Path = folder.resolve("c.$regionX.$regionZ.jmc")
 
+    /** A region file's name, as [file] makes it: its region x and z. */
+    val FILE_NAME = Regex("""c\.(-?\d+)\.(-?\d+)\.jmc""")
+
     /**
      * Every chunk of the region file [file] (index `z * 32 + x` within it), null where it has none;
      * [withBlocks] to read blocks and light too, [withLight] for light without the blocks. Off the

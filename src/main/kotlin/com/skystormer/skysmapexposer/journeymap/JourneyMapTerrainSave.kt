@@ -47,8 +47,6 @@ internal object JourneyMapTerrainSave {
         return true
     }
 
-    private val CACHE_FILE = Regex("""c\.(-?\d+)\.(-?\d+)\.jmc""")
-
     /**
      * Saves the chunks of [wanted] (inclusive), or every region JourneyMap has cached when null, of
      * [dimension] from JourneyMap's cache to a file in the shared maps folder. Anything over
@@ -59,7 +57,7 @@ internal object JourneyMapTerrainSave {
         if (saving) return SharedTerrain.Answer("A map is already being saved to a file; right-click the map and choose Stop saving to stop it")
         val registries = Minecraft.getInstance().level?.registryAccess() ?: return SharedTerrain.Answer("Not in a world")
         val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return SharedTerrain.Answer("JourneyMap has no map for this world yet")
-        val regions = SharedTerrain.regionsIn(wanted, SharedTerrain.regionFiles(folder, CACHE_FILE))
+        val regions = SharedTerrain.regionsIn(wanted, SharedTerrain.regionFiles(folder, JourneyMapChunkCache.FILE_NAME))
         if (regions.isEmpty()) return SharedTerrain.Answer("Nothing of JourneyMap's there to save: it has no chunks cached there")
         val area = wanted ?: SharedTerrain.spanning(regions)!!
         SharedTerrain.noRoom(regions.size)?.let { return SharedTerrain.Answer(it) }
