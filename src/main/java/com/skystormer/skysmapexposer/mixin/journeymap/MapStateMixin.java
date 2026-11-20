@@ -1,14 +1,17 @@
 package com.skystormer.skysmapexposer.mixin.journeymap;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.skystormer.skysmapexposer.journeymap.JourneyMapDimension;
 import journeymap.client.properties.InGameMapProperties;
 import journeymap.client.render.draw.RadarDrawStepFactory;
+import journeymap.client.render.draw.WaypointDrawStepFactory;
 import journeymap.client.render.map.Renderer;
 import journeymap.client.ui.fullscreen.Fullscreen;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
@@ -34,6 +37,26 @@ public abstract class MapStateMixin {
     private ResourceKey<Level> skysmapexposer$keepDimension(Level level, Operation<ResourceKey<Level>> original) {
         ResourceKey<Level> actual = original.call(level);
         return (Object) this == Fullscreen.state() ? JourneyMapDimension.keep(actual) : actual;
+    }
+
+    /**
+     * The full-screen map's markers are rebuilt here, also while you drag the map (outside its
+     * drawing): that rebuild too takes the waypoints of the dimension shown
+     * ({@link JourneyMapDimension#enterShown}), or they vanished from another dimension's map
+     * until the drag stopped.
+     */
+    @WrapMethod(method = "generateDrawSteps")
+    private void skysmapexposer$waypointsOfShown(
+        Minecraft minecraft, Renderer renderer, WaypointDrawStepFactory waypoints, RadarDrawStepFactory radar,
+        InGameMapProperties properties, boolean checkWaypointDistance, Operation<Void> original
+    ) {
+        boolean fullscreen = (Object) this == Fullscreen.state();
+        if (fullscreen) JourneyMapDimension.enterShown();
+        try {
+            original.call(minecraft, renderer, waypoints, radar, properties, checkWaypointDistance);
+        } finally {
+            if (fullscreen) JourneyMapDimension.leaveShown();
+        }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

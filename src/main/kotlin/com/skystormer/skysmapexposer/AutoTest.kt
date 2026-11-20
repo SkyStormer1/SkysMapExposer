@@ -37,6 +37,7 @@ import java.nio.file.Path
  * - `waypointin <dimension> <x> <y> <z> <name>` adds one to that dimension's waypoints
  * - `mywaypoints` logs the waypoints the installed map would offer to share
  * - `shareeveryone [dimension]` shares two of your waypoints of a dimension with everyone, in chat
+ * - `biomecheck` logs how often [BiomeZoom] picks the biome the game shows, around you
  * - `click <text>` runs the newest chat button reading that, e.g. `click [Add waypoints]`
  * - `fill <blocks>` starts a terrain fill that far around you, as the settings button does
  * - `fillwait` waits for a terrain fill to finish, then logs how it went
@@ -120,6 +121,25 @@ object AutoTest {
                     val (x, y, z) = parts.subList(1, 4).map { it.toInt() }
                     val name = parts.getOrElse(4) { "Test" }
                     Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(parts[0], "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
+                }
+                "biomecheck" -> {
+                    // Our copy of the game's per-block biome rule against the game's own, at the surface around you.
+                    val level = client.level ?: return
+                    val seed = BiomeZoom.seed()
+                    var same = 0
+                    var total = 0
+                    val random = java.util.Random(1)
+                    repeat(2000) {
+                        val x = player.blockX + random.nextInt(256) - 128
+                        val z = player.blockZ + random.nextInt(256) - 128
+                        val y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z) - 1
+                        if (seed == null || !level.hasChunk(x shr 4, z shr 4)) return@repeat
+                        val cell = BiomeZoom.cellOf(seed, x, y, z)
+                        val ours = level.getNoiseBiome((cell shr 32).toInt(), y shr 2, cell.toInt())
+                        total++
+                        if (ours.unwrapKey() == level.getBiome(net.minecraft.core.BlockPos(x, y, z)).unwrapKey()) same++
+                    }
+                    Log.info("AutoTest: biome rule matches the game at {} of {} blocks (seed {})", same, total, if (seed == null) "unknown" else "known")
                 }
                 "shareeveryone" -> {
                     val mine = MapMods.adapter?.myWaypoints(rest.ifBlank { null })

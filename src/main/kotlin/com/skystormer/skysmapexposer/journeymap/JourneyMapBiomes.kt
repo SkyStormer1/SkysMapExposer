@@ -1,21 +1,31 @@
 package com.skystormer.skysmapexposer.journeymap
 
 import com.skystormer.skysmapexposer.lruMap
+import com.skystormer.skysmapexposer.packXZ
 import com.mojang.blaze3d.platform.NativeImage
 import com.skystormer.skysmapexposer.BiomePicks
+import com.skystormer.skysmapexposer.BiomeZoom
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.journeymap.JourneyMapFiles.REGION
 import journeymap.api.v2.client.IClientAPI
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
 import net.minecraft.client.Minecraft
+import net.minecraft.core.registries.Registries
+import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.biome.Biome
 import net.minecraft.core.RegistryAccess
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executors
+import java.util.zip.DeflaterOutputStream
+import java.util.zip.InflaterInputStream
 
 /**
  * Tints JourneyMap's full-screen map and minimap wherever one of the picked biomes ([BiomePicks])
@@ -30,10 +40,18 @@ import java.util.concurrent.Executors
  * dimension the map shows, as on Xaero's. A region is read when it first comes on screen, and
  * again only once JourneyMap has written its cache file since.
  *
- * The tint is see-through pictures ([RegionPicture]) over BlueMap's terrain and under the outlines
- * and pins: one per region close up, a pixel per 4 blocks; zoomed out, one per square of regions
- * at a coarser pixel, so the whole screen is tinted at any zoom, as on Xaero's map. Regions are read
- * a few at a time, nearest first.
+ * The game keeps biomes only every 4 blocks, but shows each block the biome of one of the nearest
+ * of those cells, picked by a jitter from the world's seed, so borders wander block by block; Xaero's
+ * map records each block's biome that way. So each pixel of the tint takes its biome by the same
+ * rule ([BiomeZoom]), at the surface height kept with the grid, and the borders come out as on
+ * Xaero's map rather than in 4-block steps.
+ *
+ * The tint is see-through pictures ([RegionPicture]) over BlueMap's terrain and under the grid,
+ * outlines and pins: one per region close up, a pixel per block; zoomed out, one per square of
+ * regions at a coarser pixel, so the whole screen is tinted at any zoom, as on Xaero's map. Pictures
+ * are made off the client thread. Regions are read a few at a time, nearest first, and each grid is
+ * kept in a small file of this mod's ([saved]), so a region is read from JourneyMap's cache only
+ * once for each time JourneyMap writes it.
  */
 internal object JourneyMapBiomes {
 
@@ -42,15 +60,16 @@ internal object JourneyMapBiomes {
 
     /**
      * An area's biomes, one cell per 4 blocks: an index into [palette], or -1 where JourneyMap has
-     * nothing; and when JourneyMap last wrote the cache file they were read from.
+     * nothing; on the surface, the height of each cell's middle column ([NO_HEIGHT] where unknown);
+     * and when JourneyMap last wrote the cache file they were read from.
      */
-    private class Grid(val palette: List<ResourceKey<Biome>>, val cells: ShortArray, val fileTime: Long)
+    private class Grid(val palette: List<ResourceKey<Biome>>, val cells: ShortArray, val heights: ShortArray?, val fileTime: Long)
 
     /** Lately read grids, least lately used first. Client thread only. */
     private val grids = lruMap<Area, Grid>(MAX_GRIDS)
 
-    /** [group] by [group] regions of a dimension from region (`x * group`, `z * group`): one picture's worth. */
-    private data class Square(val dimension: String, val x: Int, val z: Int, val layer: Int?, val group: Int) {
+    /** [group] by [group] regions of a dimension from region (`x * group`, `z * group`): one picture's worth, [side] pixels across. */
+    private data class Square(val dimension: String, val x: Int, val z: Int, val layer: Int?, val group: Int, val side: Int) {
         val span: Int get() = REGION * group
     }
 
@@ -61,6 +80,13 @@ internal object JourneyMapBiomes {
 
     /** Areas being read; a few at a time ([READERS]), nearest first, so panning gets what is on screen soon. */
     private val reading = HashSet<Area>()
+
+    /** Pictures being made off the client thread. */
+    private val building = HashSet<Pair<Square, Context.UI>>()
+
+    private val builder by lazy {
+        Executors.newFixedThreadPool(BUILDERS) { Thread(it, "Map Exposer JourneyMap biome pictures").apply { isDaemon = true } }
+    }
 
     /** Bumped on leaving, so a grid read for the last world is thrown away when it arrives. */
     private var generation = 0
@@ -89,7 +115,7 @@ internal object JourneyMapBiomes {
         if (!wantedHere || state == null || !state.active) {
             if (fullscreen) note = if (BiomePicks.any) "the full-screen map is closed" else ""
             // Kept while the map is closed for a moment; let go once it has stayed closed, or nothing is wanted.
-            if (shown.keys.any { it.second == ui } && (!wantedHere || now - (lastActive[ui] ?: 0L) > KEEP_CLOSED_MS)) clear(api, ui)
+            if (shown.keys.any { it.second == ui } && (!wantedHere || now - (lastActive[ui] ?: 0L) > KEEP_CLOSED_MS)) clear(ui)
             return
         }
         lastActive[ui] = now
@@ -115,17 +141,20 @@ internal object JourneyMapBiomes {
         if (fullscreen) note = if ((right - left + 1) * (bottom - top + 1) > MAX_GRIDS) "zoomed too far out to tint it all" else ""
         // Pictures: a region each close up, more regions each the further out, so there are never more than MAX_SHOWN.
         var group = 1
-        while (group < MAX_GROUP && (Math.floorDiv(right, group) - Math.floorDiv(left, group) + 1) * (Math.floorDiv(bottom, group) - Math.floorDiv(top, group) + 1) > MAX_SHOWN) group *= 2
+        fun count(group: Int) = (Math.floorDiv(right, group) - Math.floorDiv(left, group) + 1) * (Math.floorDiv(bottom, group) - Math.floorDiv(top, group) + 1)
+        while (group < MAX_GROUP && count(group) > MAX_SHOWN) group *= 2
+        // A pixel per block close up, where blocks show; half that once more than a few pictures are up.
+        val side = if (group == 1 && count(1) <= FINE_SHOWN) REGION else REGION / 2
         val wanted = buildList {
             for (z in Math.floorDiv(top, group)..Math.floorDiv(bottom, group)) for (x in Math.floorDiv(left, group)..Math.floorDiv(right, group)) {
-                add(Square(dimension, x, z, layer, group))
+                add(Square(dimension, x, z, layer, group, side))
             }
         }.sortedBy { (it.x * group + group / 2.0 - centreX).let { d -> d * d } + (it.z * group + group / 2.0 - centreZ).let { d -> d * d } }
         val wantedSet = wanted.toHashSet()
         // Another zoom's pictures stay until this zoom's over them are up, so zooming never blanks the tint.
         shown.keys.filter { (square, onUi) ->
             onUi == ui && square !in wantedSet && (square.group == group || square.dimension != dimension || wanted.all { shown[it to ui] != null })
-        }.forEach { remove(api, it) }
+        }.forEach(::remove)
 
         // Now and then, whether JourneyMap has written any of these regions' cache files since they were read.
         val recheck = now - (checkedAt[ui] ?: 0L) > RECHECK_MS
@@ -141,11 +170,12 @@ internal object JourneyMapBiomes {
         var built = 0
         for (square in wanted) {
             if (built >= PER_TICK) break
+            if (square to ui in building) continue
             val stamp = gridsStamp(square)
             if (stamp == 0L) continue
             val old = shown[square to ui]
             if (old != null && old.stamp == stamp && old.version == BiomePicks.version) continue
-            show(api, square, ui)
+            build(square, ui, stamp)
             built++
         }
     }
@@ -174,6 +204,19 @@ internal object JourneyMapBiomes {
         val layer = layerOf(state)
         val area = Area(dimension, Math.floorDiv(x, REGION), Math.floorDiv(z, REGION), layer)
         grids[area]?.let { grid ->
+            // By the game's rule, as the tint is drawn, where the cell it picks has been read.
+            val seed = BiomeZoom.seed()
+            if (seed != null) {
+                val y = sliceY(layer) ?: grid.heights?.get(cellIndex(Math.floorMod(x, REGION) / 4, Math.floorMod(z, REGION) / 4))?.toInt()
+                    ?.takeIf { it != NO_HEIGHT.toInt() } ?: SEA_LEVEL
+                val picked = BiomeZoom.cellOf(seed, x, y, z)
+                val cellX = (picked shr 32).toInt()
+                val cellZ = picked.toInt()
+                grids[Area(dimension, Math.floorDiv(cellX, CELLS), Math.floorDiv(cellZ, CELLS), layer)]?.let { at ->
+                    val cell = at.cells[cellIndex(Math.floorMod(cellX, CELLS), Math.floorMod(cellZ, CELLS))].toInt()
+                    if (cell >= 0) return at.palette[cell]
+                }
+            }
             val cell = grid.cells[cellIndex(Math.floorMod(x, REGION) / 4, Math.floorMod(z, REGION) / 4)].toInt()
             if (cell >= 0) return grid.palette[cell]
         }
@@ -207,18 +250,23 @@ internal object JourneyMapBiomes {
         0L
     }
 
-    /** Off the client thread: [area]'s grid, from JourneyMap's chunk cache. */
+    /** Off the client thread: [area]'s grid, from this mod's copy if JourneyMap has not written since ([saved]), else from JourneyMap's chunk cache. */
     private fun read(area: Area, registries: RegistryAccess) {
         val folder = JourneyMapFiles.chunkCacheFolder(area.dimension) ?: return
         val importFolder = if (area.layer == null) JourneyMapImportedBiomes.folder(area.dimension) else null
+        val savedFile = saved(area)
         reading.add(area)
         val generation = generation
         worker.execute {
             val grid = try {
                 // The file's date first: a write while this reads is caught by the next check.
                 val fileTime = stamp(folder, importFolder, area)
-                val own = gridOf(JourneyMapChunkCache.readRegion(cacheFile(folder, area), registries), area.layer, fileTime)
-                importFolder?.let { JourneyMapImportedBiomes.read(it, area.x, area.z) }?.let { withImported(own, it) } ?: own
+                loadSaved(savedFile, fileTime) ?: run {
+                    val own = gridOf(JourneyMapChunkCache.readRegion(cacheFile(folder, area), registries), area.layer, fileTime)
+                    val grid = importFolder?.let { JourneyMapImportedBiomes.read(it, area.x, area.z) }?.let { withImported(own, it) } ?: own
+                    savedFile?.let { save(it, grid) }
+                    grid
+                }
             } catch (e: Exception) {
                 Log.warn("Could not read JourneyMap's biomes for region {}, {}: {}", area.x, area.z, e.toString())
                 null
@@ -235,6 +283,7 @@ internal object JourneyMapBiomes {
         val palette = ArrayList<ResourceKey<Biome>>()
         val indexOf = HashMap<ResourceKey<Biome>, Int>()
         val cells = ShortArray(CELLS * CELLS) { -1 }
+        val heights = if (layer == null) ShortArray(CELLS * CELLS) { NO_HEIGHT } else null
         val y = sliceY(layer)
         for (chunkZ in 0 until CHUNKS) for (chunkX in 0 until CHUNKS) {
             val chunk = chunks[chunkZ * CHUNKS + chunkX] ?: continue
@@ -242,10 +291,12 @@ internal object JourneyMapBiomes {
                 val biome = chunk.biomeAt(quarterX * 4 + 2, quarterZ * 4 + 2, y) ?: continue
                 val index = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
                 if (index > Short.MAX_VALUE) continue
-                cells[cellIndex(chunkX * 4 + quarterX, chunkZ * 4 + quarterZ)] = index.toShort()
+                val cell = cellIndex(chunkX * 4 + quarterX, chunkZ * 4 + quarterZ)
+                cells[cell] = index.toShort()
+                chunk.surface?.let { surface -> heights?.set(cell, (surface[(quarterX * 4 + 2) + (quarterZ * 4 + 2) * 16] - 1).toShort()) }
             }
         }
-        return Grid(palette, cells, fileTime)
+        return Grid(palette, cells, heights, fileTime)
     }
 
     /** [grid] with a shared map file's biomes where JourneyMap knows none. */
@@ -260,44 +311,141 @@ internal object JourneyMapBiomes {
             val at = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
             if (at <= Short.MAX_VALUE) cells[index] = at.toShort()
         }
-        return Grid(palette, cells, grid.fileTime)
+        return Grid(palette, cells, grid.heights, grid.fileTime)
+    }
+
+    /** Where [area]'s grid is kept between games, in this mod's folder for the server; null outside one. Client thread. */
+    private fun saved(area: Area): Path? = JourneyMapEdits.serverFolder()?.resolve("journeymap-biome-grids")?.resolve(SafeFiles.name(area.dimension))
+        ?.resolve(area.layer?.let { "cave$it" } ?: "surface")?.resolve("${area.x},${area.z}.grid")
+
+    /**
+     * The grid kept in [file], if it was read from JourneyMap's files as they are now ([fileTime]);
+     * else null. "SMEG", format 1, then deflated: the file time, the biomes used, each cell's index
+     * (-1 none), and on the surface each cell's height.
+     */
+    private fun loadSaved(file: Path?, fileTime: Long): Grid? {
+        if (file == null || !Files.isRegularFile(file)) return null
+        return try {
+            DataInputStream(Files.newInputStream(file).buffered()).use { raw ->
+                if (raw.readInt() != SAVED_MAGIC || raw.readInt() != SAVED_FORMAT) return null
+                DataInputStream(InflaterInputStream(raw).buffered()).use { input ->
+                    if (input.readLong() != fileTime) return null
+                    val palette = List(input.readInt()) { ResourceKey.create(Registries.BIOME, Identifier.parse(input.readUTF())) }
+                    val cells = ShortArray(CELLS * CELLS) { input.readShort() }
+                    val heights = if (input.readBoolean()) ShortArray(CELLS * CELLS) { input.readShort() } else null
+                    if (cells.any { it >= palette.size }) return null
+                    Grid(palette, cells, heights, fileTime)
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun save(file: Path, grid: Grid) {
+        try {
+            val bytes = ByteArrayOutputStream()
+            DataOutputStream(bytes).use { raw ->
+                raw.writeInt(SAVED_MAGIC)
+                raw.writeInt(SAVED_FORMAT)
+                DataOutputStream(DeflaterOutputStream(raw)).use { out ->
+                    out.writeLong(grid.fileTime)
+                    out.writeInt(grid.palette.size)
+                    grid.palette.forEach { out.writeUTF(it.identifier().toString()) }
+                    grid.cells.forEach { out.writeShort(it.toInt()) }
+                    out.writeBoolean(grid.heights != null)
+                    grid.heights?.forEach { out.writeShort(it.toInt()) }
+                }
+            }
+            SafeFiles.write(file, bytes.toByteArray())
+        } catch (e: Exception) {
+            Log.warn("Could not keep the biomes of {}: {}", file.fileName, e.toString())
+        }
     }
 
     /**
-     * Client thread: [square]'s tint on [ui], replacing the old one: [CELLS] pixels across whatever
-     * its size, so a pixel is 4 blocks for one region and coarser for more, each the cell at its middle.
+     * Client thread: [square]'s tint on [ui] made off the client thread ([picture]) from the grids
+     * read just now ([stamp]), then put up in place of the old one.
      */
-    private fun show(api: IClientAPI, square: Square, ui: Context.UI) {
+    private fun build(square: Square, ui: Context.UI, stamp: Long) {
         val key = square to ui
-        val stamp = gridsStamp(square)
-        val group = square.group
-        val perPixel = 4 * group
-        val colourCache = HashMap<Grid, IntArray>()
+        // Its regions' grids and the ring around them, which the game's jitter reaches into at the edges.
+        val near = HashMap<Long, Grid>()
+        for (z in -1..square.group) for (x in -1..square.group) {
+            val regionX = square.x * square.group + x
+            val regionZ = square.z * square.group + z
+            grids[Area(square.dimension, regionX, regionZ, square.layer)]?.let { near[packXZ(regionX, regionZ)] = it }
+        }
+        val colours = HashMap(BiomePicks.all)
+        val version = BiomePicks.version
+        val seed = BiomeZoom.seed()
+        val generation = generation
+        building.add(key)
+        builder.execute {
+            val image = try {
+                picture(square, near, colours, seed)
+            } catch (e: Exception) {
+                Log.warn("Could not make the biome tint of {}: {}", square, e.toString())
+                null
+            }
+            Minecraft.getInstance().execute {
+                building.remove(key)
+                // Picks changed or a world left meanwhile: made again from the new ones next tick.
+                if (generation != this.generation || version != BiomePicks.version) {
+                    image?.close()
+                    return@execute
+                }
+                remove(key)
+                shown[key] = Tint(stamp, version, image?.let { RegionPicture.show("biomes", square.x * square.span, square.z * square.span, square.span / square.side, it, ui) })
+            }
+        }
+    }
+
+    /**
+     * Off the client thread: [square]'s tint, [Square.side] pixels across, each the biome its middle
+     * block shows by the game's rule ([BiomeZoom], with the world's [seed]; without one, the cell it
+     * is in), coloured by [colours]; null where nothing picked is.
+     */
+    private fun picture(square: Square, near: Map<Long, Grid>, colours: Map<ResourceKey<Biome>, Int>, seed: Long?): NativeImage? {
+        val side = square.side
+        val perPixel = square.span / side
+        val sliceY = sliceY(square.layer)
+        val colourOf = HashMap<Grid, IntArray>()
+        fun gridOfCell(cellX: Int, cellZ: Int): Grid? = near[packXZ(Math.floorDiv(cellX, CELLS), Math.floorDiv(cellZ, CELLS))]
+        val image = NativeImage(side, side, true)
         var any = false
-        val image = NativeImage(CELLS, CELLS, true)
-        for (pz in 0 until CELLS) for (px in 0 until CELLS) {
+        for (pz in 0 until side) for (px in 0 until side) {
             val blockX = square.x * square.span + px * perPixel + perPixel / 2
             val blockZ = square.z * square.span + pz * perPixel + perPixel / 2
-            val grid = grids[Area(square.dimension, Math.floorDiv(blockX, REGION), Math.floorDiv(blockZ, REGION), square.layer)]
-            if (grid == null) { image.setPixel(px, pz, 0); continue }
-            val colours = colourCache.getOrPut(grid) { IntArray(grid.palette.size) { BiomePicks.colourOf(grid.palette[it]) ?: 0 } }
-            val cell = grid.cells[cellIndex(Math.floorMod(blockX, REGION) / 4, Math.floorMod(blockZ, REGION) / 4)].toInt()
-            val colour = if (cell >= 0) colours[cell] else 0
+            var cellX = blockX shr 2
+            var cellZ = blockZ shr 2
+            if (seed != null) {
+                val y = sliceY ?: gridOfCell(cellX, cellZ)?.heights?.get(cellIndex(Math.floorMod(cellX, CELLS), Math.floorMod(cellZ, CELLS)))
+                    ?.toInt()?.takeIf { it != NO_HEIGHT.toInt() } ?: SEA_LEVEL
+                val picked = BiomeZoom.cellOf(seed, blockX, y, blockZ)
+                cellX = (picked shr 32).toInt()
+                cellZ = picked.toInt()
+            }
+            val grid = gridOfCell(cellX, cellZ)
+            val cell = grid?.cells?.get(cellIndex(Math.floorMod(cellX, CELLS), Math.floorMod(cellZ, CELLS)))?.toInt() ?: -1
+            val colour = if (grid == null || cell < 0) 0 else colourOf.getOrPut(grid) { IntArray(grid.palette.size) { colours[grid.palette[it]] ?: 0 } }[cell]
             if (colour != 0) any = true
             image.setPixel(px, pz, colour)
         }
-        remove(api, key)
-        val picture = if (!any) { image.close(); null } else RegionPicture.show("biomes", square.x * square.span, square.z * square.span, perPixel, image, ui)
-        shown[key] = Tint(stamp, BiomePicks.version, picture)
+        if (!any) {
+            image.close()
+            return null
+        }
+        return image
     }
 
-    private fun remove(api: IClientAPI, key: Pair<Square, Context.UI>) {
+    private fun remove(key: Pair<Square, Context.UI>) {
         val gone = shown.remove(key)?.picture ?: return
         gone.remove()
     }
 
-    private fun clear(api: IClientAPI, ui: Context.UI) {
-        shown.keys.filter { it.second == ui }.forEach { remove(api, it) }
+    private fun clear(ui: Context.UI) {
+        shown.keys.filter { it.second == ui }.forEach(::remove)
     }
 
     /** [ui]'s tint of [dimension], for [JourneyMapMinimap] to draw. */
@@ -311,6 +459,7 @@ internal object JourneyMapBiomes {
         shown.clear()
         grids.clear()
         reading.clear()
+        building.clear()
     }
 
     /** "tinting 2 biomes in 5 regions" for `/mapexposer`, or nothing while none is picked. */
@@ -331,9 +480,17 @@ internal object JourneyMapBiomes {
     /** About 32 KB each: enough for every region on a zoomed-out screen. */
     private const val MAX_GRIDS = 1024
     private const val MAX_SHOWN = 64
+    /** At most this many regions on screen get a pixel per block. */
+    private const val FINE_SHOWN = 16
     private const val MAX_GROUP = 32
-    private const val READERS = 3
+    private val READERS = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(3, 6)
+    private const val BUILDERS = 2
     private const val PER_TICK = 8
+    private const val NO_HEIGHT: Short = Short.MIN_VALUE
+    /** The height a block of unknown height is taken at, for the game's jitter. */
+    private const val SEA_LEVEL = 63
+    private const val SAVED_MAGIC = 0x534D4547
+    private const val SAVED_FORMAT = 1
 
     /** How often the cache files of the regions on screen are looked at for changes. */
     private const val RECHECK_MS = 5_000L
