@@ -136,7 +136,10 @@ internal object JourneyMapCacheWrites {
                         written++
                         lines.append(cx).append(' ').append(cz).append('\n')
                     }
-                    if (lines.isNotEmpty()) Files.writeString(ledger, lines, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+                    if (lines.isNotEmpty()) {
+                        Files.writeString(ledger, lines, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+                        JourneyMapOtherMaps.changed(dimension, region.regionX, region.regionZ)
+                    }
                 } catch (e: Throwable) {
                     stop("writing region ${region.regionX}, ${region.regionZ}", e)
                 } finally {
@@ -177,6 +180,7 @@ internal object JourneyMapCacheWrites {
                     target.put(target.build(cx, cz, empty, { false }, WITHDRAWN, evenIfEmpty = true) ?: continue)
                     taken++
                 }
+                JourneyMapOtherMaps.changed(dimension, region.first, region.second)
             }
             Files.deleteIfExists(ledger)
         } catch (e: Throwable) {
@@ -343,6 +347,13 @@ internal object JourneyMapCacheWrites {
         }
 
         private fun holder(key: ResourceKey<Biome>): Holder<Biome>? = holders.getOrPut(key) { biomes.get(key).orElse(null) }
+    }
+
+    /** Each chunk of region ([rx], [rz]) of [dimension] by kind, `z * 32 + x`; null if this is not working or its cache is not known. Off the client thread. */
+    fun kindsIn(dimension: String, rx: Int, rz: Int): Array<Kind>? {
+        if (!working) return null
+        // Only read: nothing to close.
+        return Target.of(dimension)?.kinds(rx, rz)
     }
 
     /** The ledger of a job whose backups go in [backups], listing the chunks it put in the cache. */

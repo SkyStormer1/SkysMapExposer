@@ -14,6 +14,8 @@ import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.gui.MapBar
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
+import com.skystormer.skysmapexposer.ChatShare
+import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import journeymap.api.v2.client.event.FullscreenRenderEvent
 import journeymap.api.v2.client.event.PopupMenuEvent
@@ -80,6 +82,7 @@ internal object JourneyMapMenus {
 
     fun register() {
         FullscreenEventRegistry.FULLSCREEN_POPUP_MENU_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { menu(it) } }
+        FullscreenEventRegistry.WAYPOINT_POPUP_MENU_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { waypointMenu(it) } }
         FullscreenEventRegistry.FULLSCREEN_RENDER_EVENT.subscribe(JourneyMapAdapter.MOD_ID) { guard { render(it) } }
         JourneyMapSelection.register()
         // The map bar, as on Xaero's world map; also while JourneyMap's right-click menu is open,
@@ -130,6 +133,17 @@ internal object JourneyMapMenus {
             JourneyMapDimension.forget()
             // Coming back to your own dimension goes to you, as on Xaero's map.
             JourneyMapDimension.backToYou = true
+        }
+    }
+
+    /** Right-click on a waypoint: Share, for that one waypoint, to a player picked next, as from Share waypoints. */
+    private fun waypointMenu(event: PopupMenuEvent.WaypointPopupMenuEvent) {
+        val waypoint = event.waypoint ?: return
+        val map = event.fullscreen ?: return
+        val dimension = map.uiState?.dimension?.identifier()?.toString() ?: return
+        event.popupMenu.addMenuItem("Share…") {
+            val shared = JourneyMapWaypoints.shareable(waypoint)
+            Ui.open(ShareScreen(map.screen, "Share ${waypoint.name} with…") { name -> ChatShare.shareWaypoints(name, dimension, listOf(shared)) })
         }
     }
 

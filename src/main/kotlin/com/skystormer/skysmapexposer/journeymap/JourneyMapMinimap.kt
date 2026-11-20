@@ -20,36 +20,40 @@ import org.joml.Matrix3x2f
 import org.joml.Matrix3x2fStack
 
 /**
- * This mod's pictures on JourneyMap's minimap: BlueMap's terrain ([JourneyMapTerrain]) and the biome
- * tint ([JourneyMapBiomes]), as Xaero's minimap shows both.
+ * This mod's pictures on JourneyMap's maps: BlueMap's terrain ([JourneyMapTerrain]) and the biome
+ * tint ([JourneyMapBiomes]), as Xaero's maps show both; and what the minimap shows ([area]).
  *
- * JourneyMap draws the minimap's tiles and outlines into a picture of its own, then cuts it to the
- * minimap's shape and turns it; picture overlays it draws afterwards straight onto the screen, uncut
- * and unturned. So these are drawn into that picture ([draw], from `OutlinePassMixin`), placed as
- * JourneyMap places its outlines. JourneyMap only draws that picture again when something in it
- * changes, so it is told whenever one of these does ([changed]).
+ * JourneyMap draws a map's tiles, then its grid, then its outlines into a picture of its own, which
+ * on the minimap it then cuts to shape and turns; picture overlays it draws afterwards straight onto
+ * the screen, uncut, unturned, and over the grid. So these are drawn into that picture ([draw], from
+ * `GridPassMixin`, or `OutlinePassMixin` when there is no grid): over the tiles, under the grid and
+ * outlines, placed as JourneyMap places its outlines. JourneyMap only draws that picture again when
+ * something in it changes, so it is told whenever one of these does ([changed]).
  */
 internal object JourneyMapMinimap {
 
-    /** The minimap's renderer, once it has drawn. */
-    private var renderer: Renderer? = null
+    /** Each map's renderer, once it has drawn. */
+    private val renderers = java.util.EnumMap<Context.UI, Renderer>(Context.UI::class.java)
+
+    /** Whether this map picture's pictures went in under its grid already, so not again before its outlines. */
+    private var drawnUnderGrid = false
 
     private var failed = false
 
-    /** False once drawing on it has failed, for `/mapexposer`. */
+    /** False once drawing on the maps has failed, for `/mapexposer`. */
     val working: Boolean get() = !failed
 
-    /** One of the minimap's pictures came, went or changed: JourneyMap draws its picture again. */
-    fun changed() {
+    /** One of [ui]'s pictures came, went or changed: JourneyMap draws that map's picture again. */
+    fun changed(ui: Context.UI) {
         try {
-            renderer?.markOverlaySurfaceDirty()
+            renderers[ui]?.markOverlaySurfaceDirty()
         } catch (e: Exception) {
-            Log.warn("Could not have JourneyMap redraw its minimap: {}", e.toString())
+            Log.warn("Could not have JourneyMap redraw its map: {}", e.toString())
         }
     }
 
     fun forget() {
-        renderer = null
+        renderers.clear()
         area = null
     }
 
@@ -76,19 +80,26 @@ internal object JourneyMapMinimap {
     private const val MEASURE = 64.0
 
     /**
-     * While JourneyMap draws a map into its own picture, just before its outlines: on the minimap,
-     * the terrain and then the biome tint of [renderer]'s dimension, each block's pixel taken from
-     * JourneyMap's grid and moved by [xOffset], [yOffset], with [pose]. Render thread.
+     * While JourneyMap draws a map into its own picture, just before its grid ([beforeGrid]) or, with
+     * no grid, its outlines: the terrain and then the biome tint of [renderer]'s dimension, each
+     * block's pixel taken from JourneyMap's grid and moved by [xOffset], [yOffset], with [pose].
+     * Render thread.
      */
     @JvmStatic
-    fun draw(graphics: GuiGraphicsExtractor, pose: Matrix3x2fStack, xOffset: Double, yOffset: Double, renderer: Renderer) {
+    fun draw(graphics: GuiGraphicsExtractor, pose: Matrix3x2fStack, xOffset: Double, yOffset: Double, renderer: Renderer, beforeGrid: Boolean) {
+        if (!beforeGrid && drawnUnderGrid) {
+            drawnUnderGrid = false
+            return
+        }
+        drawnUnderGrid = beforeGrid
         if (failed) return
         try {
-            if (renderer.context != Context.UI.Minimap) return
-            this.renderer = renderer
-            measure(renderer)
+            val ui = renderer.context ?: return
+            if (ui != Context.UI.Minimap && ui != Context.UI.Fullscreen) return
+            renderers[ui] = renderer
+            if (ui == Context.UI.Minimap) measure(renderer)
             val dimension = renderer.uiState?.dimension?.identifier()?.toString() ?: return
-            val pictures = JourneyMapTerrain.minimapPictures(dimension) + JourneyMapBiomes.minimapPictures(dimension)
+            val pictures = JourneyMapTerrain.pictures(ui, dimension) + JourneyMapBiomes.pictures(ui, dimension)
             if (pictures.isEmpty()) return
             val textures = Minecraft.getInstance().textureManager
             val sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST, true)
@@ -106,7 +117,7 @@ internal object JourneyMapMinimap {
         } catch (e: Throwable) {
             // Something of JourneyMap's has changed shape: stop trying, once, rather than every frame.
             failed = true
-            Log.error("Could not draw on JourneyMap's minimap; BlueMap's terrain and biome tint are off there", e)
+            Log.error("Could not draw on JourneyMap's maps; BlueMap's terrain and biome tint are off there", e)
         }
     }
 }

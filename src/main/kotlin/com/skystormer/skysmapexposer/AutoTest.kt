@@ -113,7 +113,13 @@ object AutoTest {
                     val dimension = client.level?.dimension()?.identifier()?.toString() ?: return
                     Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(dimension, "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
                 }
-                "mywaypoints" -> Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
+                "waypointin" -> {
+                    val parts = rest.split(' ', limit = 5)
+                    val (x, y, z) = parts.subList(1, 4).map { it.toInt() }
+                    val name = parts.getOrElse(4) { "Test" }
+                    Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(parts[0], "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
+                }
+                "mywaypoints" ->Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
                 "click" -> {
                     val command = buttonCommand(client, rest)
                     if (command == null) Log.warn("AutoTest: no chat button '{}'", rest)

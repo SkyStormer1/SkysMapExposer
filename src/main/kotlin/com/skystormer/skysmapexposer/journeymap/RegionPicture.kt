@@ -1,23 +1,17 @@
 package com.skystormer.skysmapexposer.journeymap
 
-import com.skystormer.skysmapexposer.levelKey
 import com.mojang.blaze3d.platform.NativeImage
-import com.skystormer.skysmapexposer.Log
-import journeymap.api.v2.client.IClientAPI
-import journeymap.api.v2.client.display.ImageOverlay
-import journeymap.api.v2.client.model.MapImage
 import journeymap.api.v2.common.Context
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.texture.DynamicTexture
-import net.minecraft.core.BlockPos
 import net.minecraft.resources.Identifier
 
 /**
- * A picture over a square of the world on JourneyMap's maps (BlueMap's terrain, the biome tint):
- * registered as a texture of ours by name, as marker icons are, rather than handed to JourneyMap as
- * a picture it would keep a second copy of; and on the full-screen map, an overlay that draws it.
- * Minimap pictures have no overlay: they are drawn into the minimap's own picture
- * ([JourneyMapMinimap]). Client thread only.
+ * A picture over a square of the world on one of JourneyMap's maps (BlueMap's terrain, the biome
+ * tint): registered as a texture of ours by name, as marker icons are, and drawn into the map's own
+ * picture with its tiles, under its grid and outlines ([JourneyMapMinimap.draw]), on the full-screen
+ * map as on the minimap. JourneyMap's picture overlays are drawn after its grid, over it, so the grid
+ * vanished wherever one was. Client thread only.
  */
 internal class RegionPicture private constructor(
     val texture: Identifier,
@@ -26,43 +20,37 @@ internal class RegionPicture private constructor(
     val scale: Int,
     val westX: Int,
     val northZ: Int,
-    private val overlay: ImageOverlay?,
+    private val ui: Context.UI,
 ) {
 
     /** The blocks it covers, along each side. */
     val reach: Int get() = side * scale
 
-    /** Whether its overlay is on the full-screen map; one kept aside ([hide]) is not. */
-    var shown: Boolean = overlay != null
+    /** Whether it is drawn; one kept aside ([hide]) is not. */
+    var shown: Boolean = false
         private set
 
     /** Takes it off the map and frees its texture. */
-    fun remove(api: IClientAPI) {
-        hide(api)
+    fun remove() {
+        hide()
         release()
     }
 
     /** Takes it off the map but keeps its texture, to be put back by [unhide] without being made again. */
-    fun hide(api: IClientAPI) {
+    fun hide() {
         if (!shown) return
-        overlay?.let(api::remove)
         shown = false
+        JourneyMapMinimap.changed(ui)
     }
 
-    /** Puts a picture kept by [hide], or made hidden, back on the map. False if JourneyMap refuses it. */
-    fun unhide(api: IClientAPI): Boolean {
-        val overlay = overlay ?: return false
-        if (shown) return true
-        return try {
-            api.show(overlay)
-            shown = true
-            true
-        } catch (e: Exception) {
-            false
-        }
+    /** Puts a picture kept by [hide], or made hidden, back on the map. */
+    fun unhide() {
+        if (shown) return
+        shown = true
+        JourneyMapMinimap.changed(ui)
     }
 
-    /** Frees its texture, once JourneyMap has dropped the overlay itself (on leaving a world). */
+    /** Frees its texture. */
     fun release() {
         Minecraft.getInstance().textureManager.release(texture)
     }
@@ -72,31 +60,14 @@ internal class RegionPicture private constructor(
 
         /**
          * Puts [image] (square, a pixel [scale] blocks across) up with its north-west corner at
-         * ([westX], [northZ]) of [dimension]: as an overlay drawn [order]th on the full-screen map
-         * when [fullscreen], else for the minimap; made but kept off the map unless [visible].
-         * Null, with [image] freed, if JourneyMap refuses it.
+         * ([westX], [northZ]) on [ui]'s map; made but kept off the map unless [visible].
          */
-        fun show(
-            api: IClientAPI, kind: String, dimension: String, westX: Int, northZ: Int, scale: Int, image: NativeImage,
-            fullscreen: Boolean, order: Int, visible: Boolean = true,
-        ): RegionPicture? {
+        fun show(kind: String, westX: Int, northZ: Int, scale: Int, image: NativeImage, ui: Context.UI, visible: Boolean = true): RegionPicture {
             val texture = Identifier.fromNamespaceAndPath("skysmapexposer", "journeymap_$kind/${next++}")
-            val side = image.width
             Minecraft.getInstance().textureManager.register(texture, DynamicTexture({ "skysmapexposer $kind $westX,$northZ" }, image))
-            if (!fullscreen) return RegionPicture(texture, side, scale, westX, northZ, null)
-            val reach = side * scale
-            val overlay = ImageOverlay(JourneyMapAdapter.MOD_ID, BlockPos(westX, 0, northZ), BlockPos(westX + reach, 0, northZ + reach), MapImage(texture, side, side))
-            overlay.setDimension(levelKey(dimension))
-            overlay.setDisplayOrder(order)
-            overlay.setActiveUIs(Context.UI.Fullscreen)
-            return try {
-                if (visible) api.show(overlay)
-                RegionPicture(texture, side, scale, westX, northZ, overlay).also { it.shown = visible }
-            } catch (e: Exception) {
-                Minecraft.getInstance().textureManager.release(texture)
-                Log.warn("JourneyMap would not show the {} picture at {}, {}: {}", kind, westX, northZ, e.toString())
-                null
-            }
+            val picture = RegionPicture(texture, image.width, scale, westX, northZ, ui)
+            if (visible) picture.unhide()
+            return picture
         }
     }
 }

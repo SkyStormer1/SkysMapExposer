@@ -287,27 +287,22 @@ internal object JourneyMapBiomes {
             image.setPixel(px, pz, colour)
         }
         remove(api, key)
-        val picture = if (!any) { image.close(); null } else {
-            val fullscreen = ui == Context.UI.Fullscreen
-            RegionPicture.show(api, "biomes", square.dimension, square.x * square.span, square.z * square.span, perPixel, image, fullscreen, BIOME_ORDER)
-                ?.also { if (!fullscreen) JourneyMapMinimap.changed() }
-        }
+        val picture = if (!any) { image.close(); null } else RegionPicture.show("biomes", square.x * square.span, square.z * square.span, perPixel, image, ui)
         shown[key] = Tint(stamp, BiomePicks.version, picture)
     }
 
     private fun remove(api: IClientAPI, key: Pair<Square, Context.UI>) {
         val gone = shown.remove(key)?.picture ?: return
-        gone.remove(api)
-        if (key.second == Context.UI.Minimap) JourneyMapMinimap.changed()
+        gone.remove()
     }
 
     private fun clear(api: IClientAPI, ui: Context.UI) {
         shown.keys.filter { it.second == ui }.forEach { remove(api, it) }
     }
 
-    /** The minimap's tint of [dimension], for [JourneyMapMinimap] to draw. */
-    fun minimapPictures(dimension: String): List<RegionPicture> =
-        shown.mapNotNull { (key, tint) -> tint.picture.takeIf { key.second == Context.UI.Minimap && key.first.dimension == dimension } }
+    /** [ui]'s tint of [dimension], for [JourneyMapMinimap] to draw. */
+    fun pictures(ui: Context.UI, dimension: String): List<RegionPicture> =
+        shown.mapNotNull { (key, tint) -> tint.picture.takeIf { key.second == ui && key.first.dimension == dimension } }
 
     /** Leaving a world: JourneyMap drops our overlays ([JourneyMapAdapter.leave]); this frees the pictures and grids. */
     fun forget() {
@@ -345,5 +340,4 @@ internal object JourneyMapBiomes {
     private const val KEEP_CLOSED_MS = 30_000L
 
     /** Over BlueMap's terrain ([JourneyMapTerrain]), under the outlines and pins ([JourneyMapPins]). */
-    private const val BIOME_ORDER = 75
 }

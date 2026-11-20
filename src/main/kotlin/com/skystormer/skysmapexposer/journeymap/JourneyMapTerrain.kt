@@ -216,11 +216,7 @@ internal object JourneyMapTerrain {
             held.lastWanted = now
             if (!held.hidden) continue
             held.hidden = false
-            if (held.picture?.unhide(api) == false) {
-                held.picture?.release()
-                held.picture = null
-                held.made = null
-            }
+            held.picture?.unhide()
         }
         if (fullscreen) letGoOfKept(api)
 
@@ -502,7 +498,7 @@ internal object JourneyMapTerrain {
         val picture = held.picture
         if (square.ui != Context.UI.Fullscreen || square.dimension != dimension || picture == null) return forget(api, square)
         building.remove(square)
-        picture.hide(api)
+        picture.hide()
         held.hidden = true
     }
 
@@ -576,8 +572,7 @@ internal object JourneyMapTerrain {
     }
 
     private fun remove(api: IClientAPI, square: Square, picture: RegionPicture) {
-        picture.remove(api)
-        if (square.ui == Context.UI.Minimap) JourneyMapMinimap.changed()
+        picture.remove()
     }
 
     /**
@@ -700,12 +695,10 @@ internal object JourneyMapTerrain {
             return
         }
         building.remove(square)
-        val fullscreen = square.ui == Context.UI.Fullscreen
-        val picture = RegionPicture.show(api, "terrain", square.dimension, square.westX, square.northZ, scale, image, fullscreen, TERRAIN_ORDER, visible = !held.hidden)
+        val picture = RegionPicture.show("terrain", square.westX, square.northZ, scale, image, square.ui, visible = !held.hidden)
         held.picture?.let { remove(api, square, it) }
         held.picture = picture
         held.made = made
-        if (!fullscreen) JourneyMapMinimap.changed()
     }
 
     /** Why nothing is being drawn just now, if anything stops it, on the full-screen map and the minimap. */
@@ -720,9 +713,9 @@ internal object JourneyMapTerrain {
             ", $mini on the minimap" + (if (minimapNote.isEmpty()) "" else " ($minimapNote)")
     }
 
-    /** The minimap's pictures of [dimension], for [JourneyMapMinimap] to draw. */
-    fun minimapPictures(dimension: String): List<RegionPicture> =
-        squares.mapNotNull { (square, held) -> held.picture.takeIf { square.ui == Context.UI.Minimap && square.dimension == dimension } }
+    /** [ui]'s pictures of [dimension] on the map just now, for [JourneyMapMinimap] to draw. */
+    fun pictures(ui: Context.UI, dimension: String): List<RegionPicture> =
+        squares.mapNotNull { (square, held) -> held.picture.takeIf { square.ui == ui && square.dimension == dimension && it?.shown == true } }
 
     /**
      * Regions a picture covers along each side at [scale] blocks a pixel: about half as many as
@@ -763,5 +756,4 @@ internal object JourneyMapTerrain {
     private const val OPAQUE = 0xFF000000.toInt()
 
     /** Under the outlines and pins ([JourneyMapPins]). */
-    private const val TERRAIN_ORDER = 50
 }

@@ -12,12 +12,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 
 /**
- * This mod's pictures on JourneyMap's minimap (BlueMap's terrain, the biome tint). JourneyMap draws
- * a map's tiles and then its outlines (this pass) into a picture of its own, which on the minimap it
- * then cuts to shape and turns; picture overlays it draws afterwards, straight onto the screen, uncut
- * and unturned. So {@link JourneyMapMinimap#draw} draws at the start of this pass: over JourneyMap's
- * tiles, under its outlines, in the same coordinates. Checked when the game starts, as the Xaero
- * hooks are; a JourneyMap that has moved this costs the minimap's pictures (and says so), not the game.
+ * This mod's pictures on JourneyMap's maps (BlueMap's terrain, the biome tint) where it draws no grid.
+ * JourneyMap draws a map's tiles, its grid and then its outlines (this pass) into a picture of its
+ * own, which on the minimap it then cuts to shape and turns; picture overlays it draws afterwards,
+ * straight onto the screen, uncut, unturned and over the grid. So {@link JourneyMapMinimap#draw}
+ * draws before its grid ({@link GridPassMixin}), or with no grid at the start of this pass: over
+ * JourneyMap's tiles, under its outlines, in the same coordinates. Checked when the game starts, as
+ * the Xaero hooks are; a JourneyMap that has moved this costs these pictures (and says so), not the game.
  */
 @Mixin(targets = "journeymap.client.render.map.PolygonGeometryDrawPass", remap = false)
 public abstract class OutlinePassMixin {
@@ -27,6 +28,6 @@ public abstract class OutlinePassMixin {
         GuiGraphicsExtractor graphics, Matrix3x2fStack pose, List<?> polygons, double xOffset, double yOffset,
         Renderer renderer, double fontScale, double rotation, CallbackInfo ci
     ) {
-        JourneyMapMinimap.draw(graphics, pose, xOffset, yOffset, renderer);
+        JourneyMapMinimap.draw(graphics, pose, xOffset, yOffset, renderer, false);
     }
 }

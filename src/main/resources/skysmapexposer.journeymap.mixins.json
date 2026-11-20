@@ -5,14 +5,19 @@
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
     "BlockInfoBiomeMixin",
+    "ChatPositionMixin",
     "FullscreenMapTypeMixin",
     "FullscreenSelfMixin",
+    "FullscreenShownMixin",
     "FullscreenToolbarMixin",
+    "GridPassMixin",
     "ImageHolderAccessor",
     "MapStateMixin",
     "OutlinePassMixin",
     "PopupMenuMixin",
-    "SnapshotBiomeMixin"
+    "SnapshotBiomeMixin",
+    "WaypointScaleMixin",
+    "WaypointShownMixin"
   ],
   "injectors": {
     "defaultRequire": 0

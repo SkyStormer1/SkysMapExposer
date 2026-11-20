@@ -55,7 +55,7 @@ object JourneyMapAdapter : MapAdapter {
      */
     override fun checkHooks() {
         if (!dimensionHooked()) Log.warn("Could not hook JourneyMap's full-screen map; its dimension button will snap back to yours")
-        if (!minimapHooked()) Log.warn("Could not hook JourneyMap's minimap; BlueMap's terrain and the biome tint will not show on it")
+        if (!minimapHooked()) Log.warn("Could not hook JourneyMap's map drawing; BlueMap's terrain and the biome tint will not show on its maps")
         for ((type, hook, lost) in OPTIONAL_HOOKS) {
             if (!MapExposerClient.injected(type, hook)) Log.warn("Could not hook JourneyMap's {}; {}", type.substringAfterLast('.'), lost)
         }
@@ -69,6 +69,11 @@ object JourneyMapAdapter : MapAdapter {
         Triple("journeymap.client.ui.component.dropdown.PopupMenu", "barUnderMenu", "the map bar will not show while its right-click menu is open"),
         Triple("journeymap.client.ui.fullscreen.Fullscreen", "selfOnlyAtHome", "your arrow will show on another dimension's map"),
         Triple("journeymap.client.model.map.MapState", "radarOnlyAtHome", "the creatures and players around you will show on another dimension's map"),
+        Triple("journeymap.client.ui.fullscreen.Fullscreen", "waypointsOfShown", "another dimension's map will show your own dimension's waypoints"),
+        Triple("journeymap.client.waypoint.ClientWaypointImpl", "waypointsOfShown", "another dimension's map will show your own dimension's waypoints"),
+        Triple("journeymap.common.waypoint.WaypointImpl", "scaleOfShown", "waypoints on another dimension's map will be placed at your dimension's scale"),
+        Triple("journeymap.client.event.handlers.PopupMenuEventHandler", "noChatPosition", "its own Chat Position will stay on the right-click menu beside Copy coordinates"),
+        Triple("journeymap.client.render.map.MapRenderer", "underGrid", "its grid will be hidden under BlueMap's terrain and the biome tint"),
     )
 
     /**
@@ -124,6 +129,7 @@ object JourneyMapAdapter : MapAdapter {
         JourneyMapPins.forget()
         JourneyMapTerrain.forget()
         JourneyMapBiomes.forget()
+        JourneyMapOtherMaps.forget()
         JourneyMapImportedBiomes.forget()
         JourneyMapMinimap.forget()
         JourneyMapMenus.forget()
@@ -141,6 +147,7 @@ object JourneyMapAdapter : MapAdapter {
         JourneyMapPins.tick(api, shownDimension())
         JourneyMapTerrain.tick(api, session)
         JourneyMapBiomes.tick(api)
+        JourneyMapOtherMaps.tick(api)
     }
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {

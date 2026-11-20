@@ -33,6 +33,31 @@ object JourneyMapDimension {
         return picked != Minecraft.getInstance().level?.dimension()
     }
 
+    /** How deep the render thread is in JourneyMap's work for the full-screen map: drawing it, its Chat Position key, sharing from it. */
+    private var shownDepth = 0
+
+    /** For `FullscreenShownMixin` and [JourneyMapWaypoints.shareable]: entering and leaving that work. */
+    @JvmStatic
+    fun enterShown() {
+        shownDepth++
+    }
+
+    @JvmStatic
+    fun leaveShown() {
+        if (shownDepth > 0) shownDepth--
+    }
+
+    /**
+     * The dimension the full-screen map shows while JourneyMap draws it or writes its Chat Position,
+     * if another than yours; else null. There, waypoints go by it rather than by where you are
+     * (`WaypointShownMixin`, `WaypointScaleMixin`): which waypoints show, and at whose scale.
+     */
+    @JvmStatic
+    fun shownForWaypoints(): ResourceKey<Level>? {
+        if (shownDepth == 0 || !Minecraft.getInstance().isSameThread) return null
+        return chosen?.takeIf { showingOther() }
+    }
+
     /** Switches [map] to [dimension]; your own dimension clears the choice. */
     fun show(map: IFullscreen, dimension: ResourceKey<Level>) {
         val here = Minecraft.getInstance().level?.dimension()

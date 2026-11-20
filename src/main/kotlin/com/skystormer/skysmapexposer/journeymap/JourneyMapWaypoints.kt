@@ -79,7 +79,21 @@ internal object JourneyMapWaypoints {
         val waypoints = api.getAllWaypoints(level.dimension()).filter { !isTemporary(it) }
         return dimension to waypoints.map { w ->
             val group = w.groupId?.let { api.getWaypointGroup(it)?.name } ?: "JourneyMap"
-            ShareableWaypoint(group, ShareFormat.SharedWaypoint(w.name, WaypointRules.initials(w.name), w.x, w.y, w.z, true, WaypointRules.nearest(w.color)))
+            ShareableWaypoint(group, shareable(w))
+        }
+    }
+
+    /**
+     * [waypoint] to share, where JourneyMap's full-screen map shows it: JourneyMap gives a waypoint's
+     * place at the scale of where you are, and on a map of another dimension at that one's
+     * ([JourneyMapDimension.shownForWaypoints]). Client thread.
+     */
+    fun shareable(waypoint: Waypoint): ShareFormat.SharedWaypoint {
+        JourneyMapDimension.enterShown()
+        try {
+            return ShareFormat.SharedWaypoint(waypoint.name, WaypointRules.initials(waypoint.name), waypoint.x, waypoint.y, waypoint.z, true, WaypointRules.nearest(waypoint.color))
+        } finally {
+            JourneyMapDimension.leaveShown()
         }
     }
 
