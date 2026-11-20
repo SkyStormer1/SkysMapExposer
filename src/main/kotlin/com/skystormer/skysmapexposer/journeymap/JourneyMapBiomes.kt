@@ -30,8 +30,10 @@ import java.util.concurrent.Executors
  * dimension the map shows, as on Xaero's. A region is read when it first comes on screen, and
  * again only once JourneyMap has written its cache file since.
  *
- * Each region with something picked in it is one see-through picture ([RegionPicture]), a pixel
- * per 4 blocks, over BlueMap's terrain and under the outlines and pins.
+ * The tint is see-through pictures ([RegionPicture]) over BlueMap's terrain and under the outlines
+ * and pins: one per region close up, a pixel per 4 blocks; zoomed out, one per square of regions
+ * at a coarser pixel, so the whole screen is tinted at any zoom, as on Xaero's map. Regions are read
+ * a few at a time, nearest first.
  */
 internal object JourneyMapBiomes {
 
@@ -47,12 +49,17 @@ internal object JourneyMapBiomes {
     /** Lately read grids, least lately used first. Client thread only. */
     private val grids = lruMap<Area, Grid>(MAX_GRIDS)
 
-    /** An area's tint on one of the maps, from [grid] with the picks of [version]; no [picture] where nothing picked is. */
-    private class Tint(val grid: Grid, val version: Int, val picture: RegionPicture?)
+    /** [group] by [group] regions of a dimension from region (`x * group`, `z * group`): one picture's worth. */
+    private data class Square(val dimension: String, val x: Int, val z: Int, val layer: Int?, val group: Int) {
+        val span: Int get() = REGION * group
+    }
 
-    private val shown = HashMap<Pair<Area, Context.UI>, Tint>()
+    /** A square's tint on one of the maps, from grids of [stamp] with the picks of [version]; no [picture] where nothing picked is. */
+    private class Tint(val stamp: Long, val version: Int, val picture: RegionPicture?)
 
-    /** Areas being read; one at a time, nearest first, so panning gets what is on screen soon. */
+    private val shown = HashMap<Pair<Square, Context.UI>, Tint>()
+
+    /** Areas being read; a few at a time ([READERS]), nearest first, so panning gets what is on screen soon. */
     private val reading = HashSet<Area>()
 
     /** Bumped on leaving, so a grid read for the last world is thrown away when it arrives. */
@@ -60,7 +67,7 @@ internal object JourneyMapBiomes {
 
     /** Started the first time a grid is read. */
     private val worker by lazy {
-        Executors.newSingleThreadExecutor { Thread(it, "Map Exposer JourneyMap biomes").apply { isDaemon = true } }
+        Executors.newFixedThreadPool(READERS) { Thread(it, "Map Exposer JourneyMap biomes").apply { isDaemon = true } }
     }
 
     private val lastActive = HashMap<Context.UI, Long>()
@@ -101,28 +108,57 @@ internal object JourneyMapBiomes {
         val bottom = Math.floorDiv(bounds[3].toInt(), REGION)
         val centreX = (left + right) / 2.0
         val centreZ = (top + bottom) / 2.0
-        val wanted = buildList {
+        // Regions on screen, nearest first: every one is read, however far out.
+        val regions = buildList {
             for (z in top..bottom) for (x in left..right) add(Area(dimension, x, z, layer))
-        }.sortedBy { (it.x - centreX) * (it.x - centreX) + (it.z - centreZ) * (it.z - centreZ) }.take(MAX_SHOWN)
-        if (fullscreen) note = if ((right - left + 1) * (bottom - top + 1) > MAX_SHOWN) "zoomed too far out to tint it all" else ""
+        }.sortedBy { (it.x - centreX) * (it.x - centreX) + (it.z - centreZ) * (it.z - centreZ) }.take(MAX_GRIDS)
+        if (fullscreen) note = if ((right - left + 1) * (bottom - top + 1) > MAX_GRIDS) "zoomed too far out to tint it all" else ""
+        // Pictures: a region each close up, more regions each the further out, so there are never more than MAX_SHOWN.
+        var group = 1
+        while (group < MAX_GROUP && (Math.floorDiv(right, group) - Math.floorDiv(left, group) + 1) * (Math.floorDiv(bottom, group) - Math.floorDiv(top, group) + 1) > MAX_SHOWN) group *= 2
+        val wanted = buildList {
+            for (z in Math.floorDiv(top, group)..Math.floorDiv(bottom, group)) for (x in Math.floorDiv(left, group)..Math.floorDiv(right, group)) {
+                add(Square(dimension, x, z, layer, group))
+            }
+        }.sortedBy { (it.x * group + group / 2.0 - centreX).let { d -> d * d } + (it.z * group + group / 2.0 - centreZ).let { d -> d * d } }
         val wantedSet = wanted.toHashSet()
-        shown.keys.filter { it.second == ui && it.first !in wantedSet }.forEach { remove(api, it) }
+        // Another zoom's pictures stay until this zoom's over them are up, so zooming never blanks the tint.
+        shown.keys.filter { (square, onUi) ->
+            onUi == ui && square !in wantedSet && (square.group == group || square.dimension != dimension || wanted.all { shown[it to ui] != null })
+        }.forEach { remove(api, it) }
 
         // Now and then, whether JourneyMap has written any of these regions' cache files since they were read.
         val recheck = now - (checkedAt[ui] ?: 0L) > RECHECK_MS
         if (recheck) checkedAt[ui] = now
         val cacheFolder = if (recheck) JourneyMapFiles.chunkCacheFolder(dimension) else null
         val importFolder = if (recheck) JourneyMapImportedBiomes.folder(dimension) else null
-        var built = 0
-        for (area in wanted) {
+        for (area in regions) {
+            if (reading.size >= READERS * 2) break
+            if (area in reading) continue
             val grid = grids[area]
-            if (reading.isEmpty() && (grid == null || cacheFolder != null && stamp(cacheFolder, importFolder, area) != grid.fileTime)) read(area, registries)
-            if (grid == null || built >= PER_TICK) continue
-            val old = shown[area to ui]
-            if (old != null && old.grid === grid && old.version == BiomePicks.version) continue
-            show(api, area, ui, grid)
+            if (grid == null || cacheFolder != null && stamp(cacheFolder, importFolder, area) != grid.fileTime) read(area, registries)
+        }
+        var built = 0
+        for (square in wanted) {
+            if (built >= PER_TICK) break
+            val stamp = gridsStamp(square)
+            if (stamp == 0L) continue
+            val old = shown[square to ui]
+            if (old != null && old.stamp == stamp && old.version == BiomePicks.version) continue
+            show(api, square, ui)
             built++
         }
+    }
+
+    /** Which grids [square] would be drawn from just now (0 if none is read yet), so its picture is made again only when one changes. */
+    private fun gridsStamp(square: Square): Long {
+        var stamp = 0L
+        var any = false
+        for (z in 0 until square.group) for (x in 0 until square.group) {
+            val grid = grids[Area(square.dimension, square.x * square.group + x, square.z * square.group + z, square.layer)]
+            stamp = stamp * 1_000_003L + (if (grid == null) 7 else System.identityHashCode(grid).toLong().also { any = true })
+        }
+        return if (any) stamp or 1L else 0L
     }
 
     /** The cave map's slice, else null for the top block. */
@@ -227,25 +263,39 @@ internal object JourneyMapBiomes {
         return Grid(palette, cells, grid.fileTime)
     }
 
-    /** Client thread: [area]'s tint on [ui], replacing the old one. */
-    private fun show(api: IClientAPI, area: Area, ui: Context.UI, grid: Grid) {
-        val key = area to ui
+    /**
+     * Client thread: [square]'s tint on [ui], replacing the old one: [CELLS] pixels across whatever
+     * its size, so a pixel is 4 blocks for one region and coarser for more, each the cell at its middle.
+     */
+    private fun show(api: IClientAPI, square: Square, ui: Context.UI) {
+        val key = square to ui
+        val stamp = gridsStamp(square)
+        val group = square.group
+        val perPixel = 4 * group
+        val colourCache = HashMap<Grid, IntArray>()
+        var any = false
+        val image = NativeImage(CELLS, CELLS, true)
+        for (pz in 0 until CELLS) for (px in 0 until CELLS) {
+            val blockX = square.x * square.span + px * perPixel + perPixel / 2
+            val blockZ = square.z * square.span + pz * perPixel + perPixel / 2
+            val grid = grids[Area(square.dimension, Math.floorDiv(blockX, REGION), Math.floorDiv(blockZ, REGION), square.layer)]
+            if (grid == null) { image.setPixel(px, pz, 0); continue }
+            val colours = colourCache.getOrPut(grid) { IntArray(grid.palette.size) { BiomePicks.colourOf(grid.palette[it]) ?: 0 } }
+            val cell = grid.cells[cellIndex(Math.floorMod(blockX, REGION) / 4, Math.floorMod(blockZ, REGION) / 4)].toInt()
+            val colour = if (cell >= 0) colours[cell] else 0
+            if (colour != 0) any = true
+            image.setPixel(px, pz, colour)
+        }
         remove(api, key)
-        val colours = IntArray(grid.palette.size) { BiomePicks.colourOf(grid.palette[it]) ?: 0 }
-        val picture = if (colours.all { it == 0 }) null else {
-            val image = NativeImage(CELLS, CELLS, true)
-            for (z in 0 until CELLS) for (x in 0 until CELLS) {
-                val cell = grid.cells[cellIndex(x, z)].toInt()
-                image.setPixel(x, z, if (cell >= 0) colours[cell] else 0)
-            }
+        val picture = if (!any) { image.close(); null } else {
             val fullscreen = ui == Context.UI.Fullscreen
-            RegionPicture.show(api, "biomes", area.dimension, area.x * REGION, area.z * REGION, 4, image, fullscreen, BIOME_ORDER)
+            RegionPicture.show(api, "biomes", square.dimension, square.x * square.span, square.z * square.span, perPixel, image, fullscreen, BIOME_ORDER)
                 ?.also { if (!fullscreen) JourneyMapMinimap.changed() }
         }
-        shown[key] = Tint(grid, BiomePicks.version, picture)
+        shown[key] = Tint(stamp, BiomePicks.version, picture)
     }
 
-    private fun remove(api: IClientAPI, key: Pair<Area, Context.UI>) {
+    private fun remove(api: IClientAPI, key: Pair<Square, Context.UI>) {
         val gone = shown.remove(key)?.picture ?: return
         gone.remove(api)
         if (key.second == Context.UI.Minimap) JourneyMapMinimap.changed()
@@ -271,7 +321,7 @@ internal object JourneyMapBiomes {
     /** "tinting 2 biomes in 5 regions" for `/mapexposer`, or nothing while none is picked. */
     fun summary(): String? {
         if (!BiomePicks.any) return null
-        fun regionsOn(ui: Context.UI) = shown.count { it.key.second == ui && it.value.picture != null }
+        fun regionsOn(ui: Context.UI) = shown.entries.filter { it.key.second == ui && it.value.picture != null }.sumOf { it.key.first.group * it.key.first.group }
         val regions = regionsOn(Context.UI.Fullscreen)
         val biomes = BiomePicks.all.size
         return "tinting $biomes biome${if (biomes == 1) "" else "s"} in $regions region${if (regions == 1) "" else "s"}" +
@@ -283,9 +333,11 @@ internal object JourneyMapBiomes {
     private const val CHUNKS = REGION / 16
     private const val CELLS = REGION / 4
 
-    /** About 32 KB each. */
-    private const val MAX_GRIDS = 256
+    /** About 32 KB each: enough for every region on a zoomed-out screen. */
+    private const val MAX_GRIDS = 1024
     private const val MAX_SHOWN = 64
+    private const val MAX_GROUP = 32
+    private const val READERS = 3
     private const val PER_TICK = 8
 
     /** How often the cache files of the regions on screen are looked at for changes. */

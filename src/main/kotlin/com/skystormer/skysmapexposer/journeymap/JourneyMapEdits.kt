@@ -151,6 +151,11 @@ internal object JourneyMapEdits {
         val guesser = BlockGuesser(registries, job.dimension, JourneyMapShared::baseColour)
         for ((rx, rz) in regions) {
             if (job.cancelled) break
+            // Unexplored only, and your map of the region already has no gaps: nothing to fetch for it.
+            if (unexploredOnly && JourneyMapFiles.read(JourneyMapFiles.regionFile(job.folder, rx, rz))?.none { it ushr 24 == 0 } == true) {
+                job.looked.incrementAndGet()
+                continue
+            }
             val picture = IntArray(JourneyMapFiles.REGION * JourneyMapFiles.REGION)
             var any = false
             val originX = rx * JourneyMapFiles.REGION
