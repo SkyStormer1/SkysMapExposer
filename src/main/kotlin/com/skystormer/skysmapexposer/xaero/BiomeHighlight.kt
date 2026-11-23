@@ -16,6 +16,7 @@ import xaero.lib.XaeroLib
 import xaero.map.MapProcessor
 import xaero.map.graphics.CustomRenderTypes
 import xaero.map.region.texture.RegionTexture
+import java.lang.ref.WeakReference
 
 /**
  * Tints the world map wherever Xaero has recorded one of the biomes picked in the [gui.MapBar].
@@ -33,7 +34,12 @@ import xaero.map.region.texture.RegionTexture
  */
 object BiomeHighlight {
 
-    private class Square(val texture: RegionTexture<*>, val textureVersion: Int, val version: Int, val step: Int, val rects: IntArray)
+    /**
+     * A square's rectangles, and the texture they were traced from. The texture is held weakly:
+     * a square once looked at stays here until [MAX_SQUARES], long after Xaero has let go of its
+     * region, and holding on to the texture would keep all of Xaero's data for it in memory.
+     */
+    private class Square(val texture: WeakReference<RegionTexture<*>>, val textureVersion: Int, val version: Int, val step: Int, val rects: IntArray)
 
     /**
      * Remembered squares: one map per level of the world map, since each level has its own
@@ -62,6 +68,18 @@ object BiomeHighlight {
     }
 
     private var squaresVersion = 0
+
+    /**
+     * Leaving the server: its squares are of its map, and the biomes noticed there may not be on
+     * the next one's.
+     */
+    fun forget() {
+        squares.forEach { it.clear() }
+        if (unknown.isNotEmpty()) {
+            unknown.clear()
+            unknownVersion++
+        }
+    }
 
     /** The world map, from Xaero's `GuiMap`, with the matrix and origin its terrain was drawn with. */
     @JvmStatic
@@ -181,11 +199,11 @@ object BiomeHighlight {
         val key = packXZ(squareX, squareZ)
         val known = squares[slot][key]
         val textureVersion = texture.textureVersion
-        if (known != null && known.texture === texture && known.textureVersion == textureVersion &&
+        if (known != null && known.texture.get() === texture && known.textureVersion == textureVersion &&
             known.version == BiomePicks.version && known.step == step
         ) return known.rects
         val rects = trace(texture, step)
-        squares[slot][key] = Square(texture, textureVersion, BiomePicks.version, step, rects)
+        squares[slot][key] = Square(WeakReference(texture), textureVersion, BiomePicks.version, step, rects)
         return rects
     }
 

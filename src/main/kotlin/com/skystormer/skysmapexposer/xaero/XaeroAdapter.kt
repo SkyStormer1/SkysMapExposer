@@ -355,6 +355,7 @@ object XaeroAdapter : MapAdapter {
         TerrainFiles.forget()
         MapView.forget()
         MapBackup.leave()
+        BiomeHighlight.forget()
     }
 
     override fun tick(client: Minecraft, session: Session?) {
