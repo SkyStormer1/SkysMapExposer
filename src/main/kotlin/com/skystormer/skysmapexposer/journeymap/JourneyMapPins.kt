@@ -22,6 +22,7 @@ import journeymap.api.v2.client.model.MapPolygon
 import journeymap.api.v2.client.model.ShapeProperties
 import journeymap.api.v2.client.util.UIState
 import journeymap.api.v2.common.Context
+import com.skystormer.skysmapexposer.gui.ShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.core.BlockPos
@@ -251,6 +252,7 @@ internal object JourneyMapPins {
         menu.addMenuItem("Save as waypoint") { Ui.say(JourneyMapWaypoints.save(api, pin, dimension, temporary = false)) }
         menu.addMenuItem("Set temporary waypoint") { Ui.say(JourneyMapWaypoints.save(api, pin, dimension, temporary = true)) }
         menu.addMenuItem("Copy coordinates") { Ui.copy(pin.x, pin.y, pin.z, dimension, pin.label) }
+        menu.addMenuItem("Share…") { Ui.open(ShareScreen.forPin(Minecraft.getInstance().gui.screen(), dimension, pin)) }
     }
 
     // ---- pictures ----

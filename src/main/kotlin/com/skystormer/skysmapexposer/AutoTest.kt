@@ -37,6 +37,7 @@ import java.nio.file.Path
  * - `waypointin <dimension> <x> <y> <z> <name>` adds one to that dimension's waypoints
  * - `mywaypoints` logs the waypoints the installed map would offer to share
  * - `shareeveryone [dimension]` shares two of your waypoints of a dimension with everyone, in chat
+ * - `jmtype <Day|Night|Topo|Biome>` switches JourneyMap's full-screen map to that type
  * - `biomecheck` logs how often [BiomeZoom] picks the biome the game shows, around you
  * - `click <text>` runs the newest chat button reading that, e.g. `click [Add waypoints]`
  * - `fill <blocks>` starts a terrain fill that far around you, as the settings button does
@@ -121,6 +122,14 @@ object AutoTest {
                     val (x, y, z) = parts.subList(1, 4).map { it.toInt() }
                     val name = parts.getOrElse(4) { "Test" }
                     Log.info("AutoTest: {}", MapMods.adapter?.addWaypoints(parts[0], "AutoTest", listOf(ShareFormat.SharedWaypoint(name, name.take(1), x, y, z, true, 0))))
+                }
+                "jmtype" -> {
+                    // JourneyMap's full-screen map to Day, Night, Topo or Biome, through its API (found by name, so no JourneyMap is needed to build this).
+                    val screen = client.gui.screen() ?: return
+                    val types = Class.forName("journeymap.api.v2.common.Context\$MapType")
+                    val type = types.enumConstants.first { (it as Enum<*>).name.equals(rest, ignoreCase = true) }
+                    screen.javaClass.getMethod("updateMapType", types, Integer::class.java, net.minecraft.resources.ResourceKey::class.java)
+                        .invoke(screen, type, null, client.level?.dimension())
                 }
                 "biomecheck" -> {
                     // Our copy of the game's per-block biome rule against the game's own, at the surface around you.

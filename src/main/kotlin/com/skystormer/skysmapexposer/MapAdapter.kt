@@ -82,6 +82,12 @@ interface MapAdapter {
     /** How a download into the map is going, while one runs. */
     fun downloadStatus(): String? = null
 
+    /** Whether BlueMap can be downloaded into this map ([download]). */
+    val canDownload: Boolean get() = false
+
+    /** Downloads BlueMap into this map for the dimension its full-screen map shows, all of it or only where it has nothing; what to tell you. */
+    fun download(unexploredOnly: Boolean): String = "This map can't take downloads"
+
     /** Stops a running download; false if none was running. */
     fun cancelDownload(): Boolean = false
 }

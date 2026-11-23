@@ -2,6 +2,10 @@ package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.ShareFormat
+import com.skystormer.skysmapexposer.WaypointRules
+import kotlin.math.floor
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
@@ -114,10 +118,21 @@ class ShareScreen(
         Ui.open(parent)
     }
 
-    private companion object {
-        const val WIDTH = 200
-        const val ROWS = 6
-        const val ROW = 20
-        const val GAP = 4
+    companion object {
+        private const val WIDTH = 200
+        private const val ROWS = 6
+        private const val ROW = 20
+        private const val GAP = 4
+
+        /** Picks who gets [waypoint] of [dimension]: a player, or everyone in chat; back to [parent] after. */
+        fun forWaypoint(parent: Screen?, dimension: String, waypoint: ShareFormat.SharedWaypoint): ShareScreen =
+            ShareScreen(parent, "Share ${waypoint.name} with…", everyone = { ChatShare.shareWaypointsWithEveryone(dimension, listOf(waypoint)) }) { name ->
+                ChatShare.shareWaypoints(name, dimension, listOf(waypoint))
+            }
+
+        /** A BlueMap marker or player as a waypoint to share, named and coloured as saving it makes one. */
+        fun forPin(parent: Screen?, dimension: String, pin: Markers.Pin): ShareScreen = forWaypoint(parent, dimension, ShareFormat.SharedWaypoint(
+            pin.label, WaypointRules.initials(pin.label), floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt(), true, WaypointRules.colourFor(pin),
+        ))
     }
 }

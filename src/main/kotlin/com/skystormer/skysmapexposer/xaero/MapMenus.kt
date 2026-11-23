@@ -262,9 +262,7 @@ object MapMenus {
             if (at < 0 || !Waypoints.available()) return@guard
             val (dimension, shared) = WaypointShare.shareable(waypoint.original) ?: return@guard
             options[at] = option("Share…", at, target) { parent ->
-                Ui.open(ShareScreen(parent, "Share ${shared.name} with…", everyone = { ChatShare.shareWaypointsWithEveryone(dimension, listOf(shared)) }) { name ->
-                    ChatShare.shareWaypoints(name, dimension, listOf(shared))
-                })
+                Ui.open(ShareScreen.forWaypoint(parent, dimension, shared))
             }
         }
     }

@@ -324,6 +324,10 @@ object JourneyMapAdapter : MapAdapter {
 
     override fun cancelDownload(): Boolean = JourneyMapEdits.cancel()
 
+    override val canDownload: Boolean get() = true
+
+    override fun download(unexploredOnly: Boolean): String = JourneyMapEdits.download(unexploredOnly)
+
     override fun myWaypoints(dimension: String?): Pair<String, List<ShareableWaypoint>>? = api?.let { JourneyMapWaypoints.mine(it, dimension) }
 
     override fun addWaypoints(dimension: String, from: String, waypoints: List<ShareFormat.SharedWaypoint>): String =

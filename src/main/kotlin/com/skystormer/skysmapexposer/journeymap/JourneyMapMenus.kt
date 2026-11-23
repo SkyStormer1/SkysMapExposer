@@ -14,7 +14,6 @@ import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.gui.MapBar
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
-import com.skystormer.skysmapexposer.ChatShare
 import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.gui.WaypointShareScreen
 import journeymap.api.v2.client.event.FullscreenRenderEvent
@@ -116,8 +115,8 @@ internal object JourneyMapMenus {
 
     /**
      * Client thread, every tick: once you leave the map, it goes back to your own dimension, as
-     * Xaero's does. The player list and JourneyMap's right-click menu (a screen of its own over the
-     * map) close the map for a moment and count as still on it.
+     * Xaero's does. The player list, JourneyMap's right-click menu and its other screens opened from
+     * the map (the waypoint editor) close the map for a moment and count as still on it.
      */
     fun tick(client: Minecraft) {
         // The map Go to opened over another screen has closed: back to that screen.
@@ -128,7 +127,9 @@ internal object JourneyMapMenus {
         }
         if (JourneyMapDimension.chosen == null) return
         val screen = client.gui.screen()
-        val onTheMap = screen != null && (screen === fullscreen?.screen || screen is PlayerListScreen || screen is FullScreenPopupMenu)
+        // JourneyMap's own screens opened from the map (its waypoint editor, pickers) count as on it.
+        val onTheMap = screen != null && (screen is Fullscreen || screen is PlayerListScreen || screen is FullScreenPopupMenu ||
+            screen.javaClass.name.startsWith("journeymap.client.ui."))
         if (!onTheMap && pending == null) {
             JourneyMapDimension.forget()
             // Coming back to your own dimension goes to you, as on Xaero's map.
@@ -143,9 +144,7 @@ internal object JourneyMapMenus {
         val dimension = map.uiState?.dimension?.identifier()?.toString() ?: return
         event.popupMenu.addMenuItem("Share…") {
             val shared = JourneyMapWaypoints.shareable(waypoint, dimension)
-            Ui.open(ShareScreen(map.screen, "Share ${waypoint.name} with…", everyone = { ChatShare.shareWaypointsWithEveryone(dimension, listOf(shared)) }) { name ->
-                ChatShare.shareWaypoints(name, dimension, listOf(shared))
-            })
+            Ui.open(ShareScreen.forWaypoint(map.screen, dimension, shared))
         }
     }
 
@@ -206,6 +205,7 @@ internal object JourneyMapMenus {
         if (backTo != null) backToShown = true
         if (JourneyMapDimension.backToYou) {
             JourneyMapDimension.backToYou = false
+            JourneyMapDimension.restore(map)
             Minecraft.getInstance().player?.let { map.centerOn(it.x, it.z) }
         }
         pending?.let { (x, z) ->

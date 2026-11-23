@@ -17,7 +17,6 @@ import journeymap.client.model.chunk.ChunkMD
 import journeymap.client.model.chunk.ChunkRenderContext
 import journeymap.client.model.chunk.SnapshotChunkMD
 import journeymap.client.model.map.MapType
-import journeymap.client.model.region.LodChainRegistry
 import journeymap.client.model.region.RegionCoord
 import journeymap.client.model.region.RegionImageCache
 import journeymap.common.chunk.JMChunkCache
@@ -232,10 +231,19 @@ internal object JourneyMapOtherMaps {
                 held.forEach(DataCache.INSTANCE::removeChunkMD)
             }
             if (anyDrawn != 0 || toWipe.isNotEmpty()) {
-                // Shown at once, and saved by JourneyMap with its own regions.
+                // Shown at once.
                 RegionImageCache.INSTANCE.updateTextures(false, true)
-                // A region new to one of these maps goes on its list of files to draw zoomed out.
-                for ((bit, type) in types) if (anyDrawn and bit != 0) LodChainRegistry.INSTANCE.registerRegion(type, job.regionX, job.regionZ)
+                // Saved straight away, and only then JourneyMap's zoomed-out copies made again: it makes
+                // them from the files, so made from the old file they showed the region empty zoomed out
+                // and the new one close up, flickering between the two until it saved on its own.
+                RegionImageCache.INSTANCE.getRegionImageSet(RegionCoord.fromRegionPos(world, job.regionX, job.regionZ, key)).writeToDiskAsync(true)
+                RegionImageCache.INSTANCE.awaitPendingWrites(WRITE_WAIT_MS)
+                val dimensionFolder = JourneyMapFiles.dimensionFolder(job.dimension)
+                for ((bit, type) in types) {
+                    if (anyDrawn and bit == 0 && toWipe.isEmpty()) continue
+                    val folder = dimensionFolder?.resolve(FOLDERS.getValue(bit)) ?: continue
+                    JourneyMapFiles.written(type, folder, job.regionX, job.regionZ, exists = true)
+                }
             }
         }
         if (!drawn.contentEquals(before)) {
@@ -252,6 +260,9 @@ internal object JourneyMapOtherMaps {
     private val UIS = arrayOf(Context.UI.Fullscreen, Context.UI.Minimap)
 
     private const val CHUNKS = 32 * 32
+    /** Each map's folder in JourneyMap's dimension folder. */
+    private val FOLDERS = mapOf(NIGHT to "night", TOPO to "topo", BIOME to "biome")
+    private const val WRITE_WAIT_MS = 10_000L
     private const val LOAD_WAIT_S = 30L
     private const val NIGHT = 1
     private const val TOPO = 2

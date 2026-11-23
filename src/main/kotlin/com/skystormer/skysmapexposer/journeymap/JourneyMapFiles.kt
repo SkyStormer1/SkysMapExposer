@@ -166,9 +166,12 @@ internal object JourneyMapFiles {
      * (a download into a cleared map stayed black at every zoom), and its zoomed-out copies are made
      * again, or it would keep drawing the old ones zoomed out.
      */
-    fun written(dimension: String, folder: Path, regionX: Int, regionZ: Int, exists: Boolean) {
+    fun written(dimension: String, folder: Path, regionX: Int, regionZ: Int, exists: Boolean) =
+        written(MapType.day(levelKey(dimension)), folder, regionX, regionZ, exists)
+
+    /** [written] for any of JourneyMap's map types ([type]), whose region files are in [folder]. */
+    fun written(type: MapType, folder: Path, regionX: Int, regionZ: Int, exists: Boolean) {
         try {
-            val type = MapType.day(levelKey(dimension))
             if (exists) LodChainRegistry.INSTANCE.registerRegion(type, regionX, regionZ)
             else LodChainRegistry.INSTANCE.removeRegion(type, regionX, regionZ)
             LodChainRegistry.INSTANCE.invalidate(type, regionX, regionZ, folder.toFile())

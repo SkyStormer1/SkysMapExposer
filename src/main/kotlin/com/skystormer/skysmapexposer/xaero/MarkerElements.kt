@@ -15,6 +15,7 @@ import com.mojang.renderpearl.api.textures.GpuTextureView
 /*import com.mojang.blaze3d.textures.GpuTextureView
 *///?}
 import net.fabricmc.loader.api.FabricLoader
+import com.skystormer.skysmapexposer.gui.ShareScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import net.minecraft.util.Util
@@ -153,6 +154,9 @@ object MarkerElements {
                     Ui.copy(pin.x, pin.y, pin.z, worldMapDimension(), pin.label)
                 }
             )
+            worldMapDimension()?.let { dimension ->
+                options.add(MapMenus.option("Share…", options.size, target) { parent -> Ui.open(ShareScreen.forPin(parent, dimension, pin)) })
+            }
             if (FabricLoader.getInstance().isModLoaded("skysmapshapes")) {
                 options.add(MapMenus.option("Add shape here", options.size, target) { addShape(pin) })
             }

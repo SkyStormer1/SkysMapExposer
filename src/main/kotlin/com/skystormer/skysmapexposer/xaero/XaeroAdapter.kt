@@ -482,4 +482,8 @@ object XaeroAdapter : MapAdapter {
         if (BlueMapDownload.running) BlueMapDownload.status() ?: "A download from BlueMap is running." else null
 
     override fun cancelDownload(): Boolean = BlueMapDownload.cancel()
+
+    override val canDownload: Boolean get() = true
+
+    override fun download(unexploredOnly: Boolean): String = BlueMapDownload.start(null, unexploredOnly)
 }

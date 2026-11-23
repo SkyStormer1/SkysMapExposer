@@ -1,7 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.background
-import com.skystormer.skysmapexposer.xaero.DownloadScreen
 import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
@@ -621,13 +620,13 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val button = Button.builder(Component.literal("Download…")) { confirmDownload() }
             .bounds(x, y, width, ROW)
             .tooltip(SafeTooltip.of(
-                "Download from BlueMap into your own Xaero map, for the dimension the world map is showing: " +
+                "Download from BlueMap into your own map, for the dimension its full-screen map is showing: " +
                     "only the chunks you have never explored, or everything. Each region of your map is backed up " +
                     "just before it is changed."
             ))
             .build()
-        // Downloads write into Xaero's own map files, so they need Xaero's World Map.
-        button.active = Session.current != null && MapMods.xaeroWorldMap
+        // Downloads write into the map's own files: Xaero's World Map or JourneyMap.
+        button.active = Session.current != null && MapMods.adapter?.canDownload == true
         return button
     }
 

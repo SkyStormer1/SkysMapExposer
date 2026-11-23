@@ -16,6 +16,8 @@
     "OutlinePassMixin",
     "PopupMenuMixin",
     "SnapshotBiomeMixin",
+    "WaypointCreateMixin",
+    "WaypointEditorMixin",
     "WaypointScaleMixin",
     "WaypointShownMixin"
   ],
