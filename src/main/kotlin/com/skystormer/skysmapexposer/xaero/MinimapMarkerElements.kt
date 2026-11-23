@@ -156,10 +156,15 @@ object MinimapMarkerElements {
     /** Half a pin's box, in the element's own units, matching what [sizeOf] will draw. */
     private fun halfOf(pin: Markers.Pin): Int = (HALF * 2 * sizeOf(pin)).toInt().coerceAtLeast(2)
 
-    /** How far from you, in blocks, a marker is. */
+    /**
+     * How far from you, in blocks, a marker is. Asked a dozen times per pin per frame (each box edge
+     * goes through [sizeOf]), so a plain square root rather than the slower, overflow-safe `hypot`.
+     */
     private fun distanceTo(pin: Markers.Pin): Double? {
         val player = Minecraft.getInstance().player ?: return null
-        return Math.hypot(pin.x - player.x, pin.z - player.z)
+        val dx = pin.x - player.x
+        val dz = pin.z - player.z
+        return Math.sqrt(dx * dx + dz * dz)
     }
 
     /** Whether a marker is close enough to show on the minimap at all: within [Config.minimapShrinkChunks]. */

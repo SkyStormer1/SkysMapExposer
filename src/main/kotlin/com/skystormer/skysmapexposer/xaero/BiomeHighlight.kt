@@ -226,7 +226,7 @@ object BiomeHighlight {
                     col++
                     continue
                 }
-                val start = col
+                val start = col++
                 while (col < cells && texture.getBiome(col * step, row * step)?.let(BiomePicks::colourOf) == colour) col++
                 val above = open[start]
                 if (above != null && out[above + 2] == col * step && out[above + 4] == colour) {
