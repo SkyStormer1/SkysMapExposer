@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
+import java.nio.file.Files
 
 /** The `/mapexposer` command and what each part of it does; the installed map adds its own ([MapAdapter.commands]). */
 object Commands {
@@ -200,7 +201,7 @@ object Commands {
     private fun openTerrain(context: CommandContext<FabricClientCommandSource>): Int {
         val name = StringArgumentType.getString(context, "file")
         val path = SharedTerrain.folder.resolve(name).normalize()
-        if (!path.startsWith(SharedTerrain.folder) || !java.nio.file.Files.isRegularFile(path)) {
+        if (!path.startsWith(SharedTerrain.folder) || !Files.isRegularFile(path)) {
             context.source.sendError(Component.literal("No map file called $name in the shared maps folder"))
             return 0
         }

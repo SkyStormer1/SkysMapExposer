@@ -11,6 +11,7 @@ import com.mojang.renderpearl.api.textures.GpuTextureView
 *///?}
 import net.minecraft.client.renderer.texture.DynamicTexture
 import java.awt.image.BufferedImage
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import kotlin.math.roundToInt
@@ -21,11 +22,11 @@ import kotlin.math.roundToInt
  *
  * Two kinds are used:
  *  - points ("poi" markers): shops, banners, spawn. Shown as icons on the world map and minimap
- *    only, never in the world, and can be saved as Xaero waypoints.
+ *    only, never in the world, and can be saved as waypoints.
  *  - outlines ("shape", "extrude" and "line" markers): the world border, zones. Drawn into the map
  *    itself, in the marker's own colour and line width.
  *
- * Other marker types (html, BlueMap's own player list) have no place on Xaero's map and are skipped.
+ * Other marker types (html, BlueMap's own player list) have no place on the map and are skipped.
  */
 class Markers(private val blueMap: BlueMap, private val workers: ExecutorService) {
 
@@ -43,10 +44,10 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
     ) : Pin(label, x, y, z)
 
     /** A player BlueMap reports in this map's dimension. */
-    class Player(val uuid: java.util.UUID, label: String, x: Double, y: Double, z: Double) : Pin(label, x, y, z)
+    class Player(val uuid: UUID, label: String, x: Double, y: Double, z: Double) : Pin(label, x, y, z)
 
     /** A spot a trusted player pinged ([PlayerPings]): their face under a flashing beam. */
-    class Ping(val uuid: java.util.UUID, label: String, x: Double, y: Double, z: Double, val startedAt: Long) : Pin(label, x, y, z) {
+    class Ping(val uuid: UUID, label: String, x: Double, y: Double, z: Double, val startedAt: Long) : Pin(label, x, y, z) {
         /** The same ping in the dimension whose coordinates are [scale] times these. */
         fun scaled(scale: Double) = Ping(uuid, label, x * scale, y, z * scale, startedAt)
     }
@@ -121,7 +122,7 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
                     val z = position.get("z").asDouble
                     if (!onMap(x) || !onMap(y) || !onMap(z)) return@mapNotNull null
                     Player(
-                        uuid = java.util.UUID.fromString(player.get("uuid").asString),
+                        uuid = UUID.fromString(player.get("uuid").asString),
                         label = player.get("name")?.asString?.take(MAX_NAME) ?: "?",
                         x = x,
                         y = y,

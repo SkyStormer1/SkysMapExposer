@@ -6,6 +6,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
@@ -234,7 +235,7 @@ class BiomeGuide private constructor(
         /** Where in a cell to look if its middle has nothing. */
         private val OFFSETS = listOf(0 to 0, -3 to -3, 3 to 3, -3 to 3, 3 to -3)
 
-        private val loaded = ConcurrentHashMap<String, java.util.Optional<BiomeGuide>>()
+        private val loaded = ConcurrentHashMap<String, Optional<BiomeGuide>>()
 
         /** The guide that came with the mod for [dimensionId], or null if there is none for it. */
         fun forDimension(dimensionId: String): BiomeGuide? = loaded.computeIfAbsent(dimensionId) {
@@ -248,7 +249,7 @@ class BiomeGuide private constructor(
                     null
                 }
             }
-            java.util.Optional.ofNullable(guide)
+            Optional.ofNullable(guide)
         }.orElse(null)
 
         fun read(input: InputStream): BiomeGuide =

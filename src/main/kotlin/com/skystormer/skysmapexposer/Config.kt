@@ -177,10 +177,10 @@ object Config {
 
     /** Whether every tile BlueMap has is downloaded and made ready in the background after joining ([MapPrep]), and how many a second at most. */
     var prepareMap: Boolean = true
+    var prepareTilesPerSecond: Int = 4
 
     /** Whether chat says, once a visit, why BlueMap's terrain is missing while the full-screen map shows caves ([CaveNotice]). */
     var caveNotice: Boolean = true
-    var prepareTilesPerSecond: Int = 4
 
     /** None until you add one in the settings screen. */
     var servers: List<Server> = emptyList()

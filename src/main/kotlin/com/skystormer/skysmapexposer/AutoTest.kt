@@ -34,7 +34,7 @@ import java.nio.file.Path
  * - `look <yaw> <pitch>` turns you to look that way
  * - `key <key>` presses a key once, by the game's name for it, e.g. `key.keyboard.m`
  * - `screenshot` takes a screenshot (F2's), into `screenshots/`
- * - `waypoint <x> <y> <z> <name>` adds a waypoint where you are, as an added shared one is
+ * - `waypoint <x> <y> <z> <name>` adds a waypoint there, in the dimension you are in, as an added shared one is
  * - `waypointin <dimension> <x> <y> <z> <name>` adds one to that dimension's waypoints
  * - `mywaypoints` logs the waypoints the installed map would offer to share
  * - `shareeveryone [dimension]` shares two of your waypoints of a dimension with everyone, in chat
@@ -48,6 +48,13 @@ import java.nio.file.Path
  * - `goto <x> <z> [dimension]` sends the installed map's full-screen map there, as the player list's Go to does
  * - `mouse <x> <y>` puts the mouse there, in window pixels, so maps see it move
  * - `close` closes whatever screen is open
+ * - `menurows` / `menupick <text>` logs the rows of Xaero's open right-click menu, or picks the first with that text
+ * - `editmenu` opens the right-click menu editor
+ * - `zoom in|out` zooms the open screen, as JourneyMap's full-screen map does
+ * - `gotoplayer` centres the map on the first player BlueMap lists in your dimension
+ * - `addshared blank|all` adds the map file opened last, as its chat button would
+ * - `button left|right down|up` and `moveto <x> <y>`: real mouse input through Minecraft's own handler
+ * - `rightdown|rightdrag|rightup [<x> <y>]` the right mouse button on the open screen
  * - `join <world>` opens that singleplayer world, first making it (creative, peaceful) if needed
  * - `server <address>` joins that server
  * - `guiscale <n>` sets the GUI scale (0 auto)
@@ -224,8 +231,6 @@ object AutoTest {
                     /*org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.window.handle(), x, y)
                     *///?}
                 }
-                // The right mouse button on the screen open, where the mouse is: down, dragged to where
-                // the mouse is now, up; through the same hooks as a real one.
                 // Real mouse input, through Minecraft's own handler as a mouse would send it:
                 // `button left|right down|up`, `moveto x y` (window pixels).
                 "button", "moveto" -> {
@@ -242,6 +247,8 @@ object AutoTest {
                     }
                     Log.info("AutoTest: {} {}", verb, rest)
                 }
+                // The right mouse button on the screen open, where the mouse is: down, dragged to where
+                // the mouse is now, up; through the same hooks as a real one.
                 "rightdown", "rightdrag", "rightup" -> {
                     val screen = client.gui.screen() ?: return
                     // `rightdown 300 200`: the mouse put there first (window pixels), as the script's

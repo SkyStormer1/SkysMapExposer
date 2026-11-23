@@ -14,6 +14,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpClient
+import java.net.http.HttpHeaders
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
@@ -281,7 +282,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     }
 
     /** A reply, read whole on the calling thread, but never more than [MAX_BODY] bytes of it. */
-    private class Reply<T>(private val status: Int, private val content: T, private val headers: java.net.http.HttpHeaders? = null) {
+    private class Reply<T>(private val status: Int, private val content: T, private val headers: HttpHeaders? = null) {
         fun statusCode() = status
         fun body() = content
 
@@ -397,7 +398,6 @@ class BlueMap(baseUrl: String) : AutoCloseable {
 
         private const val MAX_BODY = 32 * 1024 * 1024
         private const val MAX_TILE_SIZE = 4096
-
 
         /** The biggest marker icon worth drawing. */
         const val MAX_ICON = 1024

@@ -1,9 +1,11 @@
 package com.skystormer.skysmapexposer
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements
 import net.minecraft.client.DeltaTracker
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 import java.util.UUID
 import kotlin.math.atan2
@@ -53,7 +55,7 @@ object PlayerBeacon : HudElement {
      * The vanilla HUD element the heads are drawn just before: the first of them, so every part of
      * the HUD, and Xaero's minimap (attached after it), is drawn over a head rather than under it.
      */
-    val DRAWN_BEFORE: net.minecraft.resources.Identifier = net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements.MISC_OVERLAYS
+    val DRAWN_BEFORE: Identifier = VanillaHudElements.MISC_OVERLAYS
 
     private var complained = false
 

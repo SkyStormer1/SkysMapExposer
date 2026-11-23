@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import com.mojang.blaze3d.platform.InputConstants
+import com.skystormer.skysmapexposer.terrain.TerrainFill
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents
@@ -97,7 +98,7 @@ object MapExposerClient : ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register { _, client ->
             client.execute {
                 leaving("the BlueMap session") { Session.end() }
-                leaving("terrain fill") { com.skystormer.skysmapexposer.terrain.TerrainFill.forget() }
+                leaving("terrain fill") { TerrainFill.forget() }
                 leaving("chat sharing") { ChatShare.forget() }
                 leaving("shared map files") { SharedTerrain.forget() }
                 leaving("pings") { PlayerPings.forget() }
@@ -173,5 +174,4 @@ object MapExposerClient : ClientModInitializer {
             }
         }
     }
-
 }

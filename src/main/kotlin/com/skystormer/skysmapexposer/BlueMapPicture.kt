@@ -1,9 +1,8 @@
 package com.skystormer.skysmapexposer
 
-
 /**
  * BlueMap's finest tiles read as data rather than as a picture: for every block, its colour, the
- * height of the ground and the block light there. This is what gets written into Xaero's map.
+ * height of the ground and the block light there. This is what a download writes into either map.
  *
  * BlueMap's tiles are 500 blocks square and Xaero's regions 512, so the two grids never line up; a
  * region is filled from the (up to four) tiles it overlaps, by [RegionPicture.fill].
@@ -106,7 +105,6 @@ object BlueMapPicture {
         }
     }
 
-    /** The finest tiles ([tileX] to [tileX], [tileZ] likewise) a block rectangle overlaps. */
     /**
      * What BlueMap has for region ([regionX], [regionZ]) from its tiles of [size] blocks ([tile], null
      * where it has none), only inside the blocks [minX]..[maxX], [minZ]..[maxZ] when given: what a
@@ -124,6 +122,7 @@ object BlueMapPicture {
         return picture
     }
 
+    /** The finest tiles, of [size] blocks, a block rectangle overlaps. */
     fun tilesOver(minX: Int, minZ: Int, maxX: Int, maxZ: Int, size: Int): List<Pair<Int, Int>> {
         val out = ArrayList<Pair<Int, Int>>()
         for (tx in Math.floorDiv(minX, size)..Math.floorDiv(maxX, size)) {

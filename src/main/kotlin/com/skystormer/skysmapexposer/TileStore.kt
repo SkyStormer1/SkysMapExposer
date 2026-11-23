@@ -16,6 +16,7 @@ import java.util.HexFormat
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * BlueMap tiles: fetched on demand, kept on disk, decoded off the client thread, and turned into
@@ -138,7 +139,7 @@ class TileStore(
     private val inMemory: MutableSet<Key> = ConcurrentHashMap.newKeySet()
 
     /** Loads and checks under way for the maps, which background preparation waits for. */
-    val busy = java.util.concurrent.atomic.AtomicInteger()
+    val busy = AtomicInteger()
 
     /**
      * Anything downloaded before this is downloaded again as it is drawn, whatever its age. Set by

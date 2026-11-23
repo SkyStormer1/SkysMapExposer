@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-
 /**
  * Background preparation of the whole map: after joining, every tile BlueMap has is downloaded and
  * made ready to draw ([TileStore.prepare]), so the map is ready before it is opened. On unless

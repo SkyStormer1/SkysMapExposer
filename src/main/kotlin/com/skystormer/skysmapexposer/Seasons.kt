@@ -15,7 +15,6 @@ object Seasons {
     fun format(minute: Int): String =
         TIME.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(minute * 60_000L), ZoneId.systemDefault()))
 
-
     /** Each dimension's season start on this server, as words. */
     fun list(): String {
         val server = Config.serverFor(MapExposerClient.addressOf(Minecraft.getInstance()))

@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.terrain.FloorColumns
 import com.skystormer.skysmapexposer.terrain.HiresTile
+import net.minecraft.client.Minecraft
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -9,6 +10,8 @@ import java.nio.file.attribute.FileTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Experimental, "Sea floor: high res": the bed under the water, from BlueMap's 3D tiles, where the
@@ -76,11 +79,11 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     @Volatile private var closed = false
     @Volatile private var centreX = 0.0
     @Volatile private var centreZ = 0.0
-    private val failures = java.util.concurrent.atomic.AtomicInteger()
+    private val failures = AtomicInteger()
 
     /** Downloaded since joining, for the status line: 3D tiles and bytes. */
-    val downloaded = java.util.concurrent.atomic.AtomicInteger()
-    val downloadedBytes = java.util.concurrent.atomic.AtomicLong()
+    val downloaded = AtomicInteger()
+    val downloadedBytes = AtomicLong()
 
     /** BlueMap tiles whose picture changed under a build: started again when next drawn. */
     private val restart: MutableSet<TileStore.Key> = ConcurrentHashMap.newKeySet()
@@ -462,7 +465,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     companion object {
         /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
         fun hasCeiling(dimensionId: String): Boolean {
-            val level = net.minecraft.client.Minecraft.getInstance().level
+            val level = Minecraft.getInstance().level
             if (level != null && level.dimension().identifier().toString() == dimensionId) return level.dimensionType().hasCeiling()
             return dimensionId == Config.NETHER
         }

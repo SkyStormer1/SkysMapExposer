@@ -8,6 +8,7 @@ import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadFactory
 
 /**
@@ -36,7 +37,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     fun work(task: () -> Unit) {
         try {
             workers.execute(task)
-        } catch (e: java.util.concurrent.RejectedExecutionException) {
+        } catch (e: RejectedExecutionException) {
             // The session ended while this was being asked for: nothing left to do it for.
         }
     }
@@ -88,7 +89,6 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
      * because Xaero only answers while it has the region open, which it does not when zoomed out.
      */
     fun xaeroGapsIn(dimension: String): LongOpenHashSet = gaps.gapsIn(dimension)
-
 
     private val layouts = ConcurrentHashMap<String, BlueMap.MapLayout>()
     private val layoutAskedAt = HashMap<String, Long>()

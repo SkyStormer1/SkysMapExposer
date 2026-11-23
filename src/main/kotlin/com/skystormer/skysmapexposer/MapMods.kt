@@ -21,7 +21,7 @@ object MapMods {
 
     /**
      * The installed map, for everything that needs one; null with none. With both installed,
-     * Xaero's for now: drawing on both at once comes with JourneyMap's layers (plan S4).
+     * Xaero's: this mod draws on one map at a time.
      */
     val adapter: MapAdapter? by lazy {
         when {
