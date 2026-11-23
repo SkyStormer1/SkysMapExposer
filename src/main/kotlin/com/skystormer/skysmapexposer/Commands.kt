@@ -95,7 +95,9 @@ object Commands {
                 .then(
                     // What a clickable position in chat runs ([ChatCoords]).
                     ClientCommands.literal("chatpos").then(ClientCommands.argument("id", IntegerArgumentType.integer(0))
-                        .executes { ChatCoords.clicked(IntegerArgumentType.getInteger(it, "id"))?.let { text -> Ui.reply(it, text) } ?: 1 })
+                        .executes { ChatCoords.clicked(IntegerArgumentType.getInteger(it, "id"), save = false)?.let { text -> Ui.reply(it, text) } ?: 1 }
+                        .then(ClientCommands.literal("save")
+                            .executes { ChatCoords.clicked(IntegerArgumentType.getInteger(it, "id"), save = true)?.let { text -> Ui.reply(it, text) } ?: 1 }))
                 )
                 .then(
                     ClientCommands.literal("surface").then(

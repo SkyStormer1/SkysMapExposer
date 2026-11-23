@@ -130,6 +130,7 @@ object MapExposerClient : ClientModInitializer {
             }
             MapMods.adapter?.tick(client, Session.current)
             ChatShare.tick()
+            ChatCoords.tick()
             PlayerPings.tick()
             while (pingKey.consumeClick()) Ui.say(PlayerPings.sendLookedAt())
             MapPrep.tick(Session.current)

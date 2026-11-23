@@ -14,7 +14,7 @@ import java.util.concurrent.ThreadLocalRandom
  * `[name:"Base", x:-368, y:64, z:544, dim:minecraft:overworld]` (the name optional), so they can go
  * between players of either map: Copy coordinates puts them on the clipboard in this form ([format]),
  * JourneyMap makes them clickable in its players' chat itself, and this does the same for Xaero's
- * ([decorate]): click to save one as a waypoint, Ctrl+click to show it on the map, as JourneyMap does.
+ * ([decorate]): click to show one on the world map, or its [+] to save it as a waypoint.
  */
 object ChatCoords {
 
@@ -109,16 +109,22 @@ object ChatCoords {
             Config.END -> ChatFormatting.LIGHT_PURPLE
             else -> ChatFormatting.GREEN
         }
-        val hover = Component.empty()
+        fun hover(action: String) = Component.empty()
             .append(Component.literal(position.name ?: "Position").withStyle(ChatFormatting.BOLD))
             .append(Component.literal("\n${position.x}, ${position.y}, ${position.z} in the $dimension").withStyle(ChatFormatting.GRAY))
-            .append(Component.literal("\n\nClick to save as a waypoint\nCtrl+Click to show on the map").withStyle(ChatFormatting.YELLOW))
-        val line = Component.empty().withStyle { it.withClickEvent(ClickEvent.RunCommand("/mapexposer chatpos $id")).withHoverEvent(HoverEvent.ShowText(hover)) }
+            .append(Component.literal("\n\n$action").withStyle(ChatFormatting.YELLOW))
+        val line = Component.empty().withStyle {
+            it.withClickEvent(ClickEvent.RunCommand("/mapexposer chatpos $id")).withHoverEvent(HoverEvent.ShowText(hover("Click to show on the world map")))
+        }
             .append(Component.literal("◆ ").withStyle(colour))
         position.name?.let { line.append(Component.literal("$it ").withStyle(ChatFormatting.WHITE, ChatFormatting.BOLD)) }
-        return line
-            .append(Component.literal("${position.x}, ${position.y}, ${position.z}").withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE))
+        line.append(Component.literal("${position.x}, ${position.y}, ${position.z}").withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE))
             .append(Component.literal(" $dimension").withStyle(ChatFormatting.GRAY))
+        val save = Component.literal(" [+]").withStyle {
+            it.withColor(ChatFormatting.GREEN).withClickEvent(ClickEvent.RunCommand("/mapexposer chatpos $id save"))
+                .withHoverEvent(HoverEvent.ShowText(hover("Click to save as a waypoint")))
+        }
+        return Component.empty().append(line).append(save)
     }
 
     private fun remember(position: Position): Int {
@@ -127,13 +133,21 @@ object ChatCoords {
         return id
     }
 
-    /** `/mapexposer chatpos <id>`: the position clicked, saved as a waypoint, or shown on the map with Ctrl held. What to tell you. */
-    fun clicked(id: Int): String? {
+    /** A position clicked, to show on the map once the chat screen the click came from has had its way. */
+    private var toShow: Position? = null
+
+    /**
+     * `/mapexposer chatpos <id> [save]`: the position clicked, shown on the world map, or with [save]
+     * saved as a waypoint. What to tell you.
+     */
+    fun clicked(id: Int, save: Boolean): String? {
         val position = offered[id] ?: return "That position is from an earlier game; ask for it again"
         val adapter = MapMods.adapter ?: return "No map mod to put it on"
-        val minecraft = Minecraft.getInstance()
-        if (minecraft.hasControlDown()) {
-            return if (adapter.goTo(position.dimension, position.x, position.z, null, null)) null else "The map can't show that just now"
+        if (!save) {
+            // The game puts the chat screen back once a command clicked in it has run, which closed
+            // the map opened from it at once: opened on the next tick instead ([tick]).
+            toShow = position
+            return null
         }
         val name = position.name ?: "${position.x}, ${position.z}"
         val waypoint = ShareFormat.SharedWaypoint(name, WaypointRules.initials(name), position.x, position.y, position.z, true, 0)
@@ -144,6 +158,14 @@ object ChatCoords {
             said.startsWith("You already have") -> "You already have \"$name\" as a waypoint in the $where"
             else -> said
         }
+    }
+
+    /** Client thread, each tick: the world map opened on a position clicked in chat. */
+    fun tick() {
+        val position = toShow ?: return
+        toShow = null
+        val shown = MapMods.adapter?.goTo(position.dimension, position.x, position.z, null, null) ?: false
+        if (!shown) Ui.say("The map can't show that just now")
     }
 
     /**
