@@ -100,7 +100,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
         val asked = layoutAskedAt[map]
         if (asked == null || now - asked > 60_000L) {
             layoutAskedAt[map] = now
-            workers.execute {
+            work {
                 try {
                     layouts[map] = blueMap.layout(map)
                 } catch (e: Exception) {
@@ -141,7 +141,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
         val known = views[map]
         if (asked == null || (known == null && now - asked > 60_000L)) {
             viewAskedAt[map] = now
-            workers.execute { askView(map, known) }
+            work { askView(map, known) }
         }
         return known
     }

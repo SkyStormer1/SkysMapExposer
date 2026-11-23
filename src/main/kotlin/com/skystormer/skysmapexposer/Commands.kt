@@ -289,10 +289,10 @@ object Commands {
     private fun sessionOrSay(context: CommandContext<FabricClientCommandSource>): Session? =
         Session.current ?: null.also { context.source.sendError(Component.literal("This server has no BlueMap in config/skysmapexposer.json")) }
 
+    /** The map bar's Refresh, cooldown and all, so typing it again and again cannot flood the server either. */
     private fun refresh(context: CommandContext<FabricClientCommandSource>): Int {
-        val session = sessionOrSay(context) ?: return 0
-        session.tiles.refetchBefore = System.currentTimeMillis()
-        return Ui.reply(context, "Downloading BlueMap's tiles again as they are shown")
+        sessionOrSay(context) ?: return 0
+        return Ui.reply(context, if (MapRefresh.press()) "Downloading BlueMap's tiles again as they are shown" else MapRefresh.tip())
     }
 
     private fun prepare(context: CommandContext<FabricClientCommandSource>): Int {
