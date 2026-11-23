@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.WaypointRules
+import com.skystormer.skysmapexposer.BlockArea
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
 import com.skystormer.skysmapexposer.Log
@@ -118,7 +119,7 @@ object MapMenus {
                 else "§7${sizeOf(selection)}, written into your own map wherever BlueMap has them. Each region is backed up just before it is replaced."
             ),
         )
-        val area = BlueMapDownload.Area(selection.left * 16, selection.top * 16, selection.right * 16 + 15, selection.bottom * 16 + 15)
+        val area = BlockArea(selection.left * 16, selection.top * 16, selection.right * 16 + 15, selection.bottom * 16 + 15)
         return MenuTooltips.Option("Download", index, target, tooltip) { Ui.say(BlueMapDownload.start(area)) }
             .also { it.setActive(!busy) }
     }

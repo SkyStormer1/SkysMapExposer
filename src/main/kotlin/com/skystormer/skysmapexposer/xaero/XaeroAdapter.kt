@@ -18,7 +18,6 @@ import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.ShareFormat
-import com.skystormer.skysmapexposer.SkippedRegions
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.gui.MapBar
 import java.util.UUID
@@ -188,18 +187,6 @@ object XaeroAdapter : MapAdapter {
             Minecraft.getInstance().player?.sendSystemMessage(Component.literal(done))
         }
         if (now.isNotEmpty()) Ui.reply(context, now)
-        return 1
-    }
-
-    /** Every region the last download, clear or import skipped, and why. */
-    private fun skipped(context: CommandContext<FabricClientCommandSource>): Int {
-        val all = BlueMapDownload.skippedList()
-        if (all.isEmpty()) context.source.sendFeedback(Component.literal("Nothing was skipped"))
-        else {
-            context.source.sendFeedback(Component.literal("${all.size} regions skipped (region x,z, then blocks):"))
-            all.forEach { context.source.sendFeedback(Component.literal("  $it")) }
-            context.source.sendFeedback(Component.literal("§7${SkippedRegions.ADVICE}"))
-        }
         return 1
     }
 
@@ -414,7 +401,6 @@ object XaeroAdapter : MapAdapter {
                             })
                     )
             )
-            .then(ClientCommands.literal("skipped").executes(::skipped))
             .then(ClientCommands.literal("debug").then(ClientCommands.literal("regions").executes {
                 Overlay.debugRegions = true
                 Ui.reply(it, "Open the world map where it shows black; the next frame writes what Xaero has of each region there to the log")

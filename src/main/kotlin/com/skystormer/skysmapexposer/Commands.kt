@@ -119,6 +119,7 @@ object Commands {
                             Ui.reply(it, if (MapPrep.cancel()) "Stopped preparing the map; what is done stays" else "The map is not being prepared")
                         })
                 )
+                .then(ClientCommands.literal("skipped").executes(::skipped))
                 .then(
                     ClientCommands.literal("stale").then(
                         ClientCommands.argument("days", DoubleArgumentType.doubleArg(0.0, 3650.0)).executes(::setStale)
@@ -126,6 +127,18 @@ object Commands {
                 )
         MapMods.adapter?.commands(root)
         dispatcher.register(root)
+    }
+
+    /** Every region the last download, clear or import into either map skipped, and why. */
+    private fun skipped(context: CommandContext<FabricClientCommandSource>): Int {
+        val all = RegionJob.last?.skipped?.all().orEmpty()
+        if (all.isEmpty()) context.source.sendFeedback(Component.literal("Nothing was skipped"))
+        else {
+            context.source.sendFeedback(Component.literal("${all.size} regions skipped (region x,z, then blocks):"))
+            all.forEach { context.source.sendFeedback(Component.literal("  $it")) }
+            context.source.sendFeedback(Component.literal("§7${SkippedRegions.ADVICE}"))
+        }
+        return 1
     }
 
     private fun status(context: CommandContext<FabricClientCommandSource>): Int {
