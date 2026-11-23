@@ -100,19 +100,13 @@ internal object JourneyMapOtherMaps {
             if (here != level.dimension().identifier().toString() && JourneyMapOtherWorld.typeOf(here, level.registryAccess()) == null) continue
             val drawnFolder = server.resolve("journeymap-drawn").resolve(SafeFiles.name(here))
             val doneHere = done.getOrPut(here) { ConcurrentHashMap() }
-            val bounds = (if (ui == Context.UI.Fullscreen) JourneyMapMenus.shownArea(state) else JourneyMapMinimap.area) ?: continue
-            val left = Math.floorDiv(bounds[0].toInt(), JourneyMapFiles.REGION)
-            val top = Math.floorDiv(bounds[1].toInt(), JourneyMapFiles.REGION)
-            val right = Math.floorDiv(bounds[2].toInt(), JourneyMapFiles.REGION)
-            val bottom = Math.floorDiv(bounds[3].toInt(), JourneyMapFiles.REGION)
-            val centreX = (left + right) / 2.0
-            val centreZ = (top + bottom) / 2.0
+            val screen = ScreenSquares(ScreenSquares.areaOf(ui, state) ?: continue, JourneyMapFiles.REGION)
             fun needed(x: Int, z: Int) = packXZ(x, z).let { (doneHere[it] ?: 0) and wanted != wanted && it !in inFlight }
             // The regions on screen first, nearest first; once they are done, every other region of
             // JourneyMap's cache in this dimension, so the whole map fills without panning around it.
-            val onScreen = cacheRegions(here).filter { (x, z) -> x in left..right && z in top..bottom }
+            val onScreen = cacheRegions(here).filter { (x, z) -> screen.contains(x, z) }
             val waiting = (onScreen.filter { (x, z) -> needed(x, z) }.ifEmpty { cacheRegions(here).filter { (x, z) -> needed(x, z) } })
-                .sortedBy { (x, z) -> (x - centreX) * (x - centreX) + (z - centreZ) * (z - centreZ) }
+                .sortedBy { (x, z) -> screen.distance(x, z) }
             for ((x, z) in waiting) {
                 if (inFlight.size >= WORKERS) return
                 val region = packXZ(x, z)

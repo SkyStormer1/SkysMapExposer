@@ -127,30 +127,18 @@ internal object JourneyMapBiomes {
             return
         }
         val layer = layerOf(state)
-        val bounds = if (fullscreen) JourneyMapMenus.shownArea(state) ?: return
-        else JourneyMapMinimap.area ?: return
-        val left = Math.floorDiv(bounds[0].toInt(), REGION)
-        val top = Math.floorDiv(bounds[1].toInt(), REGION)
-        val right = Math.floorDiv(bounds[2].toInt(), REGION)
-        val bottom = Math.floorDiv(bounds[3].toInt(), REGION)
-        val centreX = (left + right) / 2.0
-        val centreZ = (top + bottom) / 2.0
+        val bounds = ScreenSquares.areaOf(ui, state) ?: return
+        val onScreen = ScreenSquares(bounds, REGION)
         // Regions on screen, nearest first: every one is read, however far out.
-        val regions = buildList {
-            for (z in top..bottom) for (x in left..right) add(Area(dimension, x, z, layer))
-        }.sortedBy { (it.x - centreX) * (it.x - centreX) + (it.z - centreZ) * (it.z - centreZ) }.take(MAX_GRIDS)
-        if (fullscreen) note = if ((right - left + 1) * (bottom - top + 1) > MAX_GRIDS) "zoomed too far out to tint it all" else ""
+        val regions = onScreen.nearestFirst().take(MAX_GRIDS).map { (x, z) -> Area(dimension, x, z, layer) }
+        if (fullscreen) note = if (onScreen.count > MAX_GRIDS) "zoomed too far out to tint it all" else ""
         // Pictures: a region each close up, more regions each the further out, so there are never more than MAX_SHOWN.
         var group = 1
-        fun count(group: Int) = (Math.floorDiv(right, group) - Math.floorDiv(left, group) + 1) * (Math.floorDiv(bottom, group) - Math.floorDiv(top, group) + 1)
+        fun count(group: Int) = ScreenSquares(bounds, REGION * group).count
         while (group < MAX_GROUP && count(group) > MAX_SHOWN) group *= 2
         // A pixel per block close up, where blocks show; half that once more than a few pictures are up.
         val side = if (group == 1 && count(1) <= FINE_SHOWN) REGION else REGION / 2
-        val wanted = buildList {
-            for (z in Math.floorDiv(top, group)..Math.floorDiv(bottom, group)) for (x in Math.floorDiv(left, group)..Math.floorDiv(right, group)) {
-                add(Square(dimension, x, z, layer, group, side))
-            }
-        }.sortedBy { (it.x * group + group / 2.0 - centreX).let { d -> d * d } + (it.z * group + group / 2.0 - centreZ).let { d -> d * d } }
+        val wanted = ScreenSquares(bounds, REGION * group).nearestFirst().map { (x, z) -> Square(dimension, x, z, layer, group, side) }
         val wantedSet = wanted.toHashSet()
         // Another zoom's pictures stay until this zoom's over them are up, so zooming never blanks the tint.
         shown.keys.filter { (square, onUi) ->

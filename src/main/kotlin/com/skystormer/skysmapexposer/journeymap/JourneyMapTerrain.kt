@@ -163,7 +163,7 @@ internal object JourneyMapTerrain {
         }
         // What is on screen, worked out here: JourneyMap's own account of it lags a moved full-screen
         // map and is never kept up to date for the minimap.
-        val area = (if (fullscreen) JourneyMapMenus.shownArea(state) else JourneyMapMinimap.area)
+        val area = ScreenSquares.areaOf(ui, state)
             ?: return say(if (fullscreen) "JourneyMap has not said what is on screen" else "waiting for the minimap to draw")
         val minX = area[0]
         val minZ = area[1]
@@ -178,9 +178,7 @@ internal object JourneyMapTerrain {
         var step = factors.indexOfLast { it <= blocksPerPixel.coerceAtLeast(1.0) }.coerceAtLeast(0)
         fun bytesAt(scale: Int): Long {
             val span = REGION * groupFor(scale)
-            val across = (Math.floorDiv(maxX.toInt(), span) - Math.floorDiv(minX.toInt(), span) + 1).toLong()
-            val down = (Math.floorDiv(maxZ.toInt(), span) - Math.floorDiv(minZ.toInt(), span) + 1).toLong()
-            return across * down * pictureBytes(span, scale)
+            return ScreenSquares(area, span).count * pictureBytes(span, scale)
         }
         while (step < factors.lastIndex && bytesAt(factors[step]) > budget()) step++
         val scale = factors[step]
@@ -189,17 +187,7 @@ internal object JourneyMapTerrain {
 
         val centreX = (minX + maxX) / 2
         val centreZ = (minZ + maxZ) / 2
-        val wanted = ArrayList<Square>()
-        for (z in Math.floorDiv(minZ.toInt(), span)..Math.floorDiv(maxZ.toInt(), span)) {
-            for (x in Math.floorDiv(minX.toInt(), span)..Math.floorDiv(maxX.toInt(), span)) wanted.add(Square(dimension, x, z, group, ui))
-        }
-        fun distance(square: Square): Double {
-            val dx = square.westX + square.span / 2.0 - centreX
-            val dz = square.northZ + square.span / 2.0 - centreZ
-            return dx * dx + dz * dz
-        }
-        wanted.sortBy(::distance)
-        if (wanted.size > MAX_SQUARES) wanted.subList(MAX_SQUARES, wanted.size).clear()
+        val wanted = ScreenSquares(area, span).nearestFirst().take(MAX_SQUARES).map { (x, z) -> Square(dimension, x, z, group, ui) }
         val wantedSet = wanted.toHashSet()
 
         // Off screen: kept aside, or gone. A picture of another zoom stays up until every new one over it is.
