@@ -35,8 +35,11 @@ internal object JourneyMapMinimap {
     /** Each map's renderer, once it has drawn. */
     private val renderers = java.util.EnumMap<Context.UI, Renderer>(Context.UI::class.java)
 
-    /** Whether this map picture's pictures went in under its grid already, so not again before its outlines. */
-    private var drawnUnderGrid = false
+    /**
+     * The maps (the minimap, the full-screen map) whose pictures went in under their grid this frame,
+     * so not again before their outlines. One each: a flag shared by both could skip the wrong one.
+     */
+    private val drawnUnderGrid: MutableSet<Renderer> = java.util.Collections.newSetFromMap(java.util.WeakHashMap())
 
     private var failed = false
 
@@ -87,11 +90,7 @@ internal object JourneyMapMinimap {
      */
     @JvmStatic
     fun draw(graphics: GuiGraphicsExtractor, pose: Matrix3x2fStack, xOffset: Double, yOffset: Double, renderer: Renderer, beforeGrid: Boolean) {
-        if (!beforeGrid && drawnUnderGrid) {
-            drawnUnderGrid = false
-            return
-        }
-        drawnUnderGrid = beforeGrid
+        if (beforeGrid) drawnUnderGrid.add(renderer) else if (drawnUnderGrid.remove(renderer)) return
         if (failed) return
         try {
             val ui = renderer.context ?: return
