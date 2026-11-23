@@ -112,7 +112,8 @@ object BlueMapDownload {
         var active: Active? = null
         val saving = ArrayList<Pair<MapRegion, Long>>()
         var palette: XaeroPalette? = null
-        var endedAt = 0L
+        /** Set by the download thread too, when it fails or is cancelled before writing. */
+        @Volatile var endedAt = 0L
         val name: String = Ui.dimensionName(dimensionId) ?: dimensionId
         val startedAt = System.currentTimeMillis()
         val guide: BiomeGuide? by lazy { if (Config.guessBiomes) BiomeGuide.forDimension(dimensionId) else null }
@@ -360,20 +361,9 @@ object BlueMapDownload {
             saved || now - since > SAVE_WAIT
         }
 
-        // By name: Xaero can make its dimensions anew while you play (on some servers, after a trip to the
-        // Nether and back), so the one the job started with may no longer be the one it shows.
-        val dimension = processor.mapWorld?.currentDimension
-        if (dimension == null || dimension.dimId?.identifier()?.toString() != job.dimensionId) {
-            job.message = "${job.title} paused: switch the world map back to the ${job.name} to carry on"
-            return
-        }
-        // On a server with several worlds behind a proxy, Xaero can switch map folders (its
-        // multiworld) within the same dimension; the job's regions are in the folder it started in.
-        val multiworld = dimension.currentMultiworld
-        val base = multiworld?.let { dimension.mainFolderPath?.resolve(it) }
-        if (base == null || !job.folder.startsWith(base)) {
-            job.message = "${job.title} paused: Xaero is showing another map folder of the ${job.name}; switch back to the one it started in to carry on"
-            return
+        // A job cancelled between regions has nothing left to write, so it ends whatever the map shows.
+        if (!(job.cancelled && job.active == null)) {
+            pausedFor(job, processor)?.let { job.message = it; return }
         }
 
         val active = job.active ?: run {
@@ -399,6 +389,23 @@ object BlueMapDownload {
     }
 
     private fun begin(job: Job, pending: Pending): Active = Active(pending).also { job.active = it }
+
+    /** Why the job has to wait until the world map shows its map again, or null when it does. */
+    private fun pausedFor(job: Job, processor: MapProcessor): String? {
+        // By name: Xaero can make its dimensions anew while you play (on some servers, after a trip to the
+        // Nether and back), so the one the job started with may no longer be the one it shows.
+        val dimension = processor.mapWorld?.currentDimension
+        if (dimension == null || dimension.dimId?.identifier()?.toString() != job.dimensionId) {
+            return "${job.title} paused: switch the world map back to the ${job.name} to carry on"
+        }
+        // On a server with several worlds behind a proxy, Xaero can switch map folders (its
+        // multiworld) within the same dimension; the job's regions are in the folder it started in.
+        val base = dimension.currentMultiworld?.let { dimension.mainFolderPath?.resolve(it) }
+        if (base == null || !job.folder.startsWith(base)) {
+            return "${job.title} paused: Xaero is showing another map folder of the ${job.name}; switch back to the one it started in to carry on"
+        }
+        return null
+    }
 
     /**
      * Copies the region aside before anything is written to it, once Xaero has saved what it holds
