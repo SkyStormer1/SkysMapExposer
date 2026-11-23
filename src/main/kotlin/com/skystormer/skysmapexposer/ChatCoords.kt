@@ -174,7 +174,7 @@ object ChatCoords {
      */
     private fun parse(inside: String): Position? {
         val values = HashMap<String, String>()
-        for (pair in inside.split(Regex(""",(?=(?:[^"]*"[^"]*")*[^"]*$)"""))) {
+        for (pair in inside.split(COMMA_OUTSIDE_QUOTES)) {
             val colon = pair.indexOf(':')
             if (colon <= 0) return null
             values[pair.substring(0, colon).trim().lowercase()] = pair.substring(colon + 1).trim()
@@ -187,6 +187,9 @@ object ChatCoords {
         val name = values["name"]?.trim('"', '\'')?.takeIf { it.isNotBlank() }
         return Position(name, x, y, z, if (':' in dimension) dimension else "minecraft:$dimension")
     }
+
+    /** A comma not inside double quotes. */
+    private val COMMA_OUTSIDE_QUOTES = Regex(""",(?=(?:[^"]*"[^"]*")*[^"]*$)""")
 
     /** A bracketed list of `key:value` pairs with an x in it. */
     private val PATTERN = Regex("""\[((?:[^\[\]]*?)\bx\s*:\s*-?\d+(?:[^\[\]]*?))]""")

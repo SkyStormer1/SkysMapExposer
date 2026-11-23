@@ -74,7 +74,10 @@ object MenuLayout {
      * has one, else its label with any numbers taken out, so a label that shows a count or a distance
      * stays the same row.
      */
-    fun otherId(map: String, name: String): String = "$map:" + name.replace(Regex("§."), "").replace(Regex("[0-9]+"), "#").trim()
+    fun otherId(map: String, name: String): String = "$map:" + name.replace(FORMAT_CODE, "").replace(DIGITS, "#").trim()
+
+    private val FORMAT_CODE = Regex("§.")
+    private val DIGITS = Regex("[0-9]+")
 
     /** What the editor calls an item, for one that has been on the menu or that this mod knows. */
     fun name(map: String, id: String): String =

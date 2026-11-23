@@ -47,7 +47,7 @@ object WaypointRules {
      */
     fun initials(label: String): String {
         val leading = FORMAT_CODE_AT_START.find(label)?.value ?: ""
-        val words = label.replace(FORMAT_CODE, "").split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
+        val words = label.replace(FORMAT_CODE, "").split(NOT_LETTERS).filter { it.isNotEmpty() }
         return leading + when {
             words.size >= 2 -> "${words[0][0]}${words[1][0]}".uppercase()
             words.size == 1 -> words[0].take(2).uppercase()
@@ -57,6 +57,7 @@ object WaypointRules {
 
     private val FORMAT_CODE = Regex("§.")
     private val FORMAT_CODE_AT_START = Regex("^(§.)+")
+    private val NOT_LETTERS = Regex("[^A-Za-z0-9]+")
 
     /** "Nether" for the Overworld and "Overworld" for the Nether: the dimensions with a counterpart. */
     fun counterpartName(dimension: String?): String? = when (dimension) {

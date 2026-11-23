@@ -282,6 +282,9 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         const val MAX_ICONS = 512
         const val MAX_NAME = 64
 
+        /** Read for every marker on every refresh, so made once. */
+        val HTML_TAG = Regex("<[^>]*>")
+
         /** Within Minecraft's world border, with room to spare, and a real number. */
         fun onMap(value: Double) = value.isFinite() && value in -40_000_000.0..40_000_000.0
     }
@@ -294,7 +297,7 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
      * arrive encoded twice ("TomÂ´s"), which this undoes.
      */
     private fun text(raw: String): String {
-        var text = raw.replace(Regex("<[^>]*>"), "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").trim()
+        var text = raw.replace(HTML_TAG, "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").trim()
         if (text.contains('Ã') || text.contains('Â')) {
             val repaired = String(text.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
             if (!repaired.contains('�')) text = repaired

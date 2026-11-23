@@ -74,7 +74,7 @@ class BiomeGuide private constructor(
                         val nz = cz + dz
                         if (nx !in 0 until CELLS || nz !in 0 until CELLS) continue
                         val near = shares[nz * CELLS + nx] ?: continue
-                        val weight = 1.0 / (1.0 + Math.hypot(dx.toDouble(), dz.toDouble()))
+                        val weight = SMOOTH_WEIGHTS[(dz + SMOOTH) * SMOOTH_SIDE + dx + SMOOTH]
                         for (j in sum.indices) sum[j] += weight * near[j]
                     }
                 }
@@ -222,6 +222,12 @@ class BiomeGuide private constructor(
 
         /** Guesses this many cells away count towards a cell's own, less the further they are. */
         private const val SMOOTH = 2
+        private const val SMOOTH_SIDE = 2 * SMOOTH + 1
+
+        /** How much a neighbour's guess counts, by its offset: worked out once rather than 25 times a cell. */
+        private val SMOOTH_WEIGHTS = DoubleArray(SMOOTH_SIDE * SMOOTH_SIDE) { i ->
+            1.0 / (1.0 + Math.hypot((i % SMOOTH_SIDE - SMOOTH).toDouble(), (i / SMOOTH_SIDE - SMOOTH).toDouble()))
+        }
 
         private const val MAGIC = 0x534D4231 // "SMB1"
 

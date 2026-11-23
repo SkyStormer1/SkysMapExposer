@@ -12,6 +12,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.BitSet
+import java.util.HexFormat
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -592,7 +593,7 @@ class TileStore(
     }
 
     private fun sha1(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes))
 
     /** When a tile is next asked about, and whether that is a whole download. */
     object Schedule {
