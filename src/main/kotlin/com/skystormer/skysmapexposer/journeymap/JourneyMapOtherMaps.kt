@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer.journeymap
 
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SafeFiles
+import com.skystormer.skysmapexposer.SharedTerrain
 import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.packXZ
 import com.skystormer.skysmapexposer.journeymap.JourneyMapCacheWrites.Kind
@@ -30,7 +31,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * JourneyMap's night, topo and biome maps of the downloaded and shared areas. A download writes
@@ -41,9 +41,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Only into a chunk's picture where it is empty, never over anything JourneyMap drew; and which
  * were drawn is kept (one byte per chunk in a file per region), so that once a download is undone
- * ([JourneyMapCacheWrites.Kind.WITHDRAWN]) exactly those are wiped again. Regions are done as they
- * come on screen on either map, one at a time off the client thread, in the dimension you are in
- * (JourneyMap's renderers draw only of the world it has open).
+ * ([JourneyMapCacheWrites.Kind.WITHDRAWN]) exactly those are wiped again. Only the map you are
+ * looking at is drawn (night, topo or biome, on the full-screen map or the minimap): the regions on
+ * screen first, nearest first, then the rest of JourneyMap's cache, a few at a time off the client thread ([WORKERS], each with renderers of
+ * its own), in the dimension you are in (JourneyMap's renderers draw only of the world it has open).
  *
  * Hooks into JourneyMap's inner classes: if they change, this stops with a line in the log, and
  * those maps stay as JourneyMap leaves them.
@@ -54,17 +55,24 @@ internal object JourneyMapOtherMaps {
     @Volatile
     private var working = true
 
-    private class Job(val dimension: String, val regionX: Int, val regionZ: Int, val drawnFolder: Path)
+    /** Region ([regionX], [regionZ]) of [dimension] to draw into the maps [wanted] (bits of [NIGHT], [TOPO], [BIOME]). */
+    private class Job(val dimension: String, val regionX: Int, val regionZ: Int, val wanted: Int, val drawnFolder: Path)
 
-    /** Regions done since they last changed, by dimension. */
-    private val done = ConcurrentHashMap<String, MutableSet<Long>>()
-    private val busy = AtomicBoolean()
+    /** Which maps each region has been done for since it last changed, by dimension. */
+    private val done = ConcurrentHashMap<String, ConcurrentHashMap<Long, Int>>()
+
+    /** Regions being drawn. */
+    private val inFlight = ConcurrentHashMap.newKeySet<Long>()
 
     private val worker by lazy {
-        Executors.newSingleThreadExecutor { Thread(it, "SkysMapExposer JourneyMap other maps").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+        Executors.newFixedThreadPool(WORKERS) { Thread(it, "SkysMapExposer JourneyMap other maps").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
     }
 
-    private val renderers by lazy { Renderers() }
+    /** JourneyMap's renderers keep what they are drawing in themselves: one set for each worker. */
+    private val renderers = ThreadLocal.withInitial { Renderers() }
+
+    /** Saving and JourneyMap's texture updates, one worker at a time. */
+    private val saving = Any()
 
     private class Renderers {
         val surface = SurfaceRenderer()
@@ -72,48 +80,69 @@ internal object JourneyMapOtherMaps {
         val biome: BaseRenderer = BiomeRenderer()
     }
 
-    /** Client thread, each tick: the next region on screen to do, if none is being done. */
+    /** Client thread, each tick: the next regions on screen to draw into the map shown, while a worker is free. */
     fun tick(api: IClientAPI) {
-        if (!working || busy.get()) return
+        if (!working || inFlight.size >= WORKERS) return
         val level = Minecraft.getInstance().level ?: return
         val here = level.dimension().identifier().toString()
         val drawnFolder = JourneyMapEdits.serverFolder()?.resolve("journeymap-drawn")?.resolve(SafeFiles.name(here)) ?: return
-        val doneHere = done.getOrPut(here) { ConcurrentHashMap.newKeySet() }
+        val doneHere = done.getOrPut(here) { ConcurrentHashMap() }
         for (ui in UIS) {
             val state = api.getUIState(ui) ?: continue
-            if (!state.active || state.mapType == Context.MapType.Underground) continue
+            if (!state.active) continue
+            val wanted = when (state.mapType) {
+                Context.MapType.Night -> NIGHT
+                Context.MapType.Topo -> TOPO
+                Context.MapType.Biome -> BIOME
+                else -> continue
+            }
             if (state.dimension?.identifier()?.toString() != here) continue
             val bounds = (if (ui == Context.UI.Fullscreen) JourneyMapMenus.shownArea(state) else JourneyMapMinimap.area) ?: continue
             val left = Math.floorDiv(bounds[0].toInt(), JourneyMapFiles.REGION)
             val top = Math.floorDiv(bounds[1].toInt(), JourneyMapFiles.REGION)
             val right = Math.floorDiv(bounds[2].toInt(), JourneyMapFiles.REGION)
             val bottom = Math.floorDiv(bounds[3].toInt(), JourneyMapFiles.REGION)
-            if ((right - left + 1).toLong() * (bottom - top + 1) > MAX_ON_SCREEN) continue
             val centreX = (left + right) / 2.0
             val centreZ = (top + bottom) / 2.0
-            var best: Pair<Int, Int>? = null
-            var bestDistance = Double.MAX_VALUE
-            for (z in top..bottom) for (x in left..right) {
-                if (packXZ(x, z) in doneHere) continue
-                val d = (x - centreX) * (x - centreX) + (z - centreZ) * (z - centreZ)
-                if (d < bestDistance) { bestDistance = d; best = x to z }
-            }
-            val (x, z) = best ?: continue
-            busy.set(true)
-            val job = Job(here, x, z, drawnFolder)
-            worker.execute {
-                try {
-                    run(job)
-                } catch (e: Throwable) {
-                    stop("drawing region ${job.regionX}, ${job.regionZ}", e)
-                } finally {
-                    doneHere.add(packXZ(x, z))
-                    busy.set(false)
+            fun needed(x: Int, z: Int) = packXZ(x, z).let { (doneHere[it] ?: 0) and wanted != wanted && it !in inFlight }
+            // The regions on screen first, nearest first; once they are done, every other region of
+            // JourneyMap's cache in this dimension, so the whole map fills without panning around it.
+            val onScreen = cacheRegions(here).filter { (x, z) -> x in left..right && z in top..bottom }
+            val waiting = (onScreen.filter { (x, z) -> needed(x, z) }.ifEmpty { cacheRegions(here).filter { (x, z) -> needed(x, z) } })
+                .sortedBy { (x, z) -> (x - centreX) * (x - centreX) + (z - centreZ) * (z - centreZ) }
+            for ((x, z) in waiting) {
+                if (inFlight.size >= WORKERS) return
+                val region = packXZ(x, z)
+                inFlight.add(region)
+                val job = Job(here, x, z, wanted, drawnFolder)
+                worker.execute {
+                    try {
+                        run(job)
+                    } catch (e: Throwable) {
+                        stop("drawing region ${job.regionX}, ${job.regionZ}", e)
+                    } finally {
+                        doneHere.merge(region, wanted, Int::or)
+                        inFlight.remove(region)
+                    }
                 }
             }
-            return
         }
     }
+
+    /** The regions of [dimension] JourneyMap has a chunk cache file for, looked up again now and then. Client thread. */
+    private fun cacheRegions(dimension: String): Set<Pair<Int, Int>> {
+        val now = System.currentTimeMillis()
+        val known = regionList
+        if (known != null && known.first == dimension && now - listedAt < LIST_MS) return known.second
+        val folder = JourneyMapFiles.chunkCacheFolder(dimension) ?: return emptySet()
+        val regions = SharedTerrain.regionFiles(folder, JourneyMapChunkCache.FILE_NAME)
+        regionList = dimension to regions
+        listedAt = now
+        return regions
+    }
+
+    private var regionList: Pair<String, Set<Pair<Int, Int>>>? = null
+    private var listedAt = 0L
 
     /** Region ([regionX], [regionZ]) of [dimension] changed in the cache (a download, a shared map, an undo): done again when next on screen. Any thread. */
     fun changed(dimension: String, regionX: Int, regionZ: Int) {
@@ -127,6 +156,7 @@ internal object JourneyMapOtherMaps {
 
     fun forget() {
         done.clear()
+        regionList = null
     }
 
     private fun stop(why: String, e: Throwable) {
@@ -156,11 +186,12 @@ internal object JourneyMapOtherMaps {
             add(TOPO to MapType.topo(key))
             add(BIOME to MapType.biome(key))
         }
-        val all = types.fold(0) { bits, (bit, _) -> bits or bit }
+        // Only the maps wanted just now; the others when they are shown.
+        val all = types.fold(0) { bits, (bit, _) -> bits or bit } and job.wanted
         val toDraw = ArrayList<Int>()
         val toWipe = ArrayList<Int>()
         for (i in 0 until CHUNKS) when (kinds[i]) {
-            Kind.ADDED -> if (drawn[i].toInt() and all != all) toDraw.add(i)
+            Kind.ADDED -> if (all != 0 && drawn[i].toInt() and all != all) toDraw.add(i)
             Kind.WITHDRAWN -> if (drawn[i].toInt() != 0) toWipe.add(i)
             // Mapped by JourneyMap since: it drew all its maps of it, over whatever was there.
             else -> drawn[i] = 0
@@ -194,14 +225,14 @@ internal object JourneyMapOtherMaps {
                     ChunkRenderContext.instance().begin(md)
                     try {
                         for ((bit, type) in types) {
-                            if (drawn[i].toInt() and bit != 0) continue
+                            if (bit and all == 0 || drawn[i].toInt() and bit != 0) continue
                             val image = set.getChunkImage(md, type) ?: continue
                             image.use {
                                 if (!empty(it)) return@use
                                 val ok = when (bit) {
-                                    NIGHT -> set.getChunkImage(md, day)?.use { scratch -> renderers.surface.render(scratch, it, md) } ?: false
-                                    TOPO -> renderers.topo.render(it, md, null)
-                                    else -> renderers.biome.render(it, md, null)
+                                    NIGHT -> set.getChunkImage(md, day)?.use { scratch -> renderers.get().surface.render(scratch, it, md) } ?: false
+                                    TOPO -> renderers.get().topo.render(it, md, null)
+                                    else -> renderers.get().biome.render(it, md, null)
                                 }
                                 if (ok) {
                                     set.setChunkImage(md, type, it)
@@ -230,7 +261,7 @@ internal object JourneyMapOtherMaps {
             } finally {
                 held.forEach(DataCache.INSTANCE::removeChunkMD)
             }
-            if (anyDrawn != 0 || toWipe.isNotEmpty()) {
+            if (anyDrawn != 0 || toWipe.isNotEmpty()) synchronized(saving) {
                 // Shown at once.
                 RegionImageCache.INSTANCE.updateTextures(false, true)
                 // Saved straight away, and only then JourneyMap's zoomed-out copies made again: it makes
@@ -260,6 +291,7 @@ internal object JourneyMapOtherMaps {
     private val UIS = arrayOf(Context.UI.Fullscreen, Context.UI.Minimap)
 
     private const val CHUNKS = 32 * 32
+    private val WORKERS = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
     /** Each map's folder in JourneyMap's dimension folder. */
     private val FOLDERS = mapOf(NIGHT to "night", TOPO to "topo", BIOME to "biome")
     private const val WRITE_WAIT_MS = 10_000L
@@ -268,6 +300,6 @@ internal object JourneyMapOtherMaps {
     private const val TOPO = 2
     private const val BIOME = 4
 
-    /** Further out than this many regions on screen, nothing is drawn until you zoom in. */
-    private const val MAX_ON_SCREEN = 256
+    /** How often the list of JourneyMap's cache files is read again. */
+    private const val LIST_MS = 10_000L
 }
