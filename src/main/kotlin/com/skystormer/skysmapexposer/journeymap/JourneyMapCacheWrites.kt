@@ -227,12 +227,21 @@ internal object JourneyMapCacheWrites {
             private val unknownHeights = java.util.Collections.synchronizedSet(HashSet<String>())
 
             /**
+             * Build heights found for a dimension you are not in, by its cache folder: they never change,
+             * and finding them reads a whole region file, which the other maps would do for every region.
+             */
+            private val knownHeights = java.util.concurrent.ConcurrentHashMap<Path, Pair<Int, Int>>()
+
+            /**
              * The build heights of [dimension], which you are not in: as JourneyMap's own cached chunks of
              * it record them, else its dimension type's where that has the same name (as the game's
              * own dimensions do); null if neither knows. Never guessed: chunks of the wrong height would
              * be wrong for JourneyMap.
              */
-            private fun heights(registries: RegistryAccess, folder: Path, dimension: String): Pair<Int, Int>? {
+            private fun heights(registries: RegistryAccess, folder: Path, dimension: String): Pair<Int, Int>? =
+                knownHeights[folder] ?: findHeights(registries, folder, dimension)?.also { knownHeights[folder] = it }
+
+            private fun findHeights(registries: RegistryAccess, folder: Path, dimension: String): Pair<Int, Int>? {
                 val cached = try {
                     SharedTerrain.regionFiles(folder, JourneyMapChunkCache.FILE_NAME).firstNotNullOfOrNull { (rx, rz) ->
                         JourneyMapChunkCache.readRegion(JourneyMapChunkCache.file(folder, rx, rz), registries).firstOrNull { it != null }
