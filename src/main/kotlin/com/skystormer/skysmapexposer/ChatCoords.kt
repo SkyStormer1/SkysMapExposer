@@ -39,9 +39,14 @@ object ChatCoords {
             Config.END -> "the_end"
             else -> dimension.replace(':', '$')
         }
-        val initials = waypoint.initials.ifEmpty { waypoint.name.take(1).uppercase() }
+        val initials = waypoint.initials.ifEmpty { waypoint.name.take(1).uppercase() }.take(MAX_INITIALS)
         val y = if (waypoint.yIncluded) waypoint.y.toString() else "~"
-        return "xaero-waypoint:${safe(waypoint.name)}:${safe(initials)}:${waypoint.x}:$y:${waypoint.z}:${waypoint.color}:false:0:Internal-$where"
+        fun line(name: String) = "xaero-waypoint:${safe(name)}:${safe(initials)}:${waypoint.x}:$y:${waypoint.z}:${waypoint.color}:false:0:Internal-$where"
+        // The name cut short where needed, so the line and a "msg <player> " before it stay within the
+        // game's 256 characters a message: a longer one gets you disconnected.
+        var name = waypoint.name
+        while (name.isNotEmpty() && line(name).length > MAX_LINE) name = name.dropLast(1)
+        return line(name)
     }
 
     /** Positions in chat lately, by the number their click asks for. Client thread. */
@@ -168,4 +173,8 @@ object ChatCoords {
     private const val UNKNOWN_Y = 64
 
     private const val KEEP = 200
+
+    /** Longest shared line: the game's 256 characters, less "msg ", a 16-letter player name and a space. */
+    private const val MAX_LINE = 256 - 21
+    private const val MAX_INITIALS = 3
 }
