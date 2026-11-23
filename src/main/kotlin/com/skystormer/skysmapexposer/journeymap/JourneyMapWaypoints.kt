@@ -124,17 +124,12 @@ internal object JourneyMapWaypoints {
 
     /**
      * Whether [dimension] already has a waypoint [name] at ([x], [z]). JourneyMap hands waypoints back
-     * converted to the dimension you are in (an Overworld one eight times as far out seen from the
-     * Nether), so the place is converted the same way before comparing.
+     * converted to the dimension you are in, so they are read at [dimension]'s own scale
+     * ([JourneyMapDimension.inScaleOf]), as for sharing: converting the place by hand rounded
+     * negative coordinates differently from JourneyMap, and missed waypoints you already had.
      */
-    private fun has(api: IClientAPI, dimension: String, name: String, x: Int, z: Int): Boolean {
-        val here = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()
-        val (sx, sz) = when {
-            dimension == Config.NETHER && here == Config.OVERWORLD -> x * Config.NETHER_SCALE to z * Config.NETHER_SCALE
-            dimension == Config.OVERWORLD && here == Config.NETHER -> Math.floorDiv(x, Config.NETHER_SCALE) to Math.floorDiv(z, Config.NETHER_SCALE)
-            else -> x to z
-        }
-        return api.getAllWaypoints(levelKey(dimension)).any { it.x == sx && it.z == sz && it.name == name }
+    private fun has(api: IClientAPI, dimension: String, name: String, x: Int, z: Int): Boolean = JourneyMapDimension.inScaleOf(levelKey(dimension)) {
+        api.getAllWaypoints(levelKey(dimension)).any { it.x == x && it.z == z && it.name == name }
     }
 
     /** JourneyMap's "Map Exposer" group, made the first time it is needed. */
