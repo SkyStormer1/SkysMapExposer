@@ -27,6 +27,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import com.skystormer.skysmapexposer.xaero.XaeroMenus;
 import xaero.map.MapProcessor;
 import xaero.map.animation.SlowingAnimation;
 import xaero.map.graphics.MapRenderHelper;
@@ -292,6 +293,12 @@ public abstract class GuiMapMixin implements MapCamera {
         } catch (Throwable e) {
             HookErrors.failed(HookErrors.OTHER_DIMENSION, e);
         }
+    }
+
+    /** Where a right-click menu opens, so a group of it can open in its place (XaeroMenus). */
+    @Inject(method = "handleRightClick", at = @At("HEAD"), require = 0)
+    private void skysmapexposer$menuOpened(IRightClickableElement element, int x, int y, CallbackInfo ci) {
+        XaeroMenus.opened(element, x, y);
     }
 
     @Inject(method = "getRightClickOptions", at = @At("RETURN"), require = 0)

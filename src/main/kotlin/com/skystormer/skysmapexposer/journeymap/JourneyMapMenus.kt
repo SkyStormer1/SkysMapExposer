@@ -155,13 +155,19 @@ internal object JourneyMapMenus {
         fullscreen = map
         val dimension = map.uiState?.dimension?.identifier()?.toString()
         val menu = event.popupMenu
-        menu.addMenuItem("Copy coordinates") { block -> Ui.copy(block.x, block.y, block.z, dimension) }
+        val item = JourneyMapMenuLayout::item
+        JourneyMapMenuLayout.begin(map.screen)
+        // The line at the top: the block clicked, copied when clicked ([MenuLayout]'s "coords").
+        blockAtMouse(map)?.let { at ->
+            item(menu, "coords", "§6X ${at.x}  Y ${at.y}  Z ${at.z}") { block -> Ui.copy(block.x, block.y, block.z, dimension) }
+        }
+        item(menu, "copy", "Copy coordinates") { block -> Ui.copy(block.x, block.y, block.z, dimension) }
         if (dimension != null && PlayerPings.recipients().isNotEmpty()) {
-            menu.addMenuItem("Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, null)) }
+            item(menu, "ping", "Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, null)) }
         }
         val api = JourneyMapAdapter.api
         if (api != null) {
-            menu.addMenuItem("Share waypoints…") {
+            item(menu, "sharewp", "Share waypoints…") {
                 val mine = JourneyMapWaypoints.mine(api)
                 if (mine == null || mine.second.isEmpty()) Ui.say("You have no saved waypoints here to share")
                 else Ui.open(WaypointShareScreen(map.screen, mine.first, mine.second))
@@ -170,30 +176,30 @@ internal object JourneyMapMenus {
             // whole map. JourneyMap's menu has no tooltips, so the entry says which.
             val picked = JourneyMapSelection.area
             if (dimension != null && JourneyMapTerrainSave.busy) {
-                menu.addMenuItem("Stop saving") { Ui.say(if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No terrain file is being saved") }
+                item(menu, "save", "Stop saving") { Ui.say(if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No terrain file is being saved") }
             } else if (dimension != null) {
-                menu.addMenuItem(if (picked != null) "Save terrain file (area)" else "Save terrain file (whole map)") { startSave(map.screen, dimension, picked) }
+                item(menu, "save", if (picked != null) "Save terrain file (area)" else "Save terrain file (whole map)") { startSave(map.screen, dimension, picked) }
             }
             val other = dimension?.let(WaypointRules::counterpartName)
             if (other != null) {
-                menu.addMenuItem("$other temp waypoint") { block -> Ui.say(JourneyMapWaypoints.counterpart(api, block.x, block.z, dimension)) }
+                item(menu, "counter", "$other temp waypoint") { block -> Ui.say(JourneyMapWaypoints.counterpart(api, block.x, block.z, dimension)) }
             }
         }
         // Biome highlight, as Xaero's map bar picks them: the biome JourneyMap knows under the click.
         val biome = blockAtMouse(map)?.let { JourneyMapBiomes.biomeAt(map.uiState, it.x, it.z) }
         if (biome != null) {
             val name = BiomePicks.nameOf(biome)
-            menu.addMenuItem(if (BiomePicks.isPicked(biome)) "Stop highlighting $name" else "Highlight $name") { BiomePicks.toggle(biome) }
+            item(menu, "highlight", if (BiomePicks.isPicked(biome)) "Stop highlighting $name" else "Highlight $name") { BiomePicks.toggle(biome) }
         }
-        if (BiomePicks.any) menu.addMenuItem("Clear biome highlights") { BiomePicks.clear() }
+        if (BiomePicks.any) item(menu, "clearhighlights", "Clear biome highlights") { BiomePicks.clear() }
         // The list and downloads read BlueMap, so they are only worth offering on a server that has one.
         if (Session.current != null) {
-            menu.addMenuItem("Players…") { Ui.open(PlayerListScreen(map.screen)) }
+            item(menu, "players", "Players…") { Ui.open(PlayerListScreen(map.screen)) }
             if (!JourneyMapEdits.running) {
-                menu.addMenuItem("Download BlueMap…") { block -> offerDownload(block.x, block.z, JourneyMapSelection.area) }
+                item(menu, "download", "Download BlueMap…") { block -> offerDownload(block.x, block.z, JourneyMapSelection.area) }
                 // As on Xaero's map: what would go is said in chat, with the button to go ahead.
-                menu.addMenuItem("Clear old season…") { offerClear(JourneyMapEdits.Clear.OLD_SEASON) }
-                menu.addMenuItem("Clear past border…") { offerClear(JourneyMapEdits.Clear.BORDER) }
+                item(menu, "season", "Clear old season…") { offerClear(JourneyMapEdits.Clear.OLD_SEASON) }
+                item(menu, "border", "Clear past border…") { offerClear(JourneyMapEdits.Clear.BORDER) }
             }
         }
     }

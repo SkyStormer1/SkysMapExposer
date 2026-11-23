@@ -360,6 +360,7 @@ object XaeroAdapter : MapAdapter {
     override fun tick(client: Minecraft, session: Session?) {
         addPins()
         MapView.tick(client)
+        XaeroMenus.tick(client)
         BlueMapDownload.tick()
         MapBackup.tick()
         TerrainFiles.tick()

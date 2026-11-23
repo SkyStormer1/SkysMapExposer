@@ -50,20 +50,24 @@ object MapMenus {
     ) {
         guard {
             val where = dimension?.identifier()?.toString() ?: MarkerElements.worldMapDimension()
-            options.add(option("Copy coordinates", options.size, target) { Ui.copy(x, y, z, where) })
-            addSaveOptions(options, target, selection)
-            options.add(waypointsOption(options.size, target))
-            if (where != null) options.add(pingOption(options.size, target, x, y, z, where))
-            if (where != null) addCounterpartOption(options, target, x, z, where)
+            // Each by the id the menu layout knows it by ([MenuLayout]), whatever its label says just now.
+            val ours = ArrayList<Pair<String, RightClickOption>>()
+            ours += "copy" to option("Copy coordinates", 0, target) { Ui.copy(x, y, z, where) }
+            ours += "save" to saveOption(target, selection)
+            ours += "sharewp" to waypointsOption(0, target)
+            if (where != null) ours += "ping" to pingOption(0, target, x, y, z, where)
+            if (where != null) counterpartOption(target, x, z, where)?.let { ours += "counter" to it }
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
-                options.add(option("Players…", options.size, target) { parent -> Ui.open(PlayerListScreen(parent)) })
-                if (selection != null) options.add(downloadOption(options.size, target, selection))
-                options.add(clearOption(options.size, target, MapClear.Kind.OLD_SEASON, "Clear old season…",
-                    "Takes your map from before the season began (/mapexposer season) off this dimension's map. Asks first; each region is copied aside."))
+                ours += "players" to option("Players…", 0, target) { parent -> Ui.open(PlayerListScreen(parent)) }
+                if (selection != null) ours += "download" to downloadOption(0, target, selection)
+                ours += "season" to clearOption(0, target, MapClear.Kind.OLD_SEASON, "Clear old season…",
+                    "Takes your map from before the season began (/mapexposer season) off this dimension's map. Asks first; each region is copied aside.")
             }
-            options.add(clearOption(options.size, target, MapClear.Kind.BORDER, "Clear past border…",
-                "Takes your map beyond the world border off this dimension's map. Asks first; each region is copied aside."))
+            ours += "border" to clearOption(0, target, MapClear.Kind.BORDER, "Clear past border…",
+                "Takes your map beyond the world border off this dimension's map. Asks first; each region is copied aside.")
+            // In your layout, with Xaero's own; as they come if that fails.
+            if (!XaeroMenus.arrange(options, ours, target) { Ui.copy(x, y, z, where) }) options.addAll(ours.map { it.second })
         }
     }
 
@@ -88,22 +92,14 @@ object MapMenus {
      * and the Nether. Xaero's menu is 150 wide at every GUI scale and cuts off anything longer, so
      * the name is short and the tooltip says the rest.
      */
-    private fun addCounterpartOption(
-        options: ArrayList<RightClickOption>,
-        target: IRightClickableElement,
-        x: Int,
-        z: Int,
-        dimension: String,
-    ) {
-        val other = WaypointRules.counterpartName(dimension) ?: return
+    private fun counterpartOption(target: IRightClickableElement, x: Int, z: Int, dimension: String): RightClickOption? {
+        val other = WaypointRules.counterpartName(dimension) ?: return null
         val tooltip = listOf(
             Component.literal("Temporary waypoint in the $other"),
             Component.literal("§7" + WaypointRules.counterpartTip(x, z, dimension)),
         )
-        options.add(
-            MenuTooltips.Option("$other temp waypoint", options.size, target, tooltip) { Waypoints.setCounterpart(x, z, dimension) }
-                .also { it.setActive(Waypoints.available()) }
-        )
+        return MenuTooltips.Option("$other temp waypoint", 0, target, tooltip) { Waypoints.setCounterpart(x, z, dimension) }
+            .also { it.setActive(Waypoints.available()) }
     }
 
     /**
@@ -136,13 +132,12 @@ object MapMenus {
      * right-click (which selects only the chunk under the mouse), all of this dimension's map; every
      * block, to send however you like. While one is saving, "Stop saving" in its place.
      */
-    private fun addSaveOptions(options: ArrayList<RightClickOption>, target: IRightClickableElement, selection: MapTileSelection?) {
+    private fun saveOption(target: IRightClickableElement, selection: MapTileSelection?): RightClickOption {
         if (TerrainFiles.busy) {
             val tooltip = listOf(Component.literal("Stop saving the terrain file"), Component.literal("§7Nothing of it is kept."))
-            options.add(MenuTooltips.Option("Stop saving", options.size, target, tooltip) {
+            return MenuTooltips.Option("Stop saving", 0, target, tooltip) {
                 TerrainFiles.tell(if (TerrainFiles.cancel()) "Stopped saving the terrain file; nothing of it was kept" else "No terrain file is being saved")
-            })
-            return
+            }
         }
         val dragged = selection != null && (selection.right > selection.left || selection.bottom > selection.top)
         val what = if (dragged) "${sizeOf(selection)} of your map" else "All of this dimension's map (drag with the right button held to pick an area instead)"
@@ -150,9 +145,9 @@ object MapMenus {
             Component.literal("Save terrain to a file"),
             Component.literal("§7$what, every block, saved in the \"shared maps\" folder of your game folder. Send the file to anyone; they drop it onto their game window to add it. Asks first if it is big."),
         )
-        options.add(MenuTooltips.Option("Save terrain file", options.size, target, tooltip) { parent ->
+        return MenuTooltips.Option("Save terrain file", 0, target, tooltip) { parent ->
             startSave(parent, if (dragged) ShareFormat.Area(selection.left, selection.top, selection.right, selection.bottom) else null)
-        })
+        }
     }
 
     /** Starts a save of [area] (null: the whole map); a big one asks first, then comes back to the map ([parent]). */

@@ -6,6 +6,7 @@
   "client": [
     "DropDownWidgetAccess",
     "DropDownWidgetMixin",
+    "GuiMapMenuAccess",
     "RightClickMenuAccess",
     "RightClickOptionAccess",
     "WaypointMenuMixin"

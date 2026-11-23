@@ -3,6 +3,7 @@ package com.skystormer.skysmapexposer
 import com.mojang.blaze3d.platform.InputConstants
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
 import net.minecraft.client.Screenshot
 import net.minecraft.client.gui.components.ChatComponent
 import net.minecraft.client.gui.screens.TitleScreen
@@ -155,6 +156,23 @@ object AutoTest {
                 "shareeveryone" -> {
                     val mine = MapMods.adapter?.myWaypoints(rest.ifBlank { null })
                     Log.info("AutoTest: {}", mine?.let { ChatShare.shareWaypointsWithEveryone(it.first, it.second.take(2).map { w -> w.waypoint }) } ?: "no waypoints")
+                }
+                // Xaero's open right-click menu: `menurows` logs its rows, `menupick <text>` picks the first row with that text.
+                "menurows", "menupick" -> {
+                    val screen = client.gui.screen() ?: return
+                    val menu = screen.javaClass.getDeclaredField("rightClickMenu").apply { isAccessible = true }.get(screen)
+                    if (menu == null) {
+                        Log.info("AutoTest: no right-click menu open")
+                        return
+                    }
+                    val options = menu.javaClass.getDeclaredField("actionOptions").apply { isAccessible = true }.get(menu) as List<*>
+                    val texts = options.map { (it!!.javaClass.getMethod("getDisplayName").invoke(it) as Component).string }
+                    Log.info("AutoTest: menu rows: {}", texts.joinToString(" | "))
+                    if (verb == "menupick") {
+                        val i = texts.indexOfFirst { rest in it }
+                        Log.info("AutoTest: picking row {}", i)
+                        if (i >= 0) menu.javaClass.getMethod("selectId", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType).invoke(menu, i, false)
+                    }
                 }
                 "mywaypoints" -> Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
                 "click" -> {

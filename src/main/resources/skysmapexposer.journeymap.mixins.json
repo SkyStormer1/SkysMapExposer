@@ -17,6 +17,7 @@
     "OtherWorldContextMixin",
     "OtherWorldSnapshotMixin",
     "OtherWorldTopoMixin",
+    "PopupMenuLayoutMixin",
     "PopupMenuMixin",
     "SnapshotBiomeMixin",
     "WaypointCreateMixin",

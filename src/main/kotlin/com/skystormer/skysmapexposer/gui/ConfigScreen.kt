@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.background
 import com.skystormer.skysmapexposer.MapMods
+import com.skystormer.skysmapexposer.MenuLayout
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
 import com.skystormer.skysmapexposer.Config
@@ -509,12 +510,20 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "Size of other players' heads on the minimap.") { minimapHeadScale = it })
         y += ROW + GAP * 3
 
+        val buttonHalf = (WIDTH - GAP) / 2
         addRenderableWidget(
             Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
-                .bounds(left, y, WIDTH, ROW)
+                .bounds(left, y, buttonHalf, ROW)
                 .tooltip(SafeTooltip.of("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates."))
                 .build()
         )
+        val menuMap = if (MapMods.xaeroWorldMap) MenuLayout.XAERO else MenuLayout.JOURNEYMAP
+        addRenderableWidget(
+            Button.builder(Component.literal("Edit right-click menu…")) { minecraft.gui.setScreen(MenuEditScreen(this, menuMap)) }
+                .bounds(left + buttonHalf + GAP, y, WIDTH - buttonHalf - GAP, ROW)
+                .tooltip(SafeTooltip.of("The world map's right-click menu your way: order, groups, and what is hidden under More. Also at the bottom of the menu itself."))
+                .build()
+        ).active = MapMods.any
     }
 
     /** Where this server's BlueMap is, which of its maps to use, and downloading from it. */
