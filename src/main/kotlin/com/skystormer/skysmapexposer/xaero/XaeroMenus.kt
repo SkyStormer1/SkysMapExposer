@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
 import xaero.map.gui.GuiMap
 import xaero.map.gui.IRightClickableElement
+import xaero.map.gui.MapTileSelection
 import xaero.map.gui.dropdown.rightclick.RightClickOption
 
 /**
@@ -48,6 +49,12 @@ object XaeroMenus {
         class Group(val group: MenuLayout.Node.Group<Row>, val inMore: Boolean) : Page
     }
 
+    /**
+     * Xaero's chunk selection when the menu was made. Xaero clears it whenever a menu closes, picking
+     * a group included; its chunk line, Download and an area's Save terrain file need it back.
+     */
+    private var selection: MapTileSelection? = null
+
     /** The page to open on the next tick. */
     private var pending: Page? = null
 
@@ -56,7 +63,14 @@ object XaeroMenus {
      * the clicked block's coordinates, for Xaero's coordinates line. False if it could not be done,
      * leaving [options] as they were.
      */
-    fun arrange(options: ArrayList<RightClickOption>, ours: List<Pair<String, RightClickOption>>, target: IRightClickableElement, copy: () -> Unit): Boolean = try {
+    fun arrange(
+        options: ArrayList<RightClickOption>,
+        ours: List<Pair<String, RightClickOption>>,
+        target: IRightClickableElement,
+        selection: MapTileSelection?,
+        copy: () -> Unit,
+    ): Boolean = try {
+        this.selection = selection
         val header = ArrayList<Pair<String, Row>>()
         val items = ArrayList<Pair<String, Row>>()
         for (option in options) {
@@ -109,7 +123,9 @@ object XaeroMenus {
                 Page.More -> PageElement(map, "More", Page.Main) { target -> arranged.more.map { row(it, target, inMore = true) } }
                 is Page.Group -> PageElement(map, page.group.name, if (page.inMore) Page.More else Page.Main) { page.group.items.map { it.option } }
             }
-            (map as GuiMapMenuAccess).`skysmapexposer$handleRightClick`(element, openedX, openedY)
+            val access = map as GuiMapMenuAccess
+            access.`skysmapexposer$setSelection`(selection)
+            access.`skysmapexposer$handleRightClick`(element, openedX, openedY)
         } catch (e: Throwable) {
             Log.warn("Could not open a group of Xaero's right-click menu: {}", e.toString())
         }
