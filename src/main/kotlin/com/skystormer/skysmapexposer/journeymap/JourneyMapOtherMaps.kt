@@ -22,6 +22,7 @@ import journeymap.client.model.region.RegionCoord
 import journeymap.client.model.region.RegionImageCache
 import journeymap.common.chunk.JMChunkCache
 import journeymap.common.chunk.JMChunkSnapshot
+import journeymap.common.chunk.JMChunkStorage
 import net.minecraft.client.Minecraft
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
@@ -44,7 +45,7 @@ import java.util.concurrent.Executors
  * ([JourneyMapCacheWrites.Kind.WITHDRAWN]) exactly those are wiped again. Only the map you are
  * looking at is drawn (night, topo or biome, on the full-screen map or the minimap): the regions on
  * screen first, nearest first, then the rest of JourneyMap's cache, a few at a time off the client thread ([WORKERS], each with renderers of
- * its own), in the dimension you are in (JourneyMap's renderers draw only of the world it has open).
+ * its own), of the dimension the map shows: yours, or one toggled to, drawn as that dimension ([JourneyMapOtherWorld]).
  *
  * Hooks into JourneyMap's inner classes: if they change, this stops with a line in the log, and
  * those maps stay as JourneyMap leaves them.
@@ -84,9 +85,7 @@ internal object JourneyMapOtherMaps {
     fun tick(api: IClientAPI) {
         if (!working || inFlight.size >= WORKERS) return
         val level = Minecraft.getInstance().level ?: return
-        val here = level.dimension().identifier().toString()
-        val drawnFolder = JourneyMapEdits.serverFolder()?.resolve("journeymap-drawn")?.resolve(SafeFiles.name(here)) ?: return
-        val doneHere = done.getOrPut(here) { ConcurrentHashMap() }
+        val server = JourneyMapEdits.serverFolder() ?: return
         for (ui in UIS) {
             val state = api.getUIState(ui) ?: continue
             if (!state.active) continue
@@ -96,7 +95,11 @@ internal object JourneyMapOtherMaps {
                 Context.MapType.Biome -> BIOME
                 else -> continue
             }
-            if (state.dimension?.identifier()?.toString() != here) continue
+            // The dimension the map shows, yours or one toggled to ([JourneyMapOtherWorld]).
+            val here = state.dimension?.identifier()?.toString() ?: continue
+            if (here != level.dimension().identifier().toString() && JourneyMapOtherWorld.typeOf(here, level.registryAccess()) == null) continue
+            val drawnFolder = server.resolve("journeymap-drawn").resolve(SafeFiles.name(here))
+            val doneHere = done.getOrPut(here) { ConcurrentHashMap() }
             val bounds = (if (ui == Context.UI.Fullscreen) JourneyMapMenus.shownArea(state) else JourneyMapMinimap.area) ?: continue
             val left = Math.floorDiv(bounds[0].toInt(), JourneyMapFiles.REGION)
             val top = Math.floorDiv(bounds[1].toInt(), JourneyMapFiles.REGION)
@@ -169,8 +172,9 @@ internal object JourneyMapOtherMaps {
     private fun run(job: Job) {
         val minecraft = Minecraft.getInstance()
         val level = minecraft.level ?: return
-        // Through a portal since it was handed over: JourneyMap's renderers draw only of the world it has open.
-        if (level.dimension().identifier().toString() != job.dimension) return
+        // A dimension you are not in is drawn as that dimension ([JourneyMapOtherWorld]), read from its own cache files.
+        val otherType = if (level.dimension().identifier().toString() == job.dimension) null
+        else JourneyMapOtherWorld.typeOf(job.dimension, level.registryAccess()) ?: return
         val kinds = JourneyMapCacheWrites.kindsIn(job.dimension, job.regionX, job.regionZ) ?: return
         val drawnFile = job.drawnFolder.resolve("${job.regionX},${job.regionZ}.drawn")
         val drawn = try {
@@ -182,7 +186,7 @@ internal object JourneyMapOtherMaps {
         val key = levelKey(job.dimension)
         // No night map where there is no sky to have one, as JourneyMap draws none of the Nether.
         val types = buildList {
-            if (key != Level.NETHER) add(NIGHT to MapType.night(key))
+            if (if (otherType != null) otherType.hasSkyLight() && !otherType.hasCeiling() else key != Level.NETHER) add(NIGHT to MapType.night(key))
             add(TOPO to MapType.topo(key))
             add(BIOME to MapType.biome(key))
         }
@@ -199,25 +203,37 @@ internal object JourneyMapOtherMaps {
         if (toDraw.isNotEmpty() || toWipe.isNotEmpty()) {
             val world = FileHandler.getJMWorldDir(minecraft) ?: return
             val day = MapType.day(key)
-            // Read through JourneyMap's cache, which loads off its own threads: all asked for at once, then waited for.
             val snapshots = arrayOfNulls<JMChunkSnapshot>(CHUNKS)
             val wanted = toDraw + toWipe
-            val loaded = CountDownLatch(wanted.size)
-            for (i in wanted) {
-                JMChunkCache.INSTANCE.supplyAsync(ChunkPos(job.regionX * 32 + (i and 31), job.regionZ * 32 + (i shr 5)), level) {
-                    snapshots[i] = it
-                    loaded.countDown()
+            fun posOf(i: Int) = ChunkPos(job.regionX * 32 + (i and 31), job.regionZ * 32 + (i shr 5))
+            if (otherType == null) {
+                // Read through JourneyMap's cache, which loads off its own threads: all asked for at once, then waited for.
+                val loaded = CountDownLatch(wanted.size)
+                for (i in wanted) {
+                    JMChunkCache.INSTANCE.supplyAsync(posOf(i), level) {
+                        snapshots[i] = it
+                        loaded.countDown()
+                    }
+                }
+                // One that fails is never answered (JourneyMap logs it): after a while, the rest go ahead.
+                loaded.await(LOAD_WAIT_S, TimeUnit.SECONDS)
+            } else {
+                // Another dimension's files, which JourneyMap does not have open: read here, at that dimension's height.
+                val folder = JourneyMapFiles.chunkCacheFolder(job.dimension) ?: return
+                JMChunkStorage(folder).use { storage ->
+                    JourneyMapOtherWorld.with(otherType, emptyMap()) { for (i in wanted) snapshots[i] = storage.read(posOf(i), level) }
                 }
             }
-            // One that fails is never answered (JourneyMap logs it): after a while, the rest go ahead.
-            loaded.await(LOAD_WAIT_S, TimeUnit.SECONDS)
             val mds = HashMap<Int, ChunkMD>()
-            fun md(i: Int): ChunkMD? = mds[i] ?: snapshots[i]?.let { snapshot -> SnapshotChunkMD(level, snapshot, true).also { mds[i] = it } }
-            // Its neighbours in reach of the renderers, as JourneyMap's own tasks hold theirs, for the slopes at the edges.
+            fun md(i: Int): ChunkMD? = mds[i] ?: snapshots[i]?.let { snapshot ->
+                (if (otherType == null) SnapshotChunkMD(level, snapshot, true) else JourneyMapOtherWorld.OtherChunk(level, snapshot, key, otherType)).also { mds[i] = it }
+            }
+            // Its neighbours in reach of the renderers, as JourneyMap's own tasks hold theirs, for the slopes at
+            // the edges: in its cache for your dimension, in their own list for another ([JourneyMapOtherWorld.neighbour]).
             val held = toDraw.mapNotNull { md(it) }
-            held.forEach(DataCache.INSTANCE::addChunkMD)
+            if (otherType == null) held.forEach(DataCache.INSTANCE::addChunkMD)
             var anyDrawn = 0
-            try {
+            fun drawAll() {
                 for (i in toDraw) {
                     val md = md(i) ?: continue
                     val coord = RegionCoord.fromChunkPos(world, day, md.coord.x(), md.coord.z())
@@ -258,8 +274,12 @@ internal object JourneyMapOtherMaps {
                     }
                     drawn[i] = 0
                 }
+            }
+            try {
+                if (otherType == null) drawAll()
+                else JourneyMapOtherWorld.with(otherType, held.associateBy { it.coord.pack() }) { drawAll() }
             } finally {
-                held.forEach(DataCache.INSTANCE::removeChunkMD)
+                if (otherType == null) held.forEach(DataCache.INSTANCE::removeChunkMD)
             }
             if (anyDrawn != 0 || toWipe.isNotEmpty()) synchronized(saving) {
                 // Shown at once.

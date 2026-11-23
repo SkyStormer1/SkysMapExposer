@@ -74,6 +74,9 @@ object JourneyMapAdapter : MapAdapter {
         Triple("journeymap.common.waypoint.WaypointImpl", "scaleOfShown", "waypoints on another dimension's map will be placed at your dimension's scale"),
         Triple("journeymap.client.event.handlers.PopupMenuEventHandler", "noChatPosition", "its own Chat Position will stay on the right-click menu beside Copy coordinates"),
         Triple("journeymap.client.render.map.MapRenderer", "underGrid", "its grid will be hidden under BlueMap's terrain and the biome tint"),
+        Triple("journeymap.client.model.chunk.ChunkRenderContext", "otherWorldNeighbour", "night, topo and biome maps of a toggled dimension will not be drawn"),
+        Triple("journeymap.common.chunk.JMChunkSnapshot", "otherWorldSections", "night, topo and biome maps of a toggled dimension will not be drawn"),
+        Triple("journeymap.client.cartography.render.TopoRenderer", "otherWorldTop", "the topo map of a toggled dimension will be shaded by your dimension's height"),
     )
 
     /**
