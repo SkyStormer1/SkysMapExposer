@@ -70,10 +70,10 @@ internal object JourneyMapMenuLayout {
                 val child = if (isSubMenu(item)) children.getOrNull(sub++) else null
                 val own = OWN[item.label]
                 if (own == WAYPOINTS && child != null) {
-                    for (inner in child.menuItemList) add(OWN[inner.label] ?: "jm:${inner.label}", inner)
+                    for (inner in child.menuItemList) add(OWN[inner.label] ?: MenuLayout.otherId("jm", inner.label), inner)
                     continue
                 }
-                add(ids[item.label] ?: own ?: "jm:${item.label}", item)
+                add(ids[item.label] ?: own ?: MenuLayout.otherId("jm", item.label), item)
             }
             val arranged = MenuLayout.arrange(MenuLayout.JOURNEYMAP, header, items)
             list.clear()

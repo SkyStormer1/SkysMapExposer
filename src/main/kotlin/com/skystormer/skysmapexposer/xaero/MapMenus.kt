@@ -66,8 +66,9 @@ object MapMenus {
             }
             ours += "border" to clearOption(0, target, MapClear.Kind.BORDER, "Clear past border…",
                 "Takes your map beyond the world border off this dimension's map. Asks first; each region is copied aside.")
-            // In your layout, with Xaero's own; as they come if that fails.
-            if (!XaeroMenus.arrange(options, ours, target, selection) { Ui.copy(x, y, z, where) }) options.addAll(ours.map { it.second })
+            // On the end for now: the menu is put in your layout as Xaero opens it, once every mod has added its rows.
+            XaeroMenus.prepare(ours, selection) { Ui.copy(x, y, z, where) }
+            options.addAll(ours.map { it.second })
         }
     }
 

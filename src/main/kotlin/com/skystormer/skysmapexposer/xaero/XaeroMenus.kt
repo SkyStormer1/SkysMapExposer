@@ -58,46 +58,58 @@ object XaeroMenus {
     /** The page to open on the next tick. */
     private var pending: Page? = null
 
+    /** This mod's rows on the menu being made, each to the id the layout knows it by. */
+    private val ours = java.util.IdentityHashMap<RightClickOption, String>()
+    private var copy: () -> Unit = {}
+
     /**
-     * [options] (Xaero's own, as it made them) and [ours] in your layout, in place. [copy] copies
-     * the clicked block's coordinates, for Xaero's coordinates line. False if it could not be done,
-     * leaving [options] as they were.
+     * Called as this mod adds [rows] to the map's menu (they go on the end as they are), with
+     * Xaero's chunk [selection] and how to [copy] the clicked block's coordinates. The menu is laid
+     * out once every mod has added its rows, as Xaero opens it ([arrange]).
      */
-    fun arrange(
-        options: ArrayList<RightClickOption>,
-        ours: List<Pair<String, RightClickOption>>,
-        target: IRightClickableElement,
-        selection: MapTileSelection?,
-        copy: () -> Unit,
-    ): Boolean = try {
+    fun prepare(rows: List<Pair<String, RightClickOption>>, selection: MapTileSelection?, copy: () -> Unit) {
+        ours.clear()
+        for ((id, row) in rows) ours[row] = id
         this.selection = selection
-        val header = ArrayList<Pair<String, Row>>()
-        val items = ArrayList<Pair<String, Row>>()
-        for (option in options) {
-            val name = (option as RightClickOptionAccess).`skysmapexposer$name`() ?: ""
-            when {
-                name == TITLE -> header += "title" to Row(option)
-                name.startsWith("C: (") -> header += "chunk" to Row(option)
-                // Xaero's line does nothing when clicked: here it copies them.
-                name.startsWith("X: ") -> header += "coords" to Row(MapMenus.option(option.displayName.string, 0, target) { copy() })
-                // How far the clicked block is from you.
-                DISTANCE.matches(option.displayName.string.trim()) -> header += "distance" to Row(option)
-                else -> items += (KEYS[name] ?: "xaero:$name") to Row(option)
+        this.copy = copy
+    }
+
+    /**
+     * For `GuiRightClickMenuMixin`: the map's menu ([options], every mod's rows in it, Xaero's own
+     * first) in your layout, in place, as Xaero opens it. Left as it is if that fails.
+     */
+    @JvmStatic
+    fun arrange(options: ArrayList<RightClickOption>, target: IRightClickableElement) {
+        if (target !is GuiMap) return
+        try {
+            val header = ArrayList<Pair<String, Row>>()
+            val items = ArrayList<Pair<String, Row>>()
+            for (option in options) {
+                val name = (option as RightClickOptionAccess).`skysmapexposer$name`() ?: ""
+                val label = option.displayName.string.trim()
+                val mine = ours[option]
+                when {
+                    mine != null -> items += mine to Row(option)
+                    name == TITLE -> header += "title" to Row(option)
+                    name.startsWith("C: (") -> header += "chunk" to Row(option)
+                    // Xaero's line does nothing when clicked: here it copies them.
+                    name.startsWith("X: ") -> header += "coords" to Row(MapMenus.option(option.displayName.string, 0, target) { copy() })
+                    // How far the clicked block is from you.
+                    DISTANCE.matches(label) -> header += "distance" to Row(option)
+                    else -> items += (KEYS[name] ?: MenuLayout.otherId("xaero", name.ifBlank { label })) to Row(option)
+                }
             }
+            val arranged = MenuLayout.arrange(MenuLayout.XAERO, header, items)
+            last = arranged
+            val page = ArrayList<RightClickOption>()
+            arranged.header.forEach { page += it.option }
+            arranged.menu.forEach { page += row(it, target, inMore = false) }
+            if (arranged.more.isNotEmpty()) page += MapMenus.option("More  ›", 0, target) { pending = Page.More }
+            page += MapMenus.option("§7Edit menu…", 0, target) { parent -> Ui.open(MenuEditScreen(parent, MenuLayout.XAERO)) }
+            replace(options, page)
+        } catch (e: Throwable) {
+            Log.warn("Could not lay out Xaero's right-click menu: {}", e.toString())
         }
-        for ((id, option) in ours) items += id to Row(option)
-        val arranged = MenuLayout.arrange(MenuLayout.XAERO, header, items)
-        last = arranged
-        val page = ArrayList<RightClickOption>()
-        arranged.header.forEach { page += it.option }
-        arranged.menu.forEach { page += row(it, target, inMore = false) }
-        if (arranged.more.isNotEmpty()) page += MapMenus.option("More  ›", 0, target) { pending = Page.More }
-        page += MapMenus.option("§7Edit menu…", 0, target) { parent -> Ui.open(MenuEditScreen(parent, MenuLayout.XAERO)) }
-        replace(options, page)
-        true
-    } catch (e: Throwable) {
-        Log.warn("Could not lay out Xaero's right-click menu: {}", e.toString())
-        false
     }
 
     private fun row(node: MenuLayout.Node<Row>, target: IRightClickableElement, inMore: Boolean): RightClickOption = when (node) {

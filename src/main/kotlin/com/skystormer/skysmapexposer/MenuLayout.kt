@@ -62,9 +62,19 @@ object MenuLayout {
         val menu = nodes(layout.menu)
         val more = nodes(layout.more)
         val leftover = byId.filterKeys { it !in placed }.map { (id, value) -> Node.Item(id, value) }
-        for ((id, value) in items) names[map]?.put(id, labelOf(value))
+        // Remembered (and saved when new) so the editor can show every row the menu has had, other mods' too.
+        var learned = false
+        for ((id, value) in items) if (names[map]?.put(id, labelOf(value)) == null) learned = true
+        if (learned) save()
         return Arranged(header.filter { (id, _) -> layout.header[id] != false }.map { it.second }, menu + leftover, more)
     }
+
+    /**
+     * The id for a row another mod (or a newer map) adds, from its [name]: a translation key where it
+     * has one, else its label with any numbers taken out, so a label that shows a count or a distance
+     * stays the same row.
+     */
+    fun otherId(map: String, name: String): String = "$map:" + name.replace(Regex("§."), "").replace(Regex("[0-9]+"), "#").trim()
 
     /** What the editor calls an item, for one that has been on the menu or that this mod knows. */
     fun name(map: String, id: String): String =

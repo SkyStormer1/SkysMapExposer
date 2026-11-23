@@ -174,6 +174,7 @@ object AutoTest {
                         if (i >= 0) menu.javaClass.getMethod("selectId", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType).invoke(menu, i, false)
                     }
                 }
+                "editmenu" -> Ui.open(com.skystormer.skysmapexposer.gui.MenuEditScreen(client.gui.screen(), if (MapMods.xaeroWorldMap) MenuLayout.XAERO else MenuLayout.JOURNEYMAP))
                 "mywaypoints" -> Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })
                 "click" -> {
                     val command = buttonCommand(client, rest)
