@@ -79,8 +79,8 @@ internal object JourneyMapImportedBiomes {
             val index = cellZ * CELLS + cellX
             if (!overKept && cells[index] > 0) continue
             val biome = biomeAt(cellX * 4 + 2, cellZ * 4 + 2) ?: continue
-            val at = indexOf.getOrPut(biome) { palette.add(biome); palette.size - 1 }
-            if (at >= MAX_BIOMES) continue
+            // Never more biomes than the file may hold: a longer list would be refused whole when read.
+            val at = indexOf[biome] ?: if (palette.size >= MAX_BIOMES) continue else palette.size.also { palette.add(biome); indexOf[biome] = it }
             cells[index] = (at + 1).toShort()
             any = true
         }

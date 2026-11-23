@@ -346,7 +346,9 @@ internal object JourneyMapBiomes {
                 if (raw.readInt() != SAVED_MAGIC || raw.readInt() != SAVED_FORMAT) return null
                 DataInputStream(InflaterInputStream(raw).buffered()).use { input ->
                     if (input.readLong() != fileTime) return null
-                    val palette = List(input.readInt()) { ResourceKey.create(Registries.BIOME, Identifier.parse(input.readUTF())) }
+                    val count = input.readInt()
+                    if (count !in 0..Short.MAX_VALUE) return null
+                    val palette = List(count) { ResourceKey.create(Registries.BIOME, Identifier.parse(input.readUTF())) }
                     val cells = ShortArray(CELLS * CELLS) { input.readShort() }
                     val heights = if (input.readBoolean()) ShortArray(CELLS * CELLS) { input.readShort() } else null
                     if (cells.any { it >= palette.size }) return null
@@ -511,6 +513,4 @@ internal object JourneyMapBiomes {
     /** How often the cache files of the regions on screen are looked at for changes. */
     private const val RECHECK_MS = 5_000L
     private const val KEEP_CLOSED_MS = 30_000L
-
-    /** Over BlueMap's terrain ([JourneyMapTerrain]), under the outlines and pins ([JourneyMapPins]). */
 }
