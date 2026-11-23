@@ -16,6 +16,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
+import net.minecraft.world.level.Level
 import net.minecraft.world.level.biome.Biome
 import net.minecraft.core.RegistryAccess
 import java.io.ByteArrayOutputStream
@@ -193,6 +194,21 @@ internal object JourneyMapBiomes {
 
     /** The cave map's slice, else null for the top block. */
     private fun layerOf(state: UIState): Int? = if (state.mapType == Context.MapType.Underground) state.chunkY else null
+
+    /**
+     * For `BlockInfoBiomeMixin`: the biome to name on JourneyMap's line under the mouse at ([x], [z])
+     * on a map of [dimension] you are not in (the dimension toggle), where JourneyMap would name the
+     * biome at those coordinates in the world you are in. Empty where it knows none there; null on
+     * a map of your own dimension, left to JourneyMap.
+     */
+    @JvmStatic
+    fun otherDimensionName(dimension: ResourceKey<Level>?, x: Int, z: Int): String? {
+        val here = Minecraft.getInstance().level?.dimension() ?: return null
+        if (dimension == null || dimension == here) return null
+        val state = JourneyMapAdapter.api?.getUIState(Context.UI.Fullscreen) ?: return ""
+        if (state.dimension != dimension) return ""
+        return biomeAt(state, x, z)?.let(BiomePicks::nameOf) ?: ""
+    }
 
     /**
      * The biome at block ([x], [z]) on JourneyMap's full-screen map, by the same rule as the tint,
