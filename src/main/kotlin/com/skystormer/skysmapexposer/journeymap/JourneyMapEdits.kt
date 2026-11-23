@@ -71,7 +71,8 @@ internal object JourneyMapEdits {
         /** Downloaded and shared columns into JourneyMap's chunk cache, for saving terrain files; none for a clear. */
         var cache: JourneyMapCacheWrites.Batch? = null
         var changed = 0
-        var unreadable = 0
+        /** Counted from the finding thread and the client thread both. */
+        val unreadable = AtomicInteger()
         val ready = LinkedBlockingQueue<Edit>(QUEUE)
     }
 
@@ -286,7 +287,7 @@ internal object JourneyMapEdits {
             } catch (e: Exception) {
                 Log.error("Could not read region ${rx}_${rz} of ${file.path}; left it out", e)
                 job.looked.incrementAndGet()
-                job.unreadable++
+                job.unreadable.incrementAndGet()
                 continue
             }
             queue(job, Edit(rx, rz, cacheWhereTaken(job, region, picture)) { pixels, _ -> merge(pixels, picture, unexploredOnly) })
@@ -489,7 +490,7 @@ internal object JourneyMapEdits {
     private fun write(job: Job, edit: Edit) {
         val file = JourneyMapFiles.regionFile(job.folder, edit.regionX, edit.regionZ)
         try {
-            val pixels = JourneyMapFiles.read(file) ?: return run { job.unreadable++ }
+            val pixels = JourneyMapFiles.read(file) ?: return run { job.unreadable.incrementAndGet() }
             val changed = edit.apply(pixels, file)
             edit.cache?.invoke(pixels)
             if (!changed) return
@@ -532,7 +533,7 @@ internal object JourneyMapEdits {
         val parts = listOfNotNull(
             "${job.changed} region(s) changed",
             "${waiting.size} open in JourneyMap, changed once it lets go".takeIf { waiting.isNotEmpty() },
-            "${job.unreadable} left alone (could not be read; the log says why)".takeIf { job.unreadable > 0 },
+            "${job.unreadable.get()} left alone (could not be read; the log says why)".takeIf { job.unreadable.get() > 0 },
         )
         val head = "${job.title} ${if (job.cancelled) "stopped" else "done"}: "
         val message = Component.literal(head + parts.joinToString("; ") + ".  ")
