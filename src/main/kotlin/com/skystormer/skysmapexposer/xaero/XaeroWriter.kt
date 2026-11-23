@@ -210,6 +210,9 @@ object XaeroWriter {
      */
     fun finish(processor: MapProcessor, region: MapRegion) {
         synchronized(region) {
+            // Written now, so it has to be saved: a terrain file reading it next must not take back
+            // its "being written" mark ([release]) before Xaero has.
+            markedByUs.remove(region)
             region.setHasHadTerrain()
             region.setAllCachePrepared(false)
             region.setResaving(true)

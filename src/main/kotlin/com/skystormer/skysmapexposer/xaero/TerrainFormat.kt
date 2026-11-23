@@ -124,6 +124,8 @@ object TerrainFormat {
         private var regionSince = 0L
         /** How far into a region it has read, for one it has not finished. */
         private val reading = HashMap<Pair<Int, Int>, Int>()
+        /** Regions it has asked Xaero to load and not yet let go of ([XaeroWriter.release]). */
+        private val asked = HashMap<Pair<Int, Int>, MapRegion>()
         /** How long one [next] may spend reading your map ([System.nanoTime]), so the game keeps its frame rate. */
         var budget = 2_000_000L
         override val progress get() = "region ${minOf(batch + 1, batches)} of $batches"
@@ -144,7 +146,12 @@ object TerrainFormat {
             val now = System.currentTimeMillis()
             val deadline = System.nanoTime() + budget
             for ((rx, rz) in pending.take(REGIONS_AT_ONCE)) {
-                val region = XaeroWriter.loaded(processor, folder, rx, rz, layer) ?: continue
+                val region = XaeroWriter.loaded(processor, folder, rx, rz, layer)
+                if (region == null) {
+                    processor.getLeafMapRegion(layer, rx, rz, false)?.let { asked[rx to rz] = it }
+                    continue
+                }
+                asked[rx to rz] = region
                 val next = synchronized(region) { collector.read(region, rx, rz, reading[rx to rz] ?: 0, deadline) }
                 regionSince = now
                 if (next >= 0) {
@@ -153,12 +160,14 @@ object TerrainFormat {
                 }
                 reading.remove(rx to rz)
                 pending.remove(rx to rz)
+                asked.remove(rx to rz)
                 XaeroWriter.release(region)
                 if (System.nanoTime() > deadline) break
             }
             if (pending.isNotEmpty()) {
                 if (now - regionSince > LOAD_WAIT) {
                     val (rx, rz) = pending.removeFirst()
+                    asked.remove(rx to rz)?.let(XaeroWriter::release)
                     skippedRegions++
                     regionSince = now
                     Log.warn("Sharing: Xaero did not load region {}_{} within {} s; left it out", rx, rz, LOAD_WAIT / 1000)
@@ -172,6 +181,16 @@ object TerrainFormat {
             count += collector.chunks
             val header = Header(from, dimensionId, shareId, index, parts.size, area)
             return Step.Ready({ collector.pack(header) }, index, collector.chunks)
+        }
+
+        /**
+         * Lets go of every region it asked Xaero to load and has not read yet, when it stops early
+         * (cancelled, failed, the map switched dimension): otherwise Xaero keeps their full data in
+         * memory and saves them again for nothing. Client thread.
+         */
+        fun close() {
+            asked.values.forEach(XaeroWriter::release)
+            asked.clear()
         }
 
         /** The regions of batch [index]: one. */

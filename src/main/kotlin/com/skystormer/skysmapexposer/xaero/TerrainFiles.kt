@@ -112,6 +112,7 @@ object TerrainFiles {
     private fun abandon(current: Saving) {
         saving = null
         current.cancelled = true
+        current.reader.close()
         worker.execute {
             runCatching { current.out.close() }
             runCatching { Files.deleteIfExists(current.part) }
