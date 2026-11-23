@@ -128,8 +128,10 @@ object AutoTest {
                     val screen = client.gui.screen() ?: return
                     val types = Class.forName("journeymap.api.v2.common.Context\$MapType")
                     val type = types.enumConstants.first { (it as Enum<*>).name.equals(rest, ignoreCase = true) }
+                    // In the dimension the map shows, which the dimension toggle may have changed from yours.
+                    val shown = screen.javaClass.getMethod("getUiState").invoke(screen)?.let { it.javaClass.getField("dimension").get(it) } ?: client.level?.dimension()
                     screen.javaClass.getMethod("updateMapType", types, Integer::class.java, net.minecraft.resources.ResourceKey::class.java)
-                        .invoke(screen, type, null, client.level?.dimension())
+                        .invoke(screen, type, null, shown)
                 }
                 "biomecheck" -> {
                     // Our copy of the game's per-block biome rule against the game's own, at the surface around you.
