@@ -139,36 +139,25 @@ object MapView {
         // to your own dimension goes to you; going elsewhere goes to the origin. Both ride the same
         // held move, so that they survive that shift.
         val here = minecraft.level?.dimension()?.identifier()?.toString()
-        move = if (viewed == here) Move(viewed, 0, 0, toPlayer = true) else Move(viewed, 0, 0)
+        move = Move(viewed, 0, 0, toPlayer = viewed == here)
         waited = 0
     }
 
     /** For `GuiMapMixin`: hide the player arrow. */
     @JvmStatic
-    fun hideArrow(): Boolean {
-        return viewingAnotherDimension()
-    }
+    fun hideArrow(): Boolean = viewingAnotherDimension()
 
     /** For `RadarRendererMixin`: hide Xaero's entity radar on the world map. */
     @JvmStatic
-    fun hideRadar(): Boolean {
-        return viewingAnotherDimension()
-    }
+    fun hideRadar(): Boolean = viewingAnotherDimension()
 
-    /**
-     * For `MinimapElementWrapperMixin`: hide everything the minimap draws on the world map, bar
-     * waypoints.
-     */
+    /** For `MinimapElementWrapperMixin`: hide everything the minimap draws on the world map, bar waypoints. */
     @JvmStatic
-    fun hideWrappedMinimapElements(): Boolean {
-        return viewingAnotherDimension()
-    }
+    fun hideWrappedMinimapElements(): Boolean = viewingAnotherDimension()
 
     /** For `PlayerTrackerRendererMixin`: hide Xaero's tracked-player dots on the world map. */
     @JvmStatic
-    fun hideTracker(): Boolean {
-        return viewingAnotherDimension()
-    }
+    fun hideTracker(): Boolean = viewingAnotherDimension()
 
     /**
      * Whether the world map is showing a dimension you are not standing in.

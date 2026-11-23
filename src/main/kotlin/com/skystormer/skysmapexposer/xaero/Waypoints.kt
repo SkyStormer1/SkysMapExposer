@@ -28,25 +28,19 @@ object Waypoints {
 
     fun available(): Boolean = MapMods.xaeroMinimap
 
-    fun save(pin: Markers.Pin) {
-        Ui.say(
-            try {
-                add(pin)
-            } catch (e: Throwable) {
-                Log.error("Could not save ${pin.label} as a waypoint", e)
-                "Could not save the waypoint: ${e.message ?: e.javaClass.simpleName}"
-            }
-        )
-    }
+    fun save(pin: Markers.Pin) = say("Could not save ${pin.label} as a waypoint", "save") { add(pin) }
 
     /** A temporary waypoint on [pin], made by Xaero exactly as its own menu makes one: gone when you leave. */
-    fun setTemporary(pin: Markers.Pin) {
+    fun setTemporary(pin: Markers.Pin) = say("Could not set a temporary waypoint on ${pin.label}", "set") { temporary(pin) }
+
+    /** Says what [action] answers on the action bar; if it fails, logs [failed] and says it could not [verb] the waypoint. */
+    private inline fun say(failed: String, verb: String, action: () -> String) {
         Ui.say(
             try {
-                temporary(pin)
+                action()
             } catch (e: Throwable) {
-                Log.error("Could not set a temporary waypoint on ${pin.label}", e)
-                "Could not set the waypoint: ${e.message ?: e.javaClass.simpleName}"
+                Log.error(failed, e)
+                "Could not $verb the waypoint: ${e.message ?: e.javaClass.simpleName}"
             }
         )
     }
@@ -69,16 +63,8 @@ object Waypoints {
      * usually run. The Overworld has no such height, so there Y is left out and Xaero shows it as
      * unknown.
      */
-    fun setCounterpart(x: Int, z: Int, dimension: String) {
-        Ui.say(
-            try {
-                counterpart(x, z, dimension)
-            } catch (e: Throwable) {
-                Log.error("Could not set a temporary waypoint in the other dimension", e)
-                "Could not set the waypoint: ${e.message ?: e.javaClass.simpleName}"
-            }
-        )
-    }
+    fun setCounterpart(x: Int, z: Int, dimension: String) =
+        say("Could not set a temporary waypoint in the other dimension", "set") { counterpart(x, z, dimension) }
 
     private fun counterpart(x: Int, z: Int, dimension: String): String {
         if (!available()) return "Temporary waypoints need Xaero's Minimap"

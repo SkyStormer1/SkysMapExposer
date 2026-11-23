@@ -7,6 +7,7 @@ import com.skystormer.skysmapexposer.Markers
 import com.skystormer.skysmapexposer.Session
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
 import org.joml.Matrix4f
 import xaero.lib.XaeroLib
 import xaero.map.MapProcessor
@@ -54,7 +55,9 @@ object Overlay {
             val minZ = view.minZ
             val maxZ = view.maxZ
 
-            drawOutlines(mapProcessor, matrix, flooredCameraX, flooredCameraZ, blocksPerUnit, minX, maxX, minZ, maxZ)
+            // Into Xaero's own overlay buffer, which it draws once its highlights are in.
+            Outlines.drawFor(mapProcessor, XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY),
+                matrix, flooredCameraX, flooredCameraZ, blocksPerUnit, minX, maxX, minZ, maxZ)
 
             val target = Backfill.target(mapProcessor, ::standDown) ?: return
             val now = System.currentTimeMillis()
@@ -64,7 +67,7 @@ object Overlay {
                 debugRegions = false
                 // Close up, Xaero always loads the regions it shows, so one it has not is one it cannot.
                 Backfill.watchRegions(target, mapProcessor, minX, maxX, minZ, maxZ, closeUp = blocksPerUnit <= 1f, debug = debug)
-                if (debug) Minecraft.getInstance().player?.sendSystemMessage(net.minecraft.network.chat.Component.literal("§7Wrote what Xaero has of each region in view to the log"))
+                if (debug) Minecraft.getInstance().player?.sendSystemMessage(Component.literal("§7Wrote what Xaero has of each region in view to the log"))
             }
             val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
             val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget(), seaFloor = true)
@@ -105,24 +108,6 @@ object Overlay {
                 "; sea floor: ${floor.downloaded.get()} 3D tiles downloaded (${floor.downloadedBytes.get() / 1024} KB), ${floor.waiting} waiting"
             lastSummary = plan.summary + floorSaid + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
         }
-    }
-
-    /**
-     * The world border and zones, into Xaero's own overlay buffer, which it draws once its
-     * highlights are in. Shown wherever the dimension has a BlueMap map, even with its terrain off.
-     */
-    private fun drawOutlines(
-        mapProcessor: MapProcessor, matrix: Matrix4f, originX: Int, originZ: Int, blocksPerUnit: Float,
-        minX: Double, maxX: Double, minZ: Double, maxZ: Double,
-    ) {
-        // Not skipped in cave mode: Xaero shows the nether in cave mode all the time.
-        if (!Config.showOutlines) return
-        val session = Session.current ?: return
-        val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
-        val map = session.server.markersFor(dimension) ?: return
-        val outlines = session.markers.of(map)?.outlines ?: return
-        val buffer = XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY)
-        Outlines.draw(buffer, matrix, outlines, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
     }
 
     private fun standDown(key: String, reason: String) {
@@ -185,6 +170,23 @@ object Spinner {
  * Line width is kept in screen units, the way BlueMap draws it, whatever the zoom.
  */
 object Outlines {
+
+    /**
+     * The world border and zones of the dimension Xaero's map is showing, for the world map and the
+     * minimap alike. Shown wherever the dimension has a BlueMap map, even with its terrain off.
+     */
+    fun drawFor(
+        mapProcessor: MapProcessor, buffer: VertexConsumer, matrix: Matrix4f, originX: Int, originZ: Int, blocksPerUnit: Float,
+        minX: Double, maxX: Double, minZ: Double, maxZ: Double,
+    ) {
+        // Not skipped in cave mode: Xaero shows the nether in cave mode all the time.
+        if (!Config.showOutlines) return
+        val session = Session.current ?: return
+        val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
+        val map = session.server.markersFor(dimension) ?: return
+        val outlines = session.markers.of(map)?.outlines ?: return
+        draw(buffer, matrix, outlines, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
+    }
 
     fun draw(
         buffer: VertexConsumer,

@@ -36,14 +36,7 @@ object WaypointShare {
         for (set in world.iterableWaypointSets) {
             for (waypoint in set.waypoints) {
                 if (waypoint.isTemporary || waypoint.isThirdParty || waypoint.isDestination) continue
-                entries.add(
-                    ShareableWaypoint(
-                        setName(set.name),
-                        ShareFormat.SharedWaypoint(
-                            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
-                        ),
-                    )
-                )
+                entries.add(ShareableWaypoint(setName(set.name), sharedOf(waypoint)))
             }
         }
         return dimensionId to entries
@@ -58,10 +51,12 @@ object WaypointShare {
         val dimension = listOfNotNull(MarkerElements.worldMapDimension(), Config.OVERWORLD, Config.NETHER, Config.END).distinct().firstOrNull { dimension ->
             Waypoints.worldFor(levelKey(dimension))?.iterableWaypointSets?.any { set -> set.waypoints.any { it === waypoint } } == true
         } ?: return null
-        return dimension to ShareFormat.SharedWaypoint(
-            waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
-        )
+        return dimension to sharedOf(waypoint)
     }
+
+    private fun sharedOf(waypoint: Waypoint) = ShareFormat.SharedWaypoint(
+        waypoint.getName(), waypoint.initials, waypoint.x, waypoint.y, waypoint.z, waypoint.isYIncluded, waypoint.waypointColor.ordinal,
+    )
 
     /**
      * Adds [waypoints] from [from] to the selected set of [dimensionId]'s waypoints, leaving out

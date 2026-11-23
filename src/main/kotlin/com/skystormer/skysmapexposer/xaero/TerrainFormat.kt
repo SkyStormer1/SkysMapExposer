@@ -247,6 +247,4 @@ object TerrainFormat {
         val access = pixel as MapPixelAccess
         return (access.`skysmapexposer$light`().toInt() and 15) or (if (access.`skysmapexposer$glowing`()) 16 else 0)
     }
-
-
 }

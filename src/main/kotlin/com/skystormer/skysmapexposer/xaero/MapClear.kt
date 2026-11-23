@@ -10,8 +10,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
 import xaero.map.MapProcessor
 import xaero.map.region.MapBlock
-import java.nio.file.Files
-import java.nio.file.Path
 
 /**
  * Taking parts of your Xaero map off it, in the dimension and layer the world map is showing:
@@ -22,8 +20,6 @@ import java.nio.file.Path
  * Asked for in two steps: the first says what would go and offers a button, the second does it.
  * It runs as a [BlueMapDownload] job that writes nothing and clears instead, region by region, each
  * region copied aside just before it is changed, so `/mapexposer restore` puts it all back.
- *
- * Also keeps the season start itself ([setSeason]), the "Cover map before" date of each dimension.
  */
 object MapClear {
 
@@ -111,7 +107,7 @@ object MapClear {
         val name = shown.name
         val layer = shown.layer
         val folder = shown.folder
-        val all = regionsIn(folder)
+        val all = MapBackup.regionsIn(folder)
         return when (kind) {
             Kind.OLD_SEASON -> {
                 val age = MapAge.of(dimensionId, folder)
@@ -128,23 +124,10 @@ object MapClear {
         }
     }
 
-    /** The regions Xaero has a file for in [folder]. */
-    private fun regionsIn(folder: Path): List<Pair<Int, Int>> = try {
-        if (Files.notExists(folder)) emptyList()
-        else Files.list(folder).use { files -> files.toList().mapNotNull { MapBackup.regionOf(it.fileName.toString()) } }
-    } catch (e: Exception) {
-        Log.error("Could not list the map's regions in $folder", e)
-        emptyList()
-    }
-
     /** Nothing to write, and chunks to take off. */
     private class Clearing(override val regionX: Int, override val regionZ: Int, private val clear: (Int, Int) -> Boolean) : XaeroWriter.Pixels {
         override fun countInChunk(chunkInRegionX: Int, chunkInRegionZ: Int) = 0
         override fun block(processor: MapProcessor, px: Int, pz: Int, old: MapBlock?, tally: XaeroWriter.Tally): MapBlock? = null
         override fun clears(chunkX: Int, chunkZ: Int) = clear(chunkX, chunkZ)
     }
-
-    // ---- the season start ----
-
-
 }

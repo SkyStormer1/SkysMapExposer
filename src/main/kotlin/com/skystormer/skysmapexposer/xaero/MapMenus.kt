@@ -20,6 +20,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import xaero.map.WorldMapSession
+import xaero.map.gui.GuiMap
 import xaero.map.gui.IRightClickableElement
 import xaero.map.gui.MapTileSelection
 import xaero.map.gui.dropdown.rightclick.RightClickOption
@@ -212,10 +213,7 @@ object MapMenus {
             return true
         }
         return try {
-            val player = Minecraft.getInstance().player ?: return false
-            val session = WorldMapSession.getCurrentSession()
-                ?: return false.also { Log.warn("Go to: Xaero's world map has no session yet") }
-            val map = xaero.map.gui.GuiMap(null, null, session.mapProcessor, player)
+            val map = newMap() ?: return false.also { Log.warn("Go to: Xaero's world map has no session yet") }
             val camera = map as Any as? MapCamera
             if (camera == null) {
                 Log.warn("Go to: the world map hook is missing, so the map cannot be moved")
@@ -233,19 +231,18 @@ object MapMenus {
 
     /** Opens Xaero's world map, the way its own key does. Returns whether it opened. */
     fun openMap(): Boolean = try {
-        val player = Minecraft.getInstance().player
-        val session = WorldMapSession.getCurrentSession()
-        if (player == null || session == null) false
-        else {
-            Ui.open(xaero.map.gui.GuiMap(null, null, session.mapProcessor, player))
-            true
-        }
+        newMap()?.also(Ui::open) != null
     } catch (e: Throwable) {
         Log.error("Could not open the world map", e)
         false
     }
 
-
+    /** A new world map screen, as Xaero's own key makes one; null before you are in a world with it. */
+    private fun newMap(): GuiMap? {
+        val player = Minecraft.getInstance().player ?: return null
+        val session = WorldMapSession.getCurrentSession() ?: return null
+        return GuiMap(null, null, session.mapProcessor, player)
+    }
 
     /**
      * A waypoint's menu on the world map (`WaypointMenuMixin`): Xaero's Share, which posts it in

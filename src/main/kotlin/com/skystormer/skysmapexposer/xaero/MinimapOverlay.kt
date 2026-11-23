@@ -1,9 +1,7 @@
 package com.skystormer.skysmapexposer.xaero
 
-import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.FramePacer
 import com.skystormer.skysmapexposer.HookErrors
-import com.skystormer.skysmapexposer.Session
 //? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
 //?} else {
@@ -62,16 +60,7 @@ object MinimapOverlay {
             // The biome tint and the outlines first in the code, but into the overlay buffer, which the
             // minimap draws after its terrain; the tint first, so the outlines lie over it.
             BiomeHighlight.drawMinimap(mapProcessor, overlayBuffer, matrix, blocksPerUnit, originX, originZ, minX, maxX, minZ, maxZ)
-            if (Config.showOutlines) {
-                val session = Session.current
-                val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString()
-                val map = if (session != null && dimension != null) session.server.markersFor(dimension) else null
-                if (session != null && map != null) {
-                    session.markers.of(map)?.outlines?.let { outlines ->
-                        Outlines.draw(overlayBuffer, matrix, outlines, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
-                    }
-                }
-            }
+            Outlines.drawFor(mapProcessor, overlayBuffer, matrix, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
 
             val target = Backfill.target(mapProcessor, ::standDown) ?: return
             val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)

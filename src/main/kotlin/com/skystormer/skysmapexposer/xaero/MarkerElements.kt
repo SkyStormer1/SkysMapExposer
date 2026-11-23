@@ -63,9 +63,7 @@ object MarkerElements {
      * Xaero draws its minimap terrain from the same `currentDimension`, so the pins follow it
      * rather than the dimension you happen to be standing in.
      */
-    fun pinsForWorldMap(): List<Markers.Pin> = pinsFor(worldMapDimension())
-
-    fun pinsFor(dimension: String?): List<Markers.Pin> = MapPins.pinsFor(dimension)
+    fun pinsForWorldMap(): List<Markers.Pin> = MapPins.pinsFor(worldMapDimension())
 
     class Provider : ElementRenderProvider<Markers.Pin, Context>() {
         override fun begin(location: ElementRenderLocation, context: Context) {

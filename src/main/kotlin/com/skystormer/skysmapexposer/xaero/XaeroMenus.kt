@@ -120,8 +120,12 @@ object XaeroMenus {
     private fun replace(options: ArrayList<RightClickOption>, rows: List<RightClickOption>) {
         options.clear()
         options.addAll(rows)
-        options.forEachIndexed { i, option -> (option as RightClickOptionAccess).`skysmapexposer$setIndex`(i) }
+        renumber(options)
     }
+
+    /** Gives each row its place in [options] as its index, which Xaero hovers and clicks by. */
+    private fun renumber(options: List<RightClickOption>) =
+        options.forEachIndexed { i, option -> (option as RightClickOptionAccess).`skysmapexposer$setIndex`(i) }
 
     /** Client thread, each tick: a group's page (or More, or back to the menu) opened where the menu was. */
     fun tick(minecraft: Minecraft) {
@@ -157,7 +161,7 @@ object XaeroMenus {
             }
             page += MapMenus.option("‹ Back", 0, this) { pending = back }
             page += rows(this)
-            replace(page, ArrayList(page))
+            renumber(page)
             return page
         }
 

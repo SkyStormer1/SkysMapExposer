@@ -77,7 +77,7 @@ object XaeroAdapter : MapAdapter {
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
             if (screen.javaClass.name != "xaero.map.gui.GuiMap") return@register
             try {
-                com.skystormer.skysmapexposer.gui.MapBar.addTo(screen)
+                MapBar.addTo(screen)
 
                 ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
                     val status = BlueMapDownload.status() ?: TerrainFiles.status() ?: MapPrep.status() ?: CaveNotice.line() ?: return@register
@@ -131,7 +131,7 @@ object XaeroAdapter : MapAdapter {
     private fun learnGaps(client: Minecraft, session: Session) {
         val level = client.level ?: return
         val player = client.player ?: return
-        val mapProcessor = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor ?: return
+        val mapProcessor = WorldMapSession.getCurrentSession()?.mapProcessor ?: return
         val dimension = level.dimension().identifier().toString()
         // Only while Xaero is mapping the dimension you are in: its open regions are around you.
         val mapped = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return

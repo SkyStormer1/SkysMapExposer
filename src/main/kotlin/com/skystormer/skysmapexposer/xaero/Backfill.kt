@@ -47,7 +47,6 @@ import kotlin.math.floor
  */
 object Backfill {
 
-    
     /** One tile's worth of drawing: its texture, the rectangles to draw, and where the tile starts. */
     class Piece(val texture: GpuTextureView, val mask: Mask, val originX: Int, val originZ: Int, val tileSize: Int)
 

@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.Ui
+import com.skystormer.skysmapexposer.BlockGuesser
 import com.skystormer.skysmapexposer.BlueMapPicture
 import com.skystormer.skysmapexposer.MapLayers
 import com.skystormer.skysmapexposer.SeaFloor
@@ -314,7 +315,7 @@ object XaeroWriter {
         private val picture: BlueMapPicture.RegionPicture,
         private val palette: XaeroPalette,
     ) : Pixels {
-        private val pixel = com.skystormer.skysmapexposer.BlockGuesser.Pixel()
+        private val pixel = BlockGuesser.Pixel()
         override val regionX get() = picture.regionX
         override val regionZ get() = picture.regionZ
 
