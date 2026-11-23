@@ -154,8 +154,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
             val centreX = Math.floorDiv(x, tileBlocks)
             val centreZ = Math.floorDiv(z, tileBlocks)
             for (ring in 0..VIEW_RINGS) {
-                for (dx in -ring..ring) for (dz in -ring..ring) {
-                    if (maxOf(Math.abs(dx), Math.abs(dz)) != ring) continue
+                for ((dx, dz) in CoarseScan.ring(ring)) {
                     val bytes = blueMap.tile(map, 1, centreX + dx, centreZ + dz) ?: continue
                     val view = MapLayers.viewOf(TilePixels.heights(bytes, layout.tileSize)) ?: continue
                     views[map] = view
@@ -174,9 +173,8 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
 
     private fun saveViews() {
         try {
-            val text = Properties().apply { views.forEach { (map, view) -> setProperty(map, view.name) } }
-            val out = java.io.StringWriter().also { text.store(it, "What each BlueMap map of the Nether shows: ROOF or INSIDE") }
-            SafeFiles.write(viewsFile, out.toString().toByteArray())
+            val saved = Properties().apply { views.forEach { (map, view) -> setProperty(map, view.name) } }
+            SafeFiles.writeProperties(viewsFile, saved, "What each BlueMap map of the Nether shows: ROOF or INSIDE")
         } catch (e: Exception) {
             Log.warn("Could not save {}: {}", viewsFile, e.toString())
         }
@@ -198,8 +196,6 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     companion object {
         /** Rings of lowres tiles around where a map opens looked at for [view]. */
         private const val VIEW_RINGS = 2
-
-        fun chunkKey(chunkX: Int, chunkZ: Int): Long = (chunkX.toLong() and 0xFFFFFFFFL) or (chunkZ.toLong() shl 32)
 
         var current: Session? = null
             private set

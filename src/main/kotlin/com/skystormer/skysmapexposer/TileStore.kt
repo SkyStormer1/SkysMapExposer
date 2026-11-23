@@ -320,8 +320,7 @@ class TileStore(
         heldBytes += bytes
     }
 
-    // The map id came from the server and becomes a folder name, so only ever a safe one.
-    private fun base(key: Key): Path = folder.resolve("${if (BlueMap.isMapId(key.map)) key.map else "_"}/${key.lod}")
+    private fun base(key: Key): Path = folder.resolve(BlueMap.folderName(key.map)).resolve(key.lod.toString())
 
     private fun tileFile(key: Key): Path = base(key).resolve("${key.x}_${key.z}.smet")
 
@@ -587,10 +586,7 @@ class TileStore(
         return meta
     }
 
-    private fun writeMeta(file: Path, meta: Properties) {
-        val text = java.io.StringWriter().also { meta.store(it, null) }.toString()
-        SafeFiles.writeString(file, text)
-    }
+    private fun writeMeta(file: Path, meta: Properties) = SafeFiles.writeProperties(file, meta)
 
     private fun sha1(bytes: ByteArray): String =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes))
@@ -607,13 +603,24 @@ class TileStore(
          * so tiles downloaded together come due over a stretch of time instead of all at once.
          */
         fun due(checkedAt: Long, hardAt: Long, refetchBefore: Long, now: Long, spread: Double = 0.0): Due {
-            val hours = Config.fullDownloadHours
             return when {
-                hardAt < refetchBefore || hours > 0 && now - hardAt >= (hours * 3_600_000L * (1 + SPREAD * spread)).toLong() -> Due.DOWNLOAD
-                now - checkedAt >= Config.tileCheckMinutes * 60_000L -> Due.CHECK
+                hardAt < refetchBefore || downloadDue(now - hardAt, spread) -> Due.DOWNLOAD
+                checkDue(now - checkedAt) -> Due.CHECK
                 else -> Due.NO
             }
         }
+
+        /**
+         * Whether a whole download is due [ageMs] after the last one: [Config.fullDownloadHours], and
+         * up to [SPREAD] of it again by [spread]. Never with whole downloads off. Sea floor tiles too.
+         */
+        fun downloadDue(ageMs: Long, spread: Double): Boolean {
+            val hours = Config.fullDownloadHours
+            return hours > 0 && ageMs >= (hours * 3_600_000L * (1 + SPREAD * spread)).toLong()
+        }
+
+        /** Whether asking "has it changed?" is due [ageMs] after the last time: [Config.tileCheckMinutes]. */
+        fun checkDue(ageMs: Long): Boolean = ageMs >= Config.tileCheckMinutes * 60_000L
 
         /** 0 to 1, the same for [key] every time and scattered between neighbours. */
         fun spread(key: Key): Double {

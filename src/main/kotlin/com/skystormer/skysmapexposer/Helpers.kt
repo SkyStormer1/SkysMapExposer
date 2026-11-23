@@ -13,9 +13,15 @@ import net.minecraft.world.level.block.state.BlockState
 
 /**
  * [x] and [z] in one Long, [x] in the high half, for keys of maps and sets. Only for keys kept in
- * memory: `VisitLog` saves its keys, so it keeps its own order.
+ * memory: keys that are saved are [chunkKey]s.
  */
 fun packXZ(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
+
+/**
+ * A chunk as this mod saves it in its records ([VisitLog], [GapStore]): [chunkX] in the low half and
+ * [chunkZ] in the high, the other way round from [packXZ]. Saved files depend on it, so it stays.
+ */
+fun chunkKey(chunkX: Int, chunkZ: Int): Long = (chunkX.toLong() and 0xFFFFFFFFL) or (chunkZ.toLong() shl 32)
 
 /** Runs [work] on a daemon thread called [name], at low priority unless told otherwise. */
 fun background(name: String, priority: Int = Thread.MIN_PRIORITY, work: () -> Unit): Thread =

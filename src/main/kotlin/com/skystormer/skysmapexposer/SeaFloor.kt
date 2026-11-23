@@ -367,7 +367,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     private fun changedUnder(key: TileStore.Key, size: Int, before: IntArray, after: IntArray) {
         try {
             // Nothing kept for this map yet (the setting never on here): nothing to follow, nor to ask BlueMap about.
-            if (sources[key.map] == null && !Files.isDirectory(folder.resolve(if (BlueMap.isMapId(key.map)) key.map else "_"))) return
+            if (sources[key.map] == null && !Files.isDirectory(folder.resolve(BlueMap.folderName(key.map)))) return
             val layout = (sources[key.map] ?: source(key.map))?.layout ?: return
             val changed = changedHires(layout, key.x * size, key.z * size, size, before, after)
             for ((hx, hz) in changed) {
@@ -382,9 +382,8 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
         }
     }
 
-    // The map id came from the server and becomes a folder name, so only ever a safe one.
     private fun fileOf(hires: Hires, suffix: String): Path =
-        folder.resolve(if (BlueMap.isMapId(hires.map)) hires.map else "_").resolve("${hires.x}_${hires.z}$suffix")
+        folder.resolve(BlueMap.folderName(hires.map)).resolve("${hires.x}_${hires.z}$suffix")
 
     private fun source(map: String): Source? {
         sources[map]?.let { return it }
@@ -495,11 +494,8 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
          * [Config.fullDownloadHours], each tile up to half as long again later by its [spread], and
          * never when that is off.
          */
-        fun due(ageMs: Long, askable: Boolean, spread: Double): Boolean {
-            if (askable) return ageMs >= Config.tileCheckMinutes * 60_000L
-            val hours = Config.fullDownloadHours
-            return hours > 0 && ageMs >= (hours * 3_600_000L * (1 + TileStore.Schedule.SPREAD * spread)).toLong()
-        }
+        fun due(ageMs: Long, askable: Boolean, spread: Double): Boolean =
+            if (askable) TileStore.Schedule.checkDue(ageMs) else TileStore.Schedule.downloadDue(ageMs, spread)
 
         /**
          * The 3D tiles of [layout] under the pixels that differ between [before] and [after], two

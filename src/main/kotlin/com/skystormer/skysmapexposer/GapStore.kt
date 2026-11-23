@@ -36,8 +36,7 @@ class GapStore(private val folder: Path, private val io: Executor) {
         }
     }
 
-    private fun fileFor(dimension: String): Path =
-        folder.resolve("gaps-" + dimension.replace(Regex("[^a-zA-Z0-9._-]"), "_") + ".bin")
+    private fun fileFor(dimension: String): Path = SafeFiles.recordFile(folder, "gaps", dimension)
 
     private fun read(path: Path): LongOpenHashSet {
         val gaps = LongOpenHashSet()

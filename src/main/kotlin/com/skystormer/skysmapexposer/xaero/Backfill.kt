@@ -12,6 +12,7 @@ import com.skystormer.skysmapexposer.TilePixels
 import com.skystormer.skysmapexposer.TileIndex
 import com.skystormer.skysmapexposer.TileStore
 import com.skystormer.skysmapexposer.UnshowableRegions
+import com.skystormer.skysmapexposer.chunkKey
 import com.skystormer.skysmapexposer.TileStore.Mask
 //? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
@@ -431,7 +432,7 @@ object Backfill {
      * the chunks beyond them arrive.
      */
     private fun isXaeroGap(mapProcessor: MapProcessor, remembered: LongOpenHashSet, chunkX: Int, chunkZ: Int): Boolean {
-        val key = Session.chunkKey(chunkX, chunkZ)
+        val key = chunkKey(chunkX, chunkZ)
         val live = xaeroHasNothing(mapProcessor, chunkX, chunkZ) ?: return remembered.contains(key)
         if (live) remembered.add(key) else remembered.remove(key)
         return live
@@ -511,7 +512,7 @@ object Backfill {
         for (chunkX in centreChunkX - radius..centreChunkX + radius) {
             for (chunkZ in centreChunkZ - radius..centreChunkZ + radius) {
                 val live = xaeroHasNothing(mapProcessor, chunkX, chunkZ) ?: continue
-                val key = Session.chunkKey(chunkX, chunkZ)
+                val key = chunkKey(chunkX, chunkZ)
                 if (live) remembered.add(key) else remembered.remove(key)
             }
         }

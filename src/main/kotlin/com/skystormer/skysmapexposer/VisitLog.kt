@@ -21,12 +21,12 @@ class VisitLog(private val folder: Path, private val io: Executor) {
 
     fun record(dimension: String, chunkX: Int, chunkZ: Int, minute: Int) {
         val visits = visitsIn(dimension)
-        if (visits.put(key(chunkX, chunkZ), minute) != minute) changed.add(dimension)
+        if (visits.put(chunkKey(chunkX, chunkZ), minute) != minute) changed.add(dimension)
     }
 
     /** The minute the chunk was last loaded, or 0 if this mod has never seen it. */
     fun lastSeen(dimension: String, chunkX: Int, chunkZ: Int): Int =
-        visitsIn(dimension).get(key(chunkX, chunkZ))
+        visitsIn(dimension).get(chunkKey(chunkX, chunkZ))
 
     fun count(dimension: String): Int = visitsIn(dimension).size
 
@@ -40,15 +40,10 @@ class VisitLog(private val folder: Path, private val io: Executor) {
         changed.clear()
     }
 
-    // Not [packXZ]: these keys are saved, in this order (z high), so it stays as it is.
-    private fun key(chunkX: Int, chunkZ: Int): Long =
-        (chunkX.toLong() and 0xFFFFFFFFL) or (chunkZ.toLong() shl 32)
-
     private fun visitsIn(dimension: String): Long2IntOpenHashMap =
         byDimension.getOrPut(dimension) { read(fileFor(dimension)) }
 
-    private fun fileFor(dimension: String): Path =
-        folder.resolve("visits-" + dimension.replace(Regex("[^a-zA-Z0-9._-]"), "_") + ".bin")
+    private fun fileFor(dimension: String): Path = SafeFiles.recordFile(folder, "visits", dimension)
 
     private fun read(path: Path): Long2IntOpenHashMap {
         val visits = Long2IntOpenHashMap()

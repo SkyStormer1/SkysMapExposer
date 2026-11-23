@@ -187,12 +187,17 @@ object ChatShare {
         return since >= TICKS_PER_MESSAGE && (time - lastSentTime >= TICKS_PER_MESSAGE || since >= CLOCK_STOPPED)
     }
 
+    /** A message just went out: the next waits its turn ([mayTalk]). */
+    private fun talked() {
+        lastSent = ticks
+        lastSentTime = Minecraft.getInstance().level?.gameTime ?: 0L
+    }
+
     /** Sends [body] to [to] by private message, remembering it so its echo is hidden. */
     private fun whisper(to: String, body: String, connection: ClientPacketListener) {
         inbox.sent(body)
         connection.sendCommand("msg $to $body")
-        lastSent = ticks
-        lastSentTime = Minecraft.getInstance().level?.gameTime ?: 0L
+        talked()
     }
 
     /** The next of Xaero's waypoint lines, in chat or by private message; once all are out, says so. */
@@ -203,8 +208,7 @@ object ChatShare {
         if (to == null) connection.sendChat(line)
         else if (others().any { it == to }) connection.sendCommand("msg $to $line")
         else return stop("Sharing stopped: $to left the server").also { plain.clear() }
-        lastSent = ticks
-        lastSentTime = Minecraft.getInstance().level?.gameTime ?: 0L
+        talked()
         plainSent++
         if (plain.isEmpty()) Ui.say("Shared $plainSent waypoint${if (plainSent == 1) "" else "s"}" + (to?.let { " with $it" } ?: " in chat"))
     }

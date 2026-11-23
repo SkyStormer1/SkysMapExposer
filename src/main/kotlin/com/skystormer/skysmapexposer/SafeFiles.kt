@@ -4,10 +4,12 @@ import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.StringWriter
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.Properties
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
@@ -21,6 +23,15 @@ object SafeFiles {
 
     /** [text] as part of a file name: anything but letters, digits, `_` and `-` becomes `_`. */
     fun name(text: String): String = text.replace(UNSAFE, "_")
+
+    private val RECORD_UNSAFE = Regex("[^a-zA-Z0-9._-]")
+
+    /**
+     * One dimension's record file in [folder], `<prefix>-<dimension>.bin` ([VisitLog], [GapStore]).
+     * Unlike [name] it keeps dots, as the files already saved do.
+     */
+    fun recordFile(folder: Path, prefix: String, dimension: String): Path =
+        folder.resolve("$prefix-" + dimension.replace(RECORD_UNSAFE, "_") + ".bin")
 
     fun write(path: Path, bytes: ByteArray) {
         Files.createDirectories(path.parent)
@@ -41,7 +52,10 @@ object SafeFiles {
 
     fun writeString(path: Path, text: String) = write(path, text.toByteArray(Charsets.UTF_8))
 
-    /** A gzipped file of whatever [content] writes. */
+    /** [properties] as a properties file, with [comment] at the top if there is one. */
+    fun writeProperties(path: Path, properties: Properties, comment: String? = null) =
+        writeString(path, StringWriter().also { properties.store(it, comment) }.toString())
+
     /**
      * Reads a small record file of this mod's ([writeRecord]): [magic], a format number, then what
      * [body] reads. A missing file reads as nothing; a damaged one is logged and read no further,
@@ -73,6 +87,7 @@ object SafeFiles {
         }
     }
 
+    /** A gzipped file of whatever [content] writes. */
     fun writeGzip(path: Path, content: (DataOutputStream) -> Unit) {
         val bytes = ByteArrayOutputStream()
         DataOutputStream(GZIPOutputStream(bytes)).use(content)

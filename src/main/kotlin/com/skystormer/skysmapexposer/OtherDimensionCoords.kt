@@ -1,6 +1,5 @@
 package com.skystormer.skysmapexposer
 
-
 /**
  * Under the world map's readout of the block under the mouse, the same block's coordinates in the
  * other dimension: viewing the Nether, the Overworld's (eight times as far); viewing the
@@ -14,9 +13,11 @@ object OtherDimensionCoords {
      * null when that is not the Overworld or the Nether.
      */
     @JvmStatic
-    fun forWorldMap(x: Int, z: Int): String? = if (!Config.otherDimensionCoords) null else when (MapMods.adapter?.shownDimension()) {
-        "minecraft:the_nether" -> "Overworld X: ${x * 8} Z: ${z * 8}"
-        "minecraft:overworld" -> "Nether X: ${Math.floorDiv(x, 8)} Z: ${Math.floorDiv(z, 8)}"
-        else -> null
+    fun forWorldMap(x: Int, z: Int): String? {
+        if (!Config.otherDimensionCoords) return null
+        val shown = MapMods.adapter?.shownDimension() ?: return null
+        val other = WaypointRules.counterpartName(shown) ?: return null
+        val (otherX, _, otherZ) = WaypointRules.counterpart(x, z, shown)
+        return "$other X: $otherX Z: $otherZ"
     }
 }

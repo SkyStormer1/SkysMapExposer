@@ -17,6 +17,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.util.zip.GZIPInputStream
 import javax.imageio.ImageIO
 import kotlin.math.roundToInt
 
@@ -67,12 +68,18 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         fun tileBlocks(lod: Int): Int = tileSize * blocksPerPixel(lod)
     }
 
-    /** Reads `maps/<map>/settings.json`. Blocking; call it off the client thread. */
+    /** `maps/<map>/settings.json`, which holds its layouts and where its viewer opens. Blocking. */
     @Throws(IOException::class)
-    fun layout(map: String): MapLayout {
+    private fun settings(map: String): JsonObject {
         val response = getText("maps/${checkMapId(map)}/settings.json")
         if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
-        val lowres = JsonParser.parseString(response.body()).asJsonObject.getAsJsonObject("lowres")
+        return JsonParser.parseString(response.body()).asJsonObject
+    }
+
+    /** Reads the lowres part of `maps/<map>/settings.json`. Blocking; call it off the client thread. */
+    @Throws(IOException::class)
+    fun layout(map: String): MapLayout {
+        val lowres = settings(map).getAsJsonObject("lowres")
             ?: throw IOException("$map has no lowres tiles")
         val layout = MapLayout(
             tileSize = lowres.getAsJsonArray("tileSize")[0].asInt,
@@ -89,9 +96,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** Where BlueMap's web viewer opens [map] (`startPos`, in blocks), or null if it does not say. Blocking. */
     @Throws(IOException::class)
     fun startPosition(map: String): Pair<Int, Int>? {
-        val response = getText("maps/${checkMapId(map)}/settings.json")
-        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
-        val start = JsonParser.parseString(response.body()).asJsonObject.getAsJsonArray("startPos") ?: return null
+        val start = settings(map).getAsJsonArray("startPos") ?: return null
         if (start.size() < 2) return null
         val x = start[0].asDouble
         val z = start[1].asDouble
@@ -152,10 +157,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      */
     @Throws(IOException::class)
     fun fetchTile(map: String, lod: Int, tileX: Int, tileZ: Int, etag: String? = null, lastModified: String? = null): TileReply {
-        val headers = buildList {
-            if (etag != null) add("If-None-Match" to etag)
-            if (lastModified != null) add("If-Modified-Since" to lastModified)
-        }
+        val headers = ifChanged(etag, lastModified)
         val response = getBytes(tilePath(map, lod, tileX, tileZ), headers)
         return when (response.statusCode()) {
             200 -> TileReply.Image(response.body(), response.header("ETag"), response.header("Last-Modified"))
@@ -164,6 +166,12 @@ class BlueMap(baseUrl: String) : AutoCloseable {
             404 -> TileReply.NotFound
             else -> throw IOException("HTTP ${response.statusCode()} for tile $map/$lod/$tileX,$tileZ")
         }
+    }
+
+    /** The headers that only ask whether the copy held, by its [etag] or [lastModified], has changed. */
+    private fun ifChanged(etag: String?, lastModified: String?): List<Pair<String, String>> = buildList {
+        if (etag != null) add("If-None-Match" to etag)
+        if (lastModified != null) add("If-Modified-Since" to lastModified)
     }
 
     /**
@@ -178,9 +186,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
     /** Reads the hires part of `maps/<map>/settings.json`. Blocking. */
     @Throws(IOException::class)
     fun hiresLayout(map: String): HiresLayout {
-        val response = getText("maps/${checkMapId(map)}/settings.json")
-        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map settings")
-        val hires = JsonParser.parseString(response.body()).asJsonObject.getAsJsonObject("hires")
+        val hires = settings(map).getAsJsonObject("hires")
             ?: throw IOException("$map has no hires tiles")
         val size = hires.getAsJsonArray("tileSize")[0].asInt
         val translate = hires.getAsJsonArray("translate")
@@ -207,10 +213,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      */
     @Throws(IOException::class)
     fun fetchHires(map: String, tileX: Int, tileZ: Int, etag: String? = null, lastModified: String? = null): TileReply {
-        val headers = buildList {
-            if (etag != null) add("If-None-Match" to etag)
-            if (lastModified != null) add("If-Modified-Since" to lastModified)
-        }
+        val headers = ifChanged(etag, lastModified)
         val response = getBytes("maps/${checkMapId(map)}/tiles/0/x${splitDigits(tileX)}/z${splitDigits(tileZ)}.prbm", headers)
         return when (response.statusCode()) {
             200 -> TileReply.Image(response.body(), response.header("ETag"), response.header("Last-Modified"))
@@ -225,14 +228,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
      * `minecraft:block/stone`, from `maps/<map>/textures.json`. Blocking.
      */
     @Throws(IOException::class)
-    fun textures(map: String): List<String> {
-        val response = getBytes("maps/${checkMapId(map)}/textures.json")
-        if (response.statusCode() != 200) throw IOException("HTTP ${response.statusCode()} for $map textures")
-        val text = String(gunzipIfNeeded(response.body(), MAX_BODY), Charsets.UTF_8)
-        return JsonParser.parseString(text).asJsonArray.map { entry ->
-            entry.asJsonObject.get("resourcePath")?.asString ?: ""
-        }
-    }
+    fun textures(map: String): List<String> = textureColours(map).map { it.first }
 
     /**
      * [textures] with each one's average colour as BlueMap gives it, 0xAARRGGBB (the alpha is how
@@ -413,19 +409,25 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         /** Whether [id] is safe to use as a BlueMap map id, in a web address and as a folder name. */
         fun isMapId(id: String): Boolean = MAP_ID.matches(id) && id.any { it != '.' }
 
+        /** [map] as a folder name: the id, or `_` for one not safe as a folder name (it came from the server). */
+        fun folderName(map: String): String = if (isMapId(map)) map else "_"
+
         @Throws(IOException::class)
         fun checkMapId(id: String): String = if (isMapId(id)) id else throw IOException("not a map id: $id")
 
-        private fun readCapped(stream: InputStream): ByteArray = stream.use { input ->
+        private fun readCapped(stream: InputStream): ByteArray = stream.use { readAll(it, MAX_BODY, "reply too big") }
+
+        /** All of [input], failing with [tooBig] once it is more than [limit] bytes. */
+        private fun readAll(input: InputStream, limit: Int, tooBig: String): ByteArray {
             val out = ByteArrayOutputStream()
-            val buffer = ByteArray(16 * 1024)
+            val buffer = ByteArray(64 * 1024)
             while (true) {
                 val n = input.read(buffer)
                 if (n < 0) break
                 out.write(buffer, 0, n)
-                if (out.size() > MAX_BODY) throw IOException("reply too big")
+                if (out.size() > limit) throw IOException(tooBig)
             }
-            out.toByteArray()
+            return out.toByteArray()
         }
 
         /**
@@ -473,17 +475,7 @@ class BlueMap(baseUrl: String) : AutoCloseable {
         @Throws(IOException::class)
         fun gunzipIfNeeded(bytes: ByteArray, limit: Int): ByteArray {
             if (bytes.size < 2 || bytes[0] != 0x1f.toByte() || bytes[1] != 0x8b.toByte()) return bytes
-            java.util.zip.GZIPInputStream(ByteArrayInputStream(bytes)).use { input ->
-                val out = ByteArrayOutputStream()
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    out.write(buffer, 0, n)
-                    if (out.size() > limit) throw IOException("unpacks too big")
-                }
-                return out.toByteArray()
-            }
+            return GZIPInputStream(ByteArrayInputStream(bytes)).use { readAll(it, limit, "unpacks too big") }
         }
 
         private fun splitDigits(value: Int): String {

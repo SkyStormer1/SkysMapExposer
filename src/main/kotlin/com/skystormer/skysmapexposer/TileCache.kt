@@ -19,28 +19,19 @@ object TileCache {
     }
 
     /** Leftover `.tmp` files deleted (from a game closed part way through a write); and its size. */
-    fun tidy(folder: Path): Size {
-        var bytes = 0L
-        var tiles = 0
-        walk(folder) { file, size ->
-            val name = file.fileName.toString()
-            if (name.endsWith(".tmp")) {
-                Files.deleteIfExists(file)
-            } else {
-                bytes += size
-                if (name.endsWith(".smet") || name.endsWith(".png")) tiles++
-            }
-        }
-        return Size(bytes, tiles)
-    }
+    fun tidy(folder: Path): Size = measure(folder, dropTemporary = true)
 
-    /** How much [folder] holds. */
-    fun measure(folder: Path): Size {
+    /** How much [folder] holds; with [dropTemporary], leftover `.tmp` files are deleted rather than counted. */
+    fun measure(folder: Path, dropTemporary: Boolean = false): Size {
         var bytes = 0L
         var tiles = 0
         walk(folder) { file, size ->
-            bytes += size
             val name = file.fileName.toString()
+            if (dropTemporary && name.endsWith(".tmp")) {
+                Files.deleteIfExists(file)
+                return@walk
+            }
+            bytes += size
             if (name.endsWith(".smet") || name.endsWith(".png")) tiles++
         }
         return Size(bytes, tiles)
