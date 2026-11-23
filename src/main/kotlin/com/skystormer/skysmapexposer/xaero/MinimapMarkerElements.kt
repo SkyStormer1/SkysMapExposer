@@ -154,7 +154,7 @@ object MinimapMarkerElements {
     }
 
     /** Half a pin's box, in the element's own units, matching what [sizeOf] will draw. */
-    private fun halfOf(pin: Markers.Pin): Int = (HALF * 2 * sizeOf(pin)).toInt().coerceAtLeast(2)
+    private fun halfOf(pin: Markers.Pin): Int = (HALF * sizeOf(pin)).toInt().coerceAtLeast(2)
 
     /**
      * How far from you, in blocks, a marker is. Asked a dozen times per pin per frame (each box edge
