@@ -41,8 +41,10 @@ import java.time.format.DateTimeFormatter
  *
  * All run the same way ([RegionJob], as Xaero's do). Regions are found off the client thread and
  * changed on it, one a tick. Each is copied aside into this edit's own backup folder before it
- * changes, and [undo] puts the last edit back. A region JourneyMap holds in memory is not written
- * (it would write its own over it): a few wait until it lets go, and are dropped if you leave first.
+ * changes, and [undo] puts the last edit back. A region JourneyMap holds in memory, and that this
+ * JourneyMap won't let be changed there, is not written (it would write its own over it): it waits
+ * until JourneyMap lets go, and the edit isn't over until it has, as Xaero's waits for its regions
+ * to load and save, so a second edit can never start under it.
  *
  * Only the day map: the night, topo and cave maps are JourneyMap's own to make as you explore.
  */
@@ -62,14 +64,14 @@ internal object JourneyMapEdits {
         /** Downloaded and shared columns into JourneyMap's chunk cache, for saving terrain files; none for a clear. */
         var cache: JourneyMapCacheWrites.Batch? = null
         var changed = 0
+        /** Edits for regions JourneyMap held when their turn came, by region, and since when. */
+        val waiting = LinkedHashMap<Pair<Int, Int>, Pair<Edit, Long>>()
+        var retriedAt = 0L
+        /** Regions still waiting when it was cancelled, left as they were. */
+        var leftOpen = 0
     }
 
     private var job: Job? = null
-
-    /** Edits for regions JourneyMap held when their turn came, by region. */
-    private val waiting = LinkedHashMap<Pair<Int, Int>, Edit>()
-    private var waitingFor: Job? = null
-    private var retriedAt = 0L
 
     /** The last edit's backup folder, for [undo]. */
     private var lastBackups: Path? = null
@@ -401,38 +403,43 @@ internal object JourneyMapEdits {
     }
 
     fun status(): String? {
-        val running = job ?: return waiting.size.takeIf { it > 0 }?.let { "$it region(s) waiting for JourneyMap to let go of them" }
+        val running = job ?: return null
+        val waitingNote = if (running.waiting.isNotEmpty()) ", ${running.waiting.size} waiting for JourneyMap to let go of them" else ""
         return if (running.finding) "${running.what}: finding the regions…"
-        else "${running.title}: ${running.done.get()} of ${running.total} regions, ${running.changed} changed"
+        else "${running.title}: ${running.done.get()} of ${running.total} regions, ${running.changed} changed$waitingNote"
     }
 
     /** Leaving a world: the edit stops and what was waiting is dropped. */
     fun forget() {
-        job?.cancelled = true
+        val running = job ?: return
+        running.cancelled = true
         job = null
         RegionJob.last = null
-        if (waiting.isNotEmpty()) Log.info("{} region(s) of JourneyMap's map were still open in JourneyMap and were not changed", waiting.size)
-        waiting.clear()
+        if (running.waiting.isNotEmpty()) Log.info("{} region(s) of JourneyMap's map were still open in JourneyMap and were not changed", running.waiting.size)
     }
 
     /** Client thread, every tick: changes one region, and retries waiting ones every so often. */
     fun tick() {
-        val running = job
-        if (running != null) {
-            running.ready.poll()?.let { change(running, it) }
-            if (running.found && running.ready.isEmpty()) finish(running)
-        }
+        val running = job ?: return
+        running.ready.poll()?.let { change(running, it) }
         val now = System.currentTimeMillis()
-        val owner = waitingFor
-        if (waiting.isNotEmpty() && owner != null && now - retriedAt > RETRY_MS) {
-            retriedAt = now
-            waiting.values.toList().forEach {
-                if (!JourneyMapFiles.held(owner.folder.parent, it.regionX, it.regionZ)) {
-                    waiting.remove(it.regionX to it.regionZ)
-                    write(owner, it)
+        if (running.cancelled) {
+            running.leftOpen += running.waiting.size
+            running.waiting.clear()
+        } else if (running.waiting.isNotEmpty() && now - running.retriedAt > RETRY_MS) {
+            running.retriedAt = now
+            for ((at, waited) in running.waiting.entries.toList()) {
+                val (edit, since) = waited
+                if (!JourneyMapFiles.held(running.folder.parent, edit.regionX, edit.regionZ)) {
+                    running.waiting.remove(at)
+                    write(running, edit)
+                } else if (now - since > WAIT_MS) {
+                    running.waiting.remove(at)
+                    running.skipped.add(edit.regionX, edit.regionZ, KEPT_OPEN)
                 }
             }
         }
+        if (running.found && running.ready.isEmpty() && running.waiting.isEmpty()) finish(running)
     }
 
     private fun change(job: Job, edit: Edit) {
@@ -441,10 +448,9 @@ internal object JourneyMapEdits {
             // Open in JourneyMap: changed in its memory, shown at once and saved by it, as Xaero's
             // regions are refreshed while its map is open. Waits only if this JourneyMap will not take it.
             if (writeHeld(job, edit)) return
-            if (waiting.size < MAX_WAITING) {
-                waiting[edit.regionX to edit.regionZ] = edit
-                waitingFor = job
-            }
+            // Each waiting edit holds a region's pixels; past a few, the rest are named as skipped.
+            if (job.waiting.size < MAX_WAITING) job.waiting[edit.regionX to edit.regionZ] = edit to System.currentTimeMillis()
+            else job.skipped.add(edit.regionX, edit.regionZ, KEPT_OPEN)
             return
         }
         write(job, edit)
@@ -494,8 +500,8 @@ internal object JourneyMapEdits {
     private fun finish(job: Job) {
         this.job = null
         job.cache?.close { chunks -> if (chunks > 0) Log.info("{}: {} chunks kept in JourneyMap's chunk cache, for saving terrain files", job.title, chunks) }
-        val waitingNote = if (waiting.isNotEmpty()) "; ${waiting.size} open in JourneyMap, changed once it lets go" else ""
-        val head = "${job.title} ${if (job.cancelled) "stopped" else "done"}: ${job.changed} region(s) changed$waitingNote."
+        val leftNote = if (job.leftOpen > 0) "; ${job.leftOpen} open in JourneyMap left as they were" else ""
+        val head = "${job.title} ${if (job.cancelled) "stopped" else "done"}: ${job.changed} region(s) changed$leftNote."
         val undo = if (job.changed > 0) ChatButton.of("[Undo]", "/mapexposer undo", "Puts the regions back as they were before this.") else null
         Minecraft.getInstance().player?.sendSystemMessage(job.endLine(head, undo))
     }
@@ -579,5 +585,8 @@ internal object JourneyMapEdits {
     private const val KEEP_TILES = 8
     private const val MAX_WAITING = 32
     private const val RETRY_MS = 2_000L
+    /** How long a region may stay open in JourneyMap before it is skipped, as Xaero's wait for a region to load. */
+    private const val WAIT_MS = 60_000L
+    private const val KEPT_OPEN = "JourneyMap kept it open; move away from it and download it again"
     private const val MAX_CACHE_BEHIND = 3
 }
