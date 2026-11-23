@@ -360,7 +360,7 @@ object BlueMapDownload {
             saved || now - since > SAVE_WAIT
         }
 
-        // By name: Xaero can make its dimensions anew while you play (on SiteB, after a trip to the
+        // By name: Xaero can make its dimensions anew while you play (on some servers, after a trip to the
         // Nether and back), so the one the job started with may no longer be the one it shows.
         val dimension = processor.mapWorld?.currentDimension
         if (dimension == null || dimension.dimId?.identifier()?.toString() != job.dimensionId) {
