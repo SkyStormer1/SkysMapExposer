@@ -147,17 +147,17 @@ internal object JourneyMapTerrain {
             // Kept while the map is only closed for a moment, and let go once it has stayed closed;
             // switched off, no BlueMap, or another kind of map: gone at once, as on Xaero's map.
             val closedOnly = session != null && Config.enabled && state != null && !state.active
-            if (squares.keys.any { it.ui == ui } && (!closedOnly || now - (lastActive[ui] ?: 0L) > KEEP_CLOSED_MS)) clear(api, ui)
+            if (squares.keys.any { it.ui == ui } && (!closedOnly || now - (lastActive[ui] ?: 0L) > KEEP_CLOSED_MS)) clear(ui)
             return
         }
         lastActive[ui] = now
         val dimension = state.dimension?.identifier()?.toString() ?: return say("JourneyMap's map has no dimension")
-        val map = session.server.mapFor(dimension) ?: return clear(api, ui).also { say("BlueMap is not used for $dimension") }
+        val map = session.server.mapFor(dimension) ?: return clear(ui).also { say("BlueMap is not used for $dimension") }
         val layout = session.layout(map) ?: return say("waiting for BlueMap's settings for '$map'")
         // Only on the layer BlueMap's picture belongs in, as on Xaero's map: the surface (JourneyMap's
         // day map), or in the Nether whichever of the roof or the inside BlueMap's map shows.
         if (!JourneyMapAdapter.blueMapLayerShown(session, dimension, map, state)) {
-            clear(api, ui)
+            clear(ui)
             say(if (state.mapType == Context.MapType.Underground) "BlueMap only has the surface here" else "BlueMap's map here shows the inside; switch to the cave map")
             return
         }
@@ -208,7 +208,7 @@ internal object JourneyMapTerrain {
                 square.northZ < maxZ && square.northZ + square.span > minZ
             val replaced = !onScreen || square.group == group || held.picture == null ||
                 wanted.none { it.overlaps(square) && squares[it]?.let { new -> new.made == null } ?: true }
-            if (replaced) keepAside(api, square, held, dimension)
+            if (replaced) keepAside(square, held, dimension)
         }
         // Back on screen: a kept picture goes straight back up, as Xaero's tiles do, and is checked as usual.
         for (square in wanted) {
@@ -218,7 +218,7 @@ internal object JourneyMapTerrain {
             held.hidden = false
             held.picture?.unhide()
         }
-        if (fullscreen) letGoOfKept(api)
+        if (fullscreen) letGoOfKept()
 
         // What JourneyMap holds of this map just now, by region: what it is drawing.
         val folder = Folder(dimension, state.mapType, if (state.mapType == Context.MapType.Underground) state.chunkY else null)
@@ -254,14 +254,14 @@ internal object JourneyMapTerrain {
                 continue
             }
             if (System.nanoTime() - started > SLICE_NS) { waiting++; continue }
-            decide(api, square, held ?: State().also { squares[square] = it }, pass, folder, nearYou)
+            decide(square, held ?: State().also { squares[square] = it }, pass, folder, nearYou)
             if (squares[square]?.complete != true) waiting++
         }
         say(if (waiting > 0) "filling in $waiting of ${wanted.size} squares" else "")
         // Once everything on screen is up: the next zoom out, over twice the room, built ahead and kept
         // aside, so zooming out shows it at once rather than filling in from the middle.
         if (fullscreen && waiting == 0 && building.isEmpty()) {
-            buildAhead(api, session, dimension, map, layout, folder, holding, factors, step, blocksPerPixel, seaFloor, now, ::isNear,
+            buildAhead(session, dimension, map, layout, folder, holding, factors, step, blocksPerPixel, seaFloor, now, ::isNear,
                 minX, maxX, minZ, maxZ, centreX, centreZ, started)
         }
         if (mapped.size > MAX_REMEMBERED) mapped.entries.removeIf { now - it.value.at > FORGET_MS }
@@ -305,7 +305,7 @@ internal object JourneyMapTerrain {
      * Gathers what [square]'s picture is made from and, if any of it changed since it was last
      * decided (or the date rules are due again), hands it to a builder.
      */
-    private fun decide(api: IClientAPI, square: Square, held: State, pass: Pass, folder: Folder, nearYou: Boolean) {
+    private fun decide(square: Square, held: State, pass: Pass, folder: Folder, nearYou: Boolean) {
         val session = pass.session
         val layout = pass.layout
         val size = layout.tileSize
@@ -390,7 +390,7 @@ internal object JourneyMapTerrain {
         )
         building.add(square)
         try {
-            builder.execute { build(api, session, job) }
+            builder.execute { build(session, job) }
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             building.remove(square)
         }
@@ -494,23 +494,23 @@ internal object JourneyMapTerrain {
      * A square no longer on screen: on the full-screen map its picture is kept aside, off the map, to
      * go straight back up if it is wanted again (zooming back, panning back); anything else is let go.
      */
-    private fun keepAside(api: IClientAPI, square: Square, held: State, dimension: String) {
+    private fun keepAside(square: Square, held: State, dimension: String) {
         val picture = held.picture
-        if (square.ui != Context.UI.Fullscreen || square.dimension != dimension || picture == null) return forget(api, square)
+        if (square.ui != Context.UI.Fullscreen || square.dimension != dimension || picture == null) return forget(square)
         building.remove(square)
         picture.hide()
         held.hidden = true
     }
 
     /** Kept-aside pictures beyond half the texture budget are let go, those wanted longest ago first. */
-    private fun letGoOfKept(api: IClientAPI) {
+    private fun letGoOfKept() {
         val kept = squares.entries.filter { (square, held) -> held.hidden && square.ui == Context.UI.Fullscreen }
         var bytes = kept.sumOf { (_, held) -> held.picture?.let { it.side.toLong() * it.side * 4 } ?: 0L }
         if (bytes <= budget() / 2) return
         for ((square, held) in kept.sortedBy { it.value.lastWanted }) {
             if (bytes <= budget() / 2) break
             bytes -= held.picture?.let { it.side.toLong() * it.side * 4 } ?: 0L
-            forget(api, square)
+            forget(square)
         }
     }
 
@@ -520,7 +520,7 @@ internal object JourneyMapTerrain {
      * not fit half the texture budget.
      */
     private fun buildAhead(
-        api: IClientAPI, session: Session, dimension: String, map: String, layout: BlueMap.MapLayout, folder: Folder,
+        session: Session, dimension: String, map: String, layout: BlueMap.MapLayout, folder: Folder,
         holding: Map<Long, RegionImageSet>, factors: List<Int>, step: Int, blocksPerPixel: Double, seaFloor: Boolean, now: Long,
         isNear: (Int, Int) -> Boolean, minX: Double, maxX: Double, minZ: Double, maxZ: Double, centreX: Double, centreZ: Double, started: Long,
     ) {
@@ -547,7 +547,7 @@ internal object JourneyMapTerrain {
             if (System.nanoTime() - started > SLICE_NS) return
             if (square in building || squares.containsKey(square)) continue
             val held = State().also { it.hidden = true; it.lastWanted = now; squares[square] = it }
-            decide(api, square, held, pass, folder, nearYou = false)
+            decide(square, held, pass, folder, nearYou = false)
         }
     }
 
@@ -561,18 +561,14 @@ internal object JourneyMapTerrain {
         seen.clear()
     }
 
-    private fun clear(api: IClientAPI, ui: Context.UI) {
-        squares.keys.filter { it.ui == ui }.forEach { forget(api, it) }
+    private fun clear(ui: Context.UI) {
+        squares.keys.filter { it.ui == ui }.forEach { forget(it) }
     }
 
-    private fun forget(api: IClientAPI, square: Square) {
+    private fun forget(square: Square) {
         val gone = squares.remove(square) ?: return
         building.remove(square)
-        gone.picture?.let { remove(api, square, it) }
-    }
-
-    private fun remove(api: IClientAPI, square: Square, picture: RegionPicture) {
-        picture.remove()
+        gone.picture?.remove()
     }
 
     /**
@@ -581,7 +577,7 @@ internal object JourneyMapTerrain {
      * and a pixel once a pixel covers a chunk or more, so a far-out square costs what its picture
      * does, not what its chunks do.
      */
-    private fun build(api: IClientAPI, session: Session, job: Job) {
+    private fun build(session: Session, job: Job) {
         val square = job.square
         val sources = job.sources
         val size = job.tileSize
@@ -621,11 +617,11 @@ internal object JourneyMapTerrain {
         val old = job.old
         // The same as the picture up: it stands.
         if ((wanted.isEmpty && old == null) || (old != null && old.scale == scale && old.wanted == wanted)) {
-            Minecraft.getInstance().execute { settle(api, square, job.generation, if (wanted.isEmpty) made else old ?: made, keep = !wanted.isEmpty) }
+            Minecraft.getInstance().execute { settle(square, job.generation, if (wanted.isEmpty) made else old ?: made, keep = !wanted.isEmpty) }
             return
         }
         if (wanted.isEmpty) {
-            Minecraft.getInstance().execute { settle(api, square, job.generation, made, keep = false) }
+            Minecraft.getInstance().execute { settle(square, job.generation, made, keep = false) }
             return
         }
         val image = NativeImage(side, side, true)
@@ -663,7 +659,7 @@ internal object JourneyMapTerrain {
             Log.warn("Could not build BlueMap's picture at {}, {} for JourneyMap: {}", square.westX, square.northZ, e.toString())
             return
         }
-        Minecraft.getInstance().execute { show(api, square, image, scale, job.generation, made) }
+        Minecraft.getInstance().execute { show(square, image, scale, job.generation, made) }
     }
 
     /** Whether [tile] (finest or coarsest) has anything at block ([x], [z]). */
@@ -676,19 +672,19 @@ internal object JourneyMapTerrain {
     }
 
     /** Client thread: a square decided with no new picture: the one up stays ([keep]), or nothing is shown. */
-    private fun settle(api: IClientAPI, square: Square, generation: Int, made: Made, keep: Boolean) {
+    private fun settle(square: Square, generation: Int, made: Made, keep: Boolean) {
         val held = squares[square]
         if (generation != this.generation || square !in building || held == null) return
         building.remove(square)
         held.made = made
         if (!keep) {
-            held.picture?.let { remove(api, square, it) }
+            held.picture?.remove()
             held.picture = null
         }
     }
 
     /** Client thread: puts the finished picture up, replacing the square's old one. */
-    private fun show(api: IClientAPI, square: Square, image: NativeImage, scale: Int, generation: Int, made: Made) {
+    private fun show(square: Square, image: NativeImage, scale: Int, generation: Int, made: Made) {
         val held = squares[square]
         if (generation != this.generation || square !in building || held == null) {
             image.close()
@@ -696,7 +692,7 @@ internal object JourneyMapTerrain {
         }
         building.remove(square)
         val picture = RegionPicture.show("terrain", square.westX, square.northZ, scale, image, square.ui, visible = !held.hidden)
-        held.picture?.let { remove(api, square, it) }
+        held.picture?.remove()
         held.picture = picture
         held.made = made
     }
@@ -754,6 +750,4 @@ internal object JourneyMapTerrain {
     private const val MAX_REMEMBERED = 20_000
     private const val FORGET_MS = 10 * 60_000L
     private const val OPAQUE = 0xFF000000.toInt()
-
-    /** Under the outlines and pins ([JourneyMapPins]). */
 }

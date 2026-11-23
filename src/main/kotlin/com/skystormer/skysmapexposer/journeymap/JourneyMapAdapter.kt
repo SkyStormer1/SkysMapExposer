@@ -77,6 +77,7 @@ object JourneyMapAdapter : MapAdapter {
         Triple("journeymap.client.model.chunk.ChunkRenderContext", "otherWorldNeighbour", "night, topo and biome maps of a toggled dimension will not be drawn"),
         Triple("journeymap.common.chunk.JMChunkSnapshot", "otherWorldSections", "night, topo and biome maps of a toggled dimension will not be drawn"),
         Triple("journeymap.client.cartography.render.TopoRenderer", "otherWorldTop", "the topo map of a toggled dimension will be shaded by your dimension's height"),
+        Triple("journeymap.client.ui.fullscreen.menu.FullScreenPopupMenu", "skysmapexposer\$layout", "its right-click menu will not follow your layout from Edit menu"),
     )
 
     /**
@@ -248,8 +249,7 @@ object JourneyMapAdapter : MapAdapter {
                 })
     }
 
-    /** The region holding block (`x`, `z`) of a command. */
-    /** The region around block x, z, as the chunks it covers. */
+    /** The region holding block (`x`, `z`) of a command, as the chunks it covers. */
     private fun regionOf(context: CommandContext<FabricClientCommandSource>): ShareFormat.Area {
         val rx = Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION)
         val rz = Math.floorDiv(IntegerArgumentType.getInteger(context, "z"), JourneyMapFiles.REGION)
@@ -338,7 +338,6 @@ object JourneyMapAdapter : MapAdapter {
 
     /** How long after joining before leftover temporary waypoints are looked for: a server sends its waypoints a moment after you join. */
     private const val TIDY_DELAY_MS = 5_000L
-
 
     private fun fullscreen() = api?.getUIState(Context.UI.Fullscreen)?.takeIf { it.active }
 }

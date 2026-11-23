@@ -48,8 +48,10 @@ internal object JourneyMapFiles {
     fun regionFile(folder: Path, regionX: Int, regionZ: Int): Path = folder.resolve("$regionX,$regionZ.png")
 
     /** Whether JourneyMap holds region ([regionX], [regionZ]) of the dimension folder [dimensionFolder] in memory. Client thread. */
-    fun held(dimensionFolder: Path, regionX: Int, regionZ: Int): Boolean =
-        RegionImageCache.INSTANCE.regionImageSets.any { set ->
+    fun held(dimensionFolder: Path, regionX: Int, regionZ: Int): Boolean = heldSet(dimensionFolder, regionX, regionZ) != null
+
+    private fun heldSet(dimensionFolder: Path, regionX: Int, regionZ: Int) =
+        RegionImageCache.INSTANCE.regionImageSets.firstOrNull { set ->
             val coord = set.regionCoord
             coord.regionX == regionX && coord.regionZ == regionZ && coord.dimDir == dimensionFolder
         }
@@ -59,11 +61,7 @@ internal object JourneyMapFiles {
      * memory; null if it does not hold it. Client thread.
      */
     fun heldDay(dimensionFolder: Path, dimension: String, regionX: Int, regionZ: Int): ImageHolder? {
-        val set = RegionImageCache.INSTANCE.regionImageSets.firstOrNull { set ->
-            val coord = set.regionCoord
-            coord.regionX == regionX && coord.regionZ == regionZ && coord.dimDir == dimensionFolder
-        } ?: return null
-        return set.getExistingHolder(MapType.day(levelKey(dimension)))
+        return heldSet(dimensionFolder, regionX, regionZ)?.getExistingHolder(MapType.day(levelKey(dimension)))
     }
 
     /** [holder]'s picture, `REGION` square, ARGB; null if it has none to read. Client thread. */
@@ -98,18 +96,16 @@ internal object JourneyMapFiles {
 
     /** Writes [pixels] into [backup] as a held region's picture before it is changed, unless it already has one. */
     fun backUpHeld(pixels: IntArray, backup: Path) {
-        val absent = backup.resolveSibling(backup.fileName.toString() + ABSENT)
-        if (Files.exists(backup) || Files.exists(absent)) return
+        if (Files.exists(backup) || Files.exists(absentMark(backup))) return
         Files.createDirectories(backup.parent)
         write(backup, pixels)
     }
 
     /** A backup's picture ([backUp], [backUpHeld]): its pixels, all see-through if there was no file; null if there is no backup. */
     fun backupPixels(backup: Path): IntArray? {
-        val absent = backup.resolveSibling(backup.fileName.toString() + ABSENT)
         return when {
             Files.exists(backup) -> read(backup)
-            Files.exists(absent) -> IntArray(REGION * REGION)
+            Files.exists(absentMark(backup)) -> IntArray(REGION * REGION)
             else -> null
         }
     }
@@ -142,7 +138,7 @@ internal object JourneyMapFiles {
      * one is the region as it was before any of this.
      */
     fun backUp(file: Path, backup: Path) {
-        val absent = backup.resolveSibling(backup.fileName.toString() + ABSENT)
+        val absent = absentMark(backup)
         if (Files.exists(backup) || Files.exists(absent)) return
         Files.createDirectories(backup.parent)
         if (Files.exists(file)) Files.copy(file, backup, StandardCopyOption.COPY_ATTRIBUTES)
@@ -151,10 +147,9 @@ internal object JourneyMapFiles {
 
     /** Puts [file] back from [backup]: the copy, or no file if there was none. False if there is no backup of it. */
     fun restore(file: Path, backup: Path): Boolean {
-        val absent = backup.resolveSibling(backup.fileName.toString() + ABSENT)
         return when {
             Files.exists(backup) -> { SafeFiles.write(file, Files.readAllBytes(backup)); true }
-            Files.exists(absent) -> { Files.deleteIfExists(file); true }
+            Files.exists(absentMark(backup)) -> { Files.deleteIfExists(file); true }
             else -> false
         }
     }
@@ -191,4 +186,6 @@ internal object JourneyMapFiles {
 
     /** Beside a backup: there was no file before. */
     private const val ABSENT = ".none"
+
+    private fun absentMark(backup: Path): Path = backup.resolveSibling(backup.fileName.toString() + ABSENT)
 }

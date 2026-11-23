@@ -23,7 +23,6 @@ import net.minecraft.world.level.block.state.BlockState
  */
 internal object JourneyMapShared {
 
-
     /** [region]'s picture, `REGION` square ARGB, see-through where the file has nothing. Off the client thread. */
     fun picture(region: SharedTerrain.Region): IntArray {
         val out = IntArray(REGION * REGION)
@@ -83,19 +82,16 @@ internal object JourneyMapShared {
         if (state.isAir) return 0
         val md = BlockMD.get(state)
         if (md.isIgnore) return 0
+        // JourneyMap works out a block's colour from its texture the first time it maps one; one it
+        // has not met yet has none, and takes the game's own map colour for it instead.
         return (if (md.hasColor()) md.textureColor else 0).and(0xFFFFFF).takeIf { it != 0 }
             ?: state.block.defaultMapColor().col
     }
 
     /** [state]'s colour in JourneyMap, tinted by [biome] where JourneyMap tints it; null for a block it leaves off the map. */
     private fun colourOf(state: BlockState, biome: Biome?): Int? {
-        if (state.isAir) return null
+        val texture = baseColour(state).takeIf { it != 0 } ?: return null
         val md = BlockMD.get(state)
-        if (md.isIgnore) return null
-        // JourneyMap works out a block's colour from its texture the first time it maps one; one it
-        // has not met yet has none, and takes the game's own map colour for it instead.
-        val texture = (if (md.hasColor()) md.textureColor else 0).and(0xFFFFFF).takeIf { it != 0 }
-            ?: state.block.defaultMapColor().col.takeIf { it != 0 } ?: return null
         val tint = when {
             md.isWater -> biome?.waterColor ?: DEFAULT_WATER
             md.isGrass -> biome?.getGrassColor(0.0, 0.0) ?: DEFAULT_GRASS
