@@ -16,6 +16,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
@@ -93,6 +94,8 @@ public abstract class GuiMapMixin implements MapCamera {
     @Shadow private static double destScale;
     @Shadow private int mouseBlockPosX;
     @Shadow private int mouseBlockPosZ;
+    @Shadow private double prevPlayerDimDiv;
+    @Shadow private Entity player;
 
     /**
      * Moves the camera the way Xaero's own "hop to coordinates" does: detached from the player
@@ -116,6 +119,14 @@ public abstract class GuiMapMixin implements MapCamera {
     /**
      * Straight there, cancelling any glide already under way. Xaero puts the camera back on the
      * player every frame while it is attached, so that has to come off first.
+     *
+     * Xaero also moves the camera when the map's dimension changes, by your own position times the
+     * change in scale, so that you keep looking at the matching spot. It does that on the first
+     * frame it draws with a scale different from the one it last used ({@code prevPlayerDimDiv}),
+     * which on a big map can be well after the switch. A camera put on a spot asked for would then
+     * be carried off with it: with you standing near that spot, to about twice its coordinates. So
+     * the scale it last used is set to the one of the dimension now shown, and it has nothing to
+     * shift.
      */
     @Override
     public void skysmapexposerJumpTo(int x, int z) {
@@ -126,6 +137,15 @@ public abstract class GuiMapMixin implements MapCamera {
         cameraDestination = null;
         cameraDestinationAnimX = null;
         cameraDestinationAnimZ = null;
+        try {
+            var registry = mapProcessor.getWorldDimensionTypeRegistry();
+            var world = mapProcessor.getMapWorld();
+            if (registry != null && world != null && world.getCurrentDimension() != null && player != null) {
+                prevPlayerDimDiv = world.getCurrentDimension().calculateDimDiv(registry, player.level().dimensionType());
+            }
+        } catch (Throwable ignored) {
+            // Without it the jump still lands; Xaero may just shift it once afterwards.
+        }
     }
 
     /**

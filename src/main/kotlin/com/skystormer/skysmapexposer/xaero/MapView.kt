@@ -33,18 +33,6 @@ object MapView {
     /** How long to wait for Xaero to finish switching dimension before giving up on the move. */
     private const val GIVE_UP = 100
 
-    /**
-     * How many ticks to keep putting the camera back after the dimension has changed.
-     *
-     * On the first frame that the dimension scale changes, Xaero shifts the camera by
-     * `-playerX / oldScale + playerX / newScale` and throws away any destination, to keep you
-     * looking at the equivalent spot. From the nether that shift is about seven times your own X,
-     * so a camera set before that frame ends up thousands of blocks from where it was put. Setting
-     * it once is therefore not enough: it is set again for a few ticks, and the last one lands
-     * after Xaero's shift and stays.
-     */
-    private const val SETTLE = 10
-
     /** How far "Go to" zooms in: close enough to pick one player out of a crowd. A closer zoom is kept. */
     const val GO_TO_ZOOM = 3.0
 
@@ -65,9 +53,7 @@ object MapView {
         val z: Int,
         val toPlayer: Boolean = false,
         val fromGoTo: Boolean = false,
-    ) {
-        var applied = 0
-    }
+    )
 
     private var move: Move? = null
     private var waited = 0
@@ -194,11 +180,12 @@ object MapView {
         if (screen !is MapCamera) return
         if (MarkerElements.worldMapDimension() != wanted.dimension) return
         // Jumped, not glided: Xaero's glide is a slowing animation, and over the tens of thousands
-        // of blocks between two dimensions' coordinates it crawls. Repeated for [SETTLE] ticks so
-        // that it outlives Xaero's own shift on the frame the dimension scale changes.
+        // of blocks between two dimensions' coordinates it crawls. Once is enough: the jump also
+        // tells Xaero the camera is already in this dimension, so it does not shift it afterwards
+        // (see skysmapexposerJumpTo), and Xaero's own reset to you skips that shift by itself.
         if (wanted.toPlayer) screen.skysmapexposerFollowPlayer() else screen.skysmapexposerJumpTo(wanted.x, wanted.z)
         if (wanted.fromGoTo) screen.skysmapexposerZoomIn(GO_TO_ZOOM)
-        if (++wanted.applied >= SETTLE) move = null
+        move = null
     }
 
     /**
