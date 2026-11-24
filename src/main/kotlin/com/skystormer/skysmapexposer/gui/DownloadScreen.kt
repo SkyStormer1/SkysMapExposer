@@ -1,6 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
-import com.skystormer.skysmapexposer.BlueMapDownload
+import com.skystormer.skysmapexposer.MapMods
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.MultiLineTextWidget
 import net.minecraft.client.gui.components.StringWidget
@@ -9,9 +9,10 @@ import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 
 /**
- * Asks what to download from BlueMap for the dimension the world map is showing: everything, or
- * only the chunks you have never mapped. [started] is told what [BlueMapDownload.start] said, or
- * null if you cancelled.
+ * Asks what to download from BlueMap into your map (Xaero's or JourneyMap's) for the dimension its
+ * full-screen map is showing: everything, or only the chunks you have never mapped. [started] is
+ * told what the map's download said ([com.skystormer.skysmapexposer.MapAdapter.download]), or null
+ * if you cancelled.
  */
 class DownloadScreen(
     private val dimension: String,
@@ -28,7 +29,7 @@ class DownloadScreen(
         val text = MultiLineTextWidget(
             left, y,
             Component.literal(
-                "Writes BlueMap's terrain for the $dimension into your own Xaero map. Each region is backed " +
+                "Writes BlueMap's terrain for the $dimension into your own map. Each region is backed " +
                     "up just before it is changed. You can close this and play while it runs."
             ),
             font,
@@ -58,7 +59,7 @@ class DownloadScreen(
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL) { onClose() }.bounds(left, y, width, ROW).build())
     }
 
-    private fun choose(unexploredOnly: Boolean) = started(BlueMapDownload.start(null, unexploredOnly))
+    private fun choose(unexploredOnly: Boolean) = started(MapMods.adapter?.download(unexploredOnly) ?: "No map mod to download into")
 
     override fun onClose() = started(null)
 

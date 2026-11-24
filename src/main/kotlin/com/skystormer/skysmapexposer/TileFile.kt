@@ -9,6 +9,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.BitSet
+import java.util.zip.DataFormatException
 import java.util.zip.Deflater
 import java.util.zip.Inflater
 
@@ -22,7 +23,7 @@ import java.util.zip.Inflater
  * mask, `imageSize` square, one bit a pixel; the others are pixels, three bytes each, 0 for
  * nothing.
  *
- * Measured on 60 of his server's tiles (2026-10-20, Deflater level 6): all sizes together take
+ * Measured on 60 tiles of a real server (2026-10-20, Deflater level 6): all sizes together take
  * 1.45× the PNG, the 1:1 picture alone 0.78×; loading takes 1.4 ms at 1:1 and 0.15 ms at 1:20,
  * against 11 ms for reading, decoding, shading and shrinking the PNG (8× to 74× faster), and holds
  * about a third of the memory while it does. PNG-style row filters made it bigger, not smaller:
@@ -150,7 +151,7 @@ object TileFile {
             if (id != PRESENCE && at != out.size) throw IOException("damaged tile file")
             if (!inflater.finished()) throw IOException("damaged tile file")
             return if (at == out.size) out else out.copyOf(at)
-        } catch (e: java.util.zip.DataFormatException) {
+        } catch (e: DataFormatException) {
             throw IOException("damaged tile file", e)
         } finally {
             inflater.end()

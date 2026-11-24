@@ -26,11 +26,11 @@ object LockedPlayers {
     fun set(player: Markers.Player, on: Boolean): Boolean {
         val locks = Session.current?.locks
         if (locks == null) {
-            MapMenus.say("This server has no BlueMap set up, so there is nobody to lock on to")
+            Ui.say("This server has no BlueMap set up, so there is nobody to lock on to")
             return false
         }
         locks.set(player.uuid, on)
-        MapMenus.say(
+        Ui.say(
             if (on) "Locked on to ${player.label}. Their head follows them until you unlock them."
             else "Unlocked ${player.label}"
         )

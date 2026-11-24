@@ -6,6 +6,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
@@ -74,7 +75,7 @@ class BiomeGuide private constructor(
                         val nz = cz + dz
                         if (nx !in 0 until CELLS || nz !in 0 until CELLS) continue
                         val near = shares[nz * CELLS + nx] ?: continue
-                        val weight = 1.0 / (1.0 + Math.hypot(dx.toDouble(), dz.toDouble()))
+                        val weight = SMOOTH_WEIGHTS[(dz + SMOOTH) * SMOOTH_SIDE + dx + SMOOTH]
                         for (j in sum.indices) sum[j] += weight * near[j]
                     }
                 }
@@ -222,13 +223,19 @@ class BiomeGuide private constructor(
 
         /** Guesses this many cells away count towards a cell's own, less the further they are. */
         private const val SMOOTH = 2
+        private const val SMOOTH_SIDE = 2 * SMOOTH + 1
+
+        /** How much a neighbour's guess counts, by its offset: worked out once rather than 25 times a cell. */
+        private val SMOOTH_WEIGHTS = DoubleArray(SMOOTH_SIDE * SMOOTH_SIDE) { i ->
+            1.0 / (1.0 + Math.hypot((i % SMOOTH_SIDE - SMOOTH).toDouble(), (i / SMOOTH_SIDE - SMOOTH).toDouble()))
+        }
 
         private const val MAGIC = 0x534D4231 // "SMB1"
 
         /** Where in a cell to look if its middle has nothing. */
         private val OFFSETS = listOf(0 to 0, -3 to -3, 3 to 3, -3 to 3, 3 to -3)
 
-        private val loaded = ConcurrentHashMap<String, java.util.Optional<BiomeGuide>>()
+        private val loaded = ConcurrentHashMap<String, Optional<BiomeGuide>>()
 
         /** The guide that came with the mod for [dimensionId], or null if there is none for it. */
         fun forDimension(dimensionId: String): BiomeGuide? = loaded.computeIfAbsent(dimensionId) {
@@ -242,7 +249,7 @@ class BiomeGuide private constructor(
                     null
                 }
             }
-            java.util.Optional.ofNullable(guide)
+            Optional.ofNullable(guide)
         }.orElse(null)
 
         fun read(input: InputStream): BiomeGuide =

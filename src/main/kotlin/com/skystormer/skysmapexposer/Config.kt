@@ -11,6 +11,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 /**
  * `config/skysmapexposer.json`: which servers have a BlueMap, where, and when your own map counts as
@@ -114,6 +115,14 @@ object Config {
     var barLeft: Int = 52
     var barTop: Int = 2
 
+    /**
+     * The same place as a share of the room the screen leaves for the bar (0 at the left or top
+     * edge, 1 at the right edge or bottom), so it stays where it was whatever the GUI scale; below
+     * 0 until the bar is first moved, when [barLeft] and [barTop] are used as they are.
+     */
+    var barLeftShare: Double = -1.0
+    var barTopShare: Double = -1.0
+
     /** How many biomes the bar lists at once. */
     var barRows: Int = 6
 
@@ -137,6 +146,18 @@ object Config {
     /** Whether picked biomes are tinted on Xaero's minimap too, when it is installed. */
     var minimapBiomes: Boolean = true
 
+    /** Whether pings from trusted players are shown ([PlayerPings]). */
+    var pings: Boolean = true
+
+    /** Whether a ping arriving plays a bell. */
+    var pingSound: Boolean = true
+
+    /** The players whose pings you take and who get yours, by server address as [normalise] writes it. */
+    val trusted: MutableMap<String, MutableSet<UUID>> = HashMap()
+
+    /** Of those, the players who get your pings, by server address as [trusted]. */
+    val pingTo: MutableMap<String, MutableSet<UUID>> = HashMap()
+
     /**
      * How often a tile on screen is asked about on the server ("has it changed?", which costs
      * nothing when the server can say "not modified"), and how often it is downloaded whole anyway
@@ -158,7 +179,11 @@ object Config {
     var prepareMap: Boolean = true
     var prepareTilesPerSecond: Int = 4
 
-    var servers: List<Server> = defaultServers()
+    /** Whether chat says, once a visit, why BlueMap's terrain is missing while the full-screen map shows caves ([CaveNotice]). */
+    var caveNotice: Boolean = true
+
+    /** None until you add one in the settings screen. */
+    var servers: List<Server> = emptyList()
 
     /**
      * One server with a BlueMap.
@@ -201,9 +226,6 @@ object Config {
     /** `Play.Example.com:25565` and `play.example.com` are the same server. */
     fun normalise(address: String): String =
         address.trim().lowercase().removeSuffix(":25565").removeSuffix(".")
-
-    // No server is set up until the player adds one in the settings screen.
-    private fun defaultServers() = emptyList<Server>()
 
     /**
      * What [load] could not read, said once in chat on the next join ([takeLoadProblem]); null when
@@ -257,8 +279,14 @@ object Config {
             read("barOpen") { barOpen = it.asBoolean }
             read("barLeft") { barLeft = it.asInt }
             read("barTop") { barTop = it.asInt }
+            read("barLeftShare") { barLeftShare = it.asDouble.coerceAtMost(1.0) }
+            read("barTopShare") { barTopShare = it.asDouble.coerceAtMost(1.0) }
             read("barRows") { barRows = it.asInt.coerceIn(1, 40) }
             read("minimapBiomes") { minimapBiomes = it.asBoolean }
+            read("pings") { pings = it.asBoolean }
+            read("pingSound") { pingSound = it.asBoolean }
+            read("trusted") { readPlayers(it, trusted) }
+            read("pingTo") { readPlayers(it, pingTo) }
             read("fillOff") { element ->
                 val names = element.asJsonArray.map { it.asString }
                 fillOff.clear()
@@ -288,6 +316,7 @@ object Config {
             read("markerRefreshSeconds") { markerRefreshSeconds = it.asInt.coerceAtLeast(5) }
             read("textureBudgetMb") { textureBudgetMb = it.asInt.coerceIn(32, 8192) }
             read("prepareMap") { prepareMap = it.asBoolean }
+            read("caveNotice") { caveNotice = it.asBoolean }
             read("seaFloorHires") { seaFloorHires = it.asBoolean }
             read("prepareTilesPerSecond") { prepareTilesPerSecond = it.asInt.coerceIn(1, 50) }
             read("servers") { element ->
@@ -320,6 +349,21 @@ object Config {
             ?: emptyMap(),
     )
 
+    /** Player lists by server, as [trusted] and [pingTo] are saved. */
+    private fun readPlayers(element: JsonElement, into: MutableMap<String, MutableSet<UUID>>) {
+        val read = element.asJsonObject.entrySet().associate { (server, players) ->
+            server to players.asJsonArray.mapTo(LinkedHashSet()) { UUID.fromString(it.asString) }
+        }
+        into.clear()
+        into.putAll(read)
+    }
+
+    private fun playersJson(lists: Map<String, Set<UUID>>) = JsonObject().also { servers ->
+        lists.forEach { (server, players) ->
+            servers.add(server, JsonArray().also { list -> players.forEach { list.add(it.toString()) } })
+        }
+    }
+
     /** Copies a file that could not be fully read beside itself, before anything saves over it. */
     private fun keepAside(path: Path, what: String) {
         val copy = path.resolveSibling("${path.fileName}.broken-${LocalDateTime.now().format(STAMP)}")
@@ -351,8 +395,14 @@ object Config {
         json.addProperty("barOpen", barOpen)
         json.addProperty("barLeft", barLeft)
         json.addProperty("barTop", barTop)
+        json.addProperty("barLeftShare", barLeftShare)
+        json.addProperty("barTopShare", barTopShare)
         json.addProperty("barRows", barRows)
         json.addProperty("minimapBiomes", minimapBiomes)
+        json.addProperty("pings", pings)
+        json.addProperty("pingSound", pingSound)
+        json.add("trusted", playersJson(trusted))
+        json.add("pingTo", playersJson(pingTo))
         json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
         json.addProperty("barScale", barScale)
         json.addProperty("barExtra", barExtra)
@@ -369,6 +419,7 @@ object Config {
         json.addProperty("markerRefreshSeconds", markerRefreshSeconds)
         json.addProperty("textureBudgetMb", textureBudgetMb)
         json.addProperty("prepareMap", prepareMap)
+        json.addProperty("caveNotice", caveNotice)
         json.addProperty("seaFloorHires", seaFloorHires)
         json.addProperty("prepareTilesPerSecond", prepareTilesPerSecond)
         val array = JsonArray()
@@ -408,4 +459,7 @@ object Config {
     const val OVERWORLD = "minecraft:overworld"
     const val NETHER = "minecraft:the_nether"
     const val END = "minecraft:the_end"
+
+    /** Overworld blocks to one Nether block. */
+    const val NETHER_SCALE = 8
 }

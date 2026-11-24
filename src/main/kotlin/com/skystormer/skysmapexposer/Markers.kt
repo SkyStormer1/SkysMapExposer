@@ -1,10 +1,17 @@
 package com.skystormer.skysmapexposer
 
+import net.minecraft.client.Minecraft
+import net.minecraft.resources.Identifier
 import com.google.gson.JsonObject
 import com.mojang.blaze3d.platform.NativeImage
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import net.minecraft.client.renderer.texture.DynamicTexture
 import java.awt.image.BufferedImage
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import kotlin.math.roundToInt
@@ -15,11 +22,11 @@ import kotlin.math.roundToInt
  *
  * Two kinds are used:
  *  - points ("poi" markers): shops, banners, spawn. Shown as icons on the world map and minimap
- *    only, never in the world, and can be saved as Xaero waypoints.
+ *    only, never in the world, and can be saved as waypoints.
  *  - outlines ("shape", "extrude" and "line" markers): the world border, zones. Drawn into the map
  *    itself, in the marker's own colour and line width.
  *
- * Other marker types (html, BlueMap's own player list) have no place on Xaero's map and are skipped.
+ * Other marker types (html, BlueMap's own player list) have no place on the map and are skipped.
  */
 class Markers(private val blueMap: BlueMap, private val workers: ExecutorService) {
 
@@ -37,7 +44,13 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
     ) : Pin(label, x, y, z)
 
     /** A player BlueMap reports in this map's dimension. */
-    class Player(val uuid: java.util.UUID, label: String, x: Double, y: Double, z: Double) : Pin(label, x, y, z)
+    class Player(val uuid: UUID, label: String, x: Double, y: Double, z: Double) : Pin(label, x, y, z)
+
+    /** A spot a trusted player pinged ([PlayerPings]): their face under a flashing beam. */
+    class Ping(val uuid: UUID, label: String, x: Double, y: Double, z: Double, val startedAt: Long) : Pin(label, x, y, z) {
+        /** The same ping in the dimension whose coordinates are [scale] times these. */
+        fun scaled(scale: Double) = Ping(uuid, label, x * scale, y, z * scale, startedAt)
+    }
 
     /**
      * @property points x and z of each corner, in order, two floats per corner.
@@ -61,6 +74,8 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         @Volatile
         var image: NativeImage? = null
         var texture: DynamicTexture? = null
+        /** Where the texture is registered, so other maps (JourneyMap) can draw the same one. */
+        var location: Identifier? = null
         @Volatile
         var failed = false
         var width = 0
@@ -107,7 +122,7 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
                     val z = position.get("z").asDouble
                     if (!onMap(x) || !onMap(y) || !onMap(z)) return@mapNotNull null
                     Player(
-                        uuid = java.util.UUID.fromString(player.get("uuid").asString),
+                        uuid = UUID.fromString(player.get("uuid").asString),
                         label = player.get("name")?.asString?.take(MAX_NAME) ?: "?",
                         x = x,
                         y = y,
@@ -119,8 +134,9 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
             } ?: emptyList()
             playersByMap[map] = players
         } catch (e: Exception) {
-            // Asked every couple of seconds, so said once per map; the last players known stay.
-            if (warned.add("players:$map")) Log.warn("Could not read BlueMap's players for {}: {}", map, e.toString())
+            // Asked every couple of seconds, so said once per map; the last players known stay. Not on
+            // leaving, when the session's threads are stopped part way through a reply.
+            if (!closed && warned.add("players:$map")) Log.warn("Could not read BlueMap's players for {}: {}", map, e.toString())
         }
     }
 
@@ -139,15 +155,29 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         slot.width = image.width
         slot.height = image.height
         val texture = DynamicTexture({ "skysmapexposer icon $path" }, image)
+        val location = Identifier.fromNamespaceAndPath("skysmapexposer", "marker_icon/${nextIcon++}")
+        Minecraft.getInstance().textureManager.register(location, texture)
         slot.texture = texture
+        slot.location = location
         return Triple(texture.textureView, slot.width, slot.height)
     }
+
+    /** Where icon [path] is registered as a texture, with its size, once it is loaded. Client thread. */
+    fun iconLocation(path: String?): Triple<Identifier, Int, Int>? {
+        icon(path) ?: return null
+        val slot = icons[path] ?: return null
+        return slot.location?.let { Triple(it, slot.width, slot.height) }
+    }
+
+    /** Numbers the icons' texture names; client thread only. */
+    private var nextIcon = 0
 
     /** Frees every icon: uploaded textures, and pictures downloaded but not yet uploaded. */
     fun close() {
         closed = true
         icons.values.forEach { slot ->
-            slot.texture?.close()
+            // Releasing the registered name closes the texture too.
+            slot.location?.let { Minecraft.getInstance().textureManager.release(it) } ?: slot.texture?.close()
             synchronized(slot) {
                 slot.image?.close()
                 slot.image = null
@@ -199,8 +229,8 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
             byMap[map] = Snapshot(points, outlines)
             if (skipped > 0 && warned.add(map)) Log.warn("Left out {} BlueMap marker(s) on {} that could not be read", skipped, map)
         } catch (e: Exception) {
-            // Said once per map, not on every refresh; the markers already shown stay.
-            if (warned.add(map)) Log.warn("Could not read BlueMap's markers for {}: {}", map, e.toString())
+            // Said once per map, not on every refresh; the markers already shown stay. Not on leaving.
+            if (!closed && warned.add(map)) Log.warn("Could not read BlueMap's markers for {}: {}", map, e.toString())
         }
     }
 
@@ -254,6 +284,9 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
         const val MAX_ICONS = 512
         const val MAX_NAME = 64
 
+        /** Read for every marker on every refresh, so made once. */
+        val HTML_TAG = Regex("<[^>]*>")
+
         /** Within Minecraft's world border, with room to spare, and a real number. */
         fun onMap(value: Double) = value.isFinite() && value in -40_000_000.0..40_000_000.0
     }
@@ -266,7 +299,7 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
      * arrive encoded twice ("TomÂ´s"), which this undoes.
      */
     private fun text(raw: String): String {
-        var text = raw.replace(Regex("<[^>]*>"), "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").trim()
+        var text = raw.replace(HTML_TAG, "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").trim()
         if (text.contains('Ã') || text.contains('Â')) {
             val repaired = String(text.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
             if (!repaired.contains('�')) text = repaired

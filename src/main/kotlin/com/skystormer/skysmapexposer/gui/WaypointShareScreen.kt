@@ -1,8 +1,10 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.ShareableWaypoint
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.MapMenus
-import com.skystormer.skysmapexposer.WaypointShare
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.MapMods
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
@@ -13,23 +15,24 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
- * Picks waypoints to share: every one of the dimension you are in, from all its sets, a page at a
- * time, narrowed by a search box; click a row to tick it. "Share with…" then picks the player
+ * Picks waypoints to share: every one of a dimension, from all its sets (the one you are in to
+ * start with; the line under the title goes to the next), a page at a time, narrowed by a search
+ * box; click a row to tick it. "Share with…" then picks the player
  * ([ShareScreen]) and sends them in chat ([ChatShare.shareWaypoints]).
  *
- * Only opened with Xaero's Minimap installed.
+ * The waypoints are whichever map's are installed ([com.skystormer.skysmapexposer.MapAdapter.myWaypoints]).
  */
 class WaypointShareScreen(
     private val parent: Screen?,
-    private val dimensionId: String,
-    private val entries: List<WaypointShare.Entry>,
+    private var dimensionId: String,
+    private var entries: List<ShareableWaypoint>,
 ) : Screen(Component.literal("Share waypoints")) {
 
-    private val picked: MutableSet<WaypointShare.Entry> = Collections.newSetFromMap(IdentityHashMap())
+    private val picked: MutableSet<ShareableWaypoint> = Collections.newSetFromMap(IdentityHashMap())
     private var search: EditBox? = null
     private val rows = ArrayList<Button>()
-    private var page = 0
-    private var shown: List<WaypointShare.Entry> = entries
+    private val pages = Pages()
+    private var shown: List<ShareableWaypoint> = entries
     private var pageLabel: StringWidget? = null
     private var previous: Button? = null
     private var nextPage: Button? = null
@@ -38,20 +41,21 @@ class WaypointShareScreen(
     override fun init() {
         val width = minOf(WIDTH, this.width - 32)
         val left = (this.width - width) / 2
-        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 110) / 2)
+        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 122) / 2)
         val sets = entries.map { it.set }.distinct().size
-        val name = MapMenus.dimensionName(dimensionId) ?: dimensionId
+        val name = Ui.dimensionName(dimensionId) ?: dimensionId
 
         addRenderableWidget(StringWidget(left, y, width, font.lineHeight, title, font))
         y += font.lineHeight + GAP
-        addRenderableWidget(StringWidget(left, y, width, font.lineHeight,
-            Component.literal("§7${entries.size} in the $name" + if (sets > 1) ", from $sets sets" else ""), font))
-        y += font.lineHeight + GAP * 2
+        // The dimension's waypoints, any of the three, wherever you are: click for the next.
+        addRenderableWidget(Button.builder(Component.literal("${entries.size} in the $name" + (if (sets > 1) ", from $sets sets" else "") + "  ▸")) { nextDimension() }
+            .bounds(left, y, width, ROW).tooltip(SafeTooltip.of("Shows the waypoints of the next of the Overworld, the Nether and the End.")).build())
+        y += ROW + GAP * 2
 
         val box = EditBox(font, left, y, width, ROW, Component.literal("Search"))
         box.setHint(Component.literal("Search waypoints"))
         box.setValue(search?.value ?: "")
-        box.setResponder { page = 0; fill() }
+        box.setResponder { pages.page = 0; fill() }
         search = box
         addRenderableWidget(box)
         y += ROW + GAP
@@ -61,9 +65,9 @@ class WaypointShareScreen(
             .bounds(left, y, third, ROW).tooltip(SafeTooltip.of("Ticks every waypoint the search shows, on every page.")).build())
         addRenderableWidget(Button.builder(Component.literal("Untick all")) { picked.clear(); fill() }
             .bounds(left + third + GAP, y, third, ROW).build())
-        previous = addRenderableWidget(Button.builder(Component.literal("<")) { page--; fill() }
+        previous = addRenderableWidget(Button.builder(Component.literal("<")) { pages.page--; fill() }
             .bounds(left + (third + GAP) * 2, y, (third - GAP) / 2, ROW).build())
-        nextPage = addRenderableWidget(Button.builder(Component.literal(">")) { page++; fill() }
+        nextPage = addRenderableWidget(Button.builder(Component.literal(">")) { pages.page++; fill() }
             .bounds(left + (third + GAP) * 2 + (third - GAP) / 2 + GAP, y, third - (third - GAP) / 2 - GAP, ROW).build())
         y += ROW + GAP * 2
 
@@ -84,8 +88,18 @@ class WaypointShareScreen(
         fill()
     }
 
+    /** The waypoints of the next of the Overworld, the Nether and the End; none where the map has none for it yet. */
+    private fun nextDimension() {
+        val next = DIMENSIONS[(DIMENSIONS.indexOf(dimensionId) + 1) % DIMENSIONS.size]
+        dimensionId = next
+        entries = MapMods.adapter?.myWaypoints(next)?.second.orEmpty()
+        picked.clear()
+        pages.page = 0
+        rebuildWidgets()
+    }
+
     private fun toggle(row: Int) {
-        val entry = shown.getOrNull(page * ROWS + row) ?: return
+        val entry = shown.getOrNull(pages.page * ROWS + row) ?: return
         if (!picked.add(entry)) picked.remove(entry)
         fill()
     }
@@ -93,10 +107,9 @@ class WaypointShareScreen(
     private fun fill() {
         val wanted = search?.value?.trim()?.lowercase().orEmpty()
         shown = entries.filter { wanted.isEmpty() || wanted in it.name.lowercase() || wanted in it.set.lowercase() }
-        val pages = maxOf(1, (shown.size + ROWS - 1) / ROWS)
-        page = page.coerceIn(0, pages - 1)
+        val onPage = pages.of(shown, ROWS)
         rows.forEachIndexed { i, row ->
-            val entry = shown.getOrNull(page * ROWS + i)
+            val entry = onPage.getOrNull(i)
             row.visible = entry != null
             row.active = entry != null
             row.message = Component.literal(if (entry == null) "" else (if (entry in picked) "§a☑ " else "§7☐ ") + "§r" + entry.label)
@@ -106,26 +119,33 @@ class WaypointShareScreen(
             rows.first().apply {
                 visible = true
                 active = false
-                message = Component.literal(if (entries.isEmpty()) "You have no waypoints here" else "None by that name")
+                message = Component.literal(if (entries.isEmpty()) "You have no waypoints there" else "None by that name")
             }
         }
-        pageLabel?.message = Component.literal("§7Page ${page + 1} of $pages · ${picked.size} ticked")
-        previous?.active = page > 0
-        nextPage?.active = page < pages - 1
+        pageLabel?.message = Component.literal("§7Page ${pages.page + 1} of ${pages.count} · ${picked.size} ticked")
+        previous?.active = pages.hasPrevious
+        nextPage?.active = pages.hasNext
         shareButton?.active = picked.isNotEmpty()
         shareButton?.message = Component.literal(if (picked.isEmpty()) "Share with…" else "Share ${picked.size} with…")
     }
 
     private fun next() {
         // In the order they are listed, not the order they were ticked.
-        val chosen = entries.filter { it in picked }.map { it.shared() }
-        MapMenus.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent) { name ->
+        val chosen = entries.filter { it in picked }.map { it.waypoint }
+        Ui.open(ShareScreen(this, "Share ${chosen.size} waypoint${if (chosen.size == 1) "" else "s"} with…", parent,
+            everyone = { ChatShare.shareWaypointsWithEveryone(dimensionId, chosen) }) { name ->
             ChatShare.shareWaypoints(name, dimensionId, chosen)
         })
     }
 
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (!pages.scroll(scrollY)) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        fill()
+        return true
+    }
+
     override fun onClose() {
-        MapMenus.open(parent)
+        Ui.open(parent)
     }
 
     private companion object {
@@ -133,5 +153,6 @@ class WaypointShareScreen(
         const val ROWS = 8
         const val ROW = 20
         const val GAP = 4
+        val DIMENSIONS = listOf(Config.OVERWORLD, Config.NETHER, Config.END)
     }
 }

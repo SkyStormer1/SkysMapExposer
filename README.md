@@ -4,7 +4,7 @@
 
 <p align="center">
 A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b> into
-<b>Xaero's World Map</b>, <b>Xaero's Minimap</b> and more.
+<b>Xaero's World Map</b>, <b>Xaero's Minimap</b> or <b>JourneyMap</b>, and more.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@ A client-side Fabric mod for Minecraft 26.3 that brings a server's <b>BlueMap</b
 
 ![Xaero's World Map on its own, with black unexplored areas, next to the same map with Sky's Map Exposer: the gaps filled from BlueMap, a red world border, shop and banner markers, a hover label and a player's head](docs/world-map.png)
 
-<sub>An unofficial, fan-made mod. Not made by, endorsed by or affiliated with the BlueMap or Xaero's Minimap / World Map projects.</sub>
+<sub>An unofficial, fan-made mod. Not made by, endorsed by or affiliated with the BlueMap, Xaero's Minimap / World Map or JourneyMap projects.</sub>
 
 ## What it does
 
@@ -77,9 +77,10 @@ You need:
 
 - Minecraft **26.3** with **Fabric Loader** 0.19.5 or newer
 - **Fabric API** and **Fabric Language Kotlin**
-- **Xaero's World Map** 1.47 or newer
-- Recommended: **Xaero's Minimap** (for the minimap and for saving waypoints) and **Mod Menu**
-  (for the settings screen)
+- One map mod: **Xaero's World Map** 1.47 or newer, or **JourneyMap** 6.0.10 or newer
+  ([what works with JourneyMap](#with-journeymap)). With both installed, Xaero's is used.
+- Recommended with Xaero's: **Xaero's Minimap** (for the minimap and for saving waypoints)
+- Recommended: **Mod Menu** (for the settings screen)
 
 Then **[download the latest `.jar`](https://github.com/SkyStormer1/SkysMapExposer/releases/latest)**
 and put it in your `mods` folder with the others.
@@ -94,10 +95,11 @@ The mod does nothing until you tell it where a server's BlueMap is. You do this 
 2. **Join the server**, then open the settings: press Esc, click **Mods**, find
    **Sky's Map Exposer** and click the cog.
 3. The screen opens on the server you are on, with **Server address** already filled in.
-   Paste the address from step 1 into **BlueMap address**.
-4. Press **Find maps**. The line above the buttons lists the maps that BlueMap has, and the
-   overworld is filled in for you. Type the right map names into **Nether map** and **End map** if
-   you want them. Leave a box blank to not use BlueMap there.
+   Paste the address from step 1 into **BlueMap address**. When BlueMap runs on the server's own
+   address, its port alone is enough (`8100`, say): it becomes `http://<server>:8100/`.
+4. The maps are looked up on their own (or press **Find maps**): the line above the buttons lists
+   the maps that BlueMap has, and each dimension's box is filled in with the map named for it. Fix
+   any it got wrong. Leave a box blank to not use BlueMap there.
 5. Press **Done**. Open the world map (M). Unexplored areas now show BlueMap's terrain.
 
 ![The Sky's Map Exposer settings screen, filled in for play.example.com](docs/settings.png)
@@ -119,7 +121,7 @@ Hover over any setting in the game for an explanation.
 | **BlueMap address** | The web page of the server's BlueMap. |
 | **Overworld / Nether / End map** | Which BlueMap map to use for each dimension. The **ON/OFF** button beside it switches that dimension's *terrain*. Borders, markers and players still show with terrain off. |
 | **Cover map before** | Your overworld map from before this date and time (`yyyy-MM-dd HH:mm`) is covered by BlueMap however recent it is. Useful when a new season starts on a new world. **Now** fills in the current time. Leave blank for never. |
-| **Find maps** | Asks the BlueMap which maps it has. |
+| **Find maps** | Asks the BlueMap which maps it has, and fills each empty map box with the one named for that dimension. |
 | **Download…** | Downloads BlueMap into your own map; see below. While a download runs, this button stops it. |
 | **Remove server** | Forgets the server shown. |
 | **Prepare map** (Tiles tab) | After you join, downloads every tile BlueMap has, a few a second, and makes it ready to draw, so the map is ready before you open it. On as the mod comes. It starts from the middle of the map and works outwards, the dimension you are in first; tiles you are looking at always come first, and it pauses while the game is busy. **Stop preparing** / **Prepare now** stop it or go over the map again (`/mapexposer prepare` and `/mapexposer prepare cancel` too). How far it has got shows at the top of the world map. |
@@ -315,16 +317,47 @@ nothing more is sent. Everything else travels hidden from both chats.
 - **Share waypoints…**: tick some waypoints of the dimension you are in, then pick a player. An
   **[Add waypoints]** button adds them to their selected waypoint set, leaving out any they already
   have. Needs Xaero's Minimap at both ends.
-- **Save terrain file**: drag over some chunks with the right mouse button, then choose it. Every block of your map there,
+- **Save terrain file**: drag over some chunks with the right mouse button, then choose it; after a
+  plain right-click it saves all of this dimension's map instead. Every block of your map there,
   exactly as Xaero keeps it, is saved to a `.smemap` file in the `shared maps` folder of your game
   folder; a link in chat opens the folder. Send the file however you like. Whoever gets it drops it
   onto their game window, then chooses **[Add to unexplored only]** or **[Add all]**. Each of their
   regions is backed up first, the same as a download. In the Nether it saves and adds the cave layer
   the world map is showing, not the roof.
+  Anything over 512 × 512 chunks asks first, saying how big the file may be and how much room the
+  drive has; a save never starts without room for it, and stops (keeping nothing) if the drive fills
+  up. While a save runs, the top of the map says how far it has got, and **Stop saving** takes the
+  entry's place. `/mapexposer terrain save all` saves the whole map from chat. Files over 512 chunks
+  a side need 1.10 or newer to open.
 
 Messages go out slowly, well under a vanilla server's spam limit. Being muted, or a server without
 `/msg`, stops sharing.
 `/mapexposer share cancel` and `/mapexposer terrain cancel` stop a share or a save.
+
+### Pinging a spot
+
+Trust a player and you can show each other a spot, on this server only. Use **Trust** in the player
+list, right-click them on the map, or `/mapexposer trust <player>`; `/mapexposer untrust <player>`
+stops it. Both of you need to trust each other, and pings from anyone else are dropped unseen.
+
+Your pings go only to those you pick: **Ping** beside a trusted player in the player list, **Send my
+pings** when you right-click them on the map, or `/mapexposer pingto add <player>`
+(`/mapexposer pingto remove <player>` stops it, `/mapexposer pingto` lists them). Trusting someone
+alone lets you see their pings without sending them yours.
+
+To ping, right-click the world map and choose **Ping here**, press the ping key (unbound until you
+pick one in Controls) to ping the block you are looking at, or use `/mapexposer ping <x> <z>`.
+
+A beam flashes five times from the spot up into the sky and goes: on your screen, however far away it is, on the
+world map and on the minimap, with the sender's head. An Overworld ping shows at the matching spot
+when you are in the Nether, and the other way round. Chat keeps a line with an **[Add waypoint]**
+button. The **Pings** setting turns them off. On servers where the game cannot check who sent a
+private message (see [Privacy](#privacy)), a ping's chat line is marked "(unverified)" and it plays
+no sound.
+
+Pings are plain private messages. A trusted player without the mod reads one as a line of
+coordinates, and server staff who can read private messages can read them too. With a lot of trusted
+players online the last gets it a few seconds after the first, to stay under the spam limit.
 
 ## Seasons and clearing your map
 
@@ -367,11 +400,51 @@ the map can be switched between dimensions, so coordinates without it can mean t
 
 Everything stays on your computer. The mod only downloads from the BlueMap address you enter, and
 sends nothing to the Minecraft server or anywhere else. The one exception is sharing: when you
-share waypoints with a player, they go to that player as private messages through the
-server. Waypoints shared with you are only taken from a private message sent by the player they
+share waypoints with a player or ping a spot, it goes to that player as private messages through
+the server. Waypoints shared with you are only taken from a private message sent by the player they
 name; on servers whose chat plugin delivers `/msg` as a server message, the game cannot check who
 sent it, so the share is marked "(unverified)". Its data is kept in `skysmapexposer/` in
 your game folder, and its settings in `config/skysmapexposer.json`.
+
+## With JourneyMap
+
+Without Xaero's World Map, the mod works with JourneyMap instead, through JourneyMap's own plugin
+API. It behaves as it does on Xaero's map wherever JourneyMap allows:
+
+- **Terrain:** BlueMap's terrain fills the full-screen map and the minimap wherever JourneyMap has
+  nothing or your map is old, by the same rules as on Xaero's map, on the day map and, where
+  BlueMap has it, the cave map.
+- **The bar** ([as on Xaero's map](#the-bar-on-the-world-map)) sits on JourneyMap's full-screen
+  map, with the same switches, Refresh, settings and biome finder.
+- **Markers, players and pings** on the full-screen map and the minimap, with the same right-click
+  menus (lock on, trust, save as waypoint, temporary waypoint, copy).
+- **Right-click on the map:** Copy coordinates, Ping here, Share waypoints…, a temporary waypoint
+  in the other dimension, Players… and Download BlueMap…. The other dimension's coordinates of the
+  block under the mouse show at the top, and a dimension button sits at the end of the top row; its
+  picture is the dimension shown (a grass block, a nether portal, an eye of ender).
+- **Picking an area** as on Xaero's map: drag with the right mouse button held. The chunks it covers
+  are outlined, and the menu that opens when you let go saves or downloads just those; a plain
+  right-click picks nothing, and the menu works on the whole map.
+- **Waypoints** saved, shared and received go into JourneyMap's waypoints, in a "Map Exposer" group.
+- **Downloading** writes BlueMap into JourneyMap's own map files, region by region, backing each
+  one up first: Download BlueMap… on the right-click menu (the picked area, or the region clicked),
+  `/mapexposer download unexplored|all|region <x> <z>|area <x1> <z1> <x2> <z2>` (add `all` to the
+  last two to go over your own map too), and `/mapexposer undo` puts
+  them back. Regions JourneyMap has open wait until it lets go of them.
+- **Seasons and clearing:** `/mapexposer clear oldseason` and `/mapexposer clear border`, with the
+  same backups and undo.
+- **Biome highlight:** pick biomes in the bar, right-click the map to highlight the biome under the
+  click, or `/mapexposer biome <name>` / `/mapexposer biome clear`; on the full-screen map and, by
+  the bar's Minimap switch, the minimap. Biomes are read from JourneyMap's own chunk cache, so they
+  show where JourneyMap has mapped, in whichever dimension the map shows.
+- **Shared terrain files:** drop a `.smemap` file onto the game and it goes into JourneyMap's day
+  map, coloured with JourneyMap's own block colours and shading so it looks like the rest of your
+  map, with the same backups and undo. Save one from JourneyMap with "Save terrain file" on
+  the right-click menu (the picked area, or the whole map), `/mapexposer terrain save <x1> <z1> <x2>
+  <z2>` or `/mapexposer terrain save all`,
+  asking first and checking for room as on Xaero's: it is read from
+  JourneyMap's chunk cache, so it holds the chunks JourneyMap has cached, and either map can add it.
+  A file of a cave layer only goes into Xaero's.
 
 ## Limits
 
@@ -414,6 +487,10 @@ Written from scratch; no code was copied from any other project.
 - Bobby (LGPL-3.0), Voxy (all rights reserved) and Distant Horizons (LGPL-3.0) are compiled against and called only
   when installed, never bundled; Map Exposer hands them chunks through their own storage, ingest
   and API. None of their code was copied.
+- JourneyMap (under its own licence) is compiled against, never bundled. Map Exposer uses its plugin
+  API, and reads its map folders, region cache and chunk cache through JourneyMap's own classes;
+  two mixins keep its full-screen map on a picked dimension and draw BlueMap's terrain into its
+  minimap. None of its code was copied.
 - Xaero's World Map and Minimap are closed source. They are compiled against, never bundled.
   Their class, method and field names, and the layout of their map files, were read to place the
   mixins, use their element and waypoint systems, and write downloads through Xaero's own map code.

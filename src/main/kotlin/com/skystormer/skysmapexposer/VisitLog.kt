@@ -1,16 +1,8 @@
 package com.skystormer.skysmapexposer
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.util.concurrent.Executor
-import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPOutputStream
 
 /**
  * When you last had each chunk loaded, per dimension, for one server.
@@ -29,12 +21,12 @@ class VisitLog(private val folder: Path, private val io: Executor) {
 
     fun record(dimension: String, chunkX: Int, chunkZ: Int, minute: Int) {
         val visits = visitsIn(dimension)
-        if (visits.put(key(chunkX, chunkZ), minute) != minute) changed.add(dimension)
+        if (visits.put(chunkKey(chunkX, chunkZ), minute) != minute) changed.add(dimension)
     }
 
     /** The minute the chunk was last loaded, or 0 if this mod has never seen it. */
     fun lastSeen(dimension: String, chunkX: Int, chunkZ: Int): Int =
-        visitsIn(dimension).get(key(chunkX, chunkZ))
+        visitsIn(dimension).get(chunkKey(chunkX, chunkZ))
 
     fun count(dimension: String): Int = visitsIn(dimension).size
 
@@ -48,50 +40,25 @@ class VisitLog(private val folder: Path, private val io: Executor) {
         changed.clear()
     }
 
-    private fun key(chunkX: Int, chunkZ: Int): Long =
-        (chunkX.toLong() and 0xFFFFFFFFL) or (chunkZ.toLong() shl 32)
-
     private fun visitsIn(dimension: String): Long2IntOpenHashMap =
         byDimension.getOrPut(dimension) { read(fileFor(dimension)) }
 
-    private fun fileFor(dimension: String): Path =
-        folder.resolve("visits-" + dimension.replace(Regex("[^a-zA-Z0-9._-]"), "_") + ".bin")
+    private fun fileFor(dimension: String): Path = SafeFiles.recordFile(folder, "visits", dimension)
 
     private fun read(path: Path): Long2IntOpenHashMap {
         val visits = Long2IntOpenHashMap()
         visits.defaultReturnValue(0)
-        if (Files.notExists(path)) return visits
-        try {
-            DataInputStream(BufferedInputStream(GZIPInputStream(Files.newInputStream(path)))).use { input ->
-                check(input.readInt() == MAGIC) { "not a visit file" }
-                input.readInt() // format version, 1 so far
-                repeat(input.readInt()) { visits.put(input.readLong(), input.readInt()) }
-            }
-        } catch (e: Exception) {
-            Log.error("Could not read $path; starting that dimension's visit record afresh", e)
-        }
+        SafeFiles.readRecord(path, MAGIC, "visit") { input -> repeat(input.readInt()) { visits.put(input.readLong(), input.readInt()) } }
         return visits
     }
 
-    private fun write(path: Path, visits: Long2IntOpenHashMap) {
-        try {
-            Files.createDirectories(path.parent)
-            val temporary = path.resolveSibling(path.fileName.toString() + ".tmp")
-            DataOutputStream(BufferedOutputStream(GZIPOutputStream(Files.newOutputStream(temporary)))).use { output ->
-                output.writeInt(MAGIC)
-                output.writeInt(1)
-                output.writeInt(visits.size)
-                val entries = visits.long2IntEntrySet().fastIterator()
-                while (entries.hasNext()) {
-                    val entry = entries.next()
-                    output.writeLong(entry.longKey)
-                    output.writeInt(entry.intValue)
-                }
-            }
-            // Written aside and moved into place so a crash mid-write cannot lose the old record.
-            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        } catch (e: Exception) {
-            Log.error("Could not save $path", e)
+    private fun write(path: Path, visits: Long2IntOpenHashMap) = SafeFiles.writeRecord(path, MAGIC) { output ->
+        output.writeInt(visits.size)
+        val entries = visits.long2IntEntrySet().fastIterator()
+        while (entries.hasNext()) {
+            val entry = entries.next()
+            output.writeLong(entry.longKey)
+            output.writeInt(entry.intValue)
         }
     }
 

@@ -2,15 +2,13 @@ package com.skystormer.skysmapexposer.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
-import com.skystormer.skysmapexposer.BiomeHighlight;
-import com.skystormer.skysmapexposer.GuiMapFields;
+import com.skystormer.skysmapexposer.xaero.BiomeHighlight;
 import com.skystormer.skysmapexposer.HookErrors;
-import com.skystormer.skysmapexposer.XaeroField;
 import com.skystormer.skysmapexposer.MapCamera;
-import com.skystormer.skysmapexposer.MapMenus;
-import com.skystormer.skysmapexposer.MapView;
+import com.skystormer.skysmapexposer.xaero.MapMenus;
+import com.skystormer.skysmapexposer.xaero.MapView;
 import com.skystormer.skysmapexposer.OtherDimensionCoords;
-import com.skystormer.skysmapexposer.Overlay;
+import com.skystormer.skysmapexposer.xaero.Overlay;
 import com.skystormer.skysmapexposer.gui.MapBar;
 import com.skystormer.skysmapexposer.gui.PanelClicks;
 import net.minecraft.client.Minecraft;
@@ -21,6 +19,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -28,7 +27,9 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import com.skystormer.skysmapexposer.xaero.XaeroMenus;
 import xaero.map.MapProcessor;
+import xaero.map.animation.SlowingAnimation;
 import xaero.map.graphics.MapRenderHelper;
 import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider;
 import xaero.map.gui.IRightClickableElement;
@@ -38,7 +39,7 @@ import xaero.map.gui.dropdown.rightclick.RightClickOption;
 import java.util.ArrayList;
 
 /**
- * Six things on Xaero's world map screen.
+ * What this mod adds to Xaero's world map screen.
  *
  * <p>Drawing: the backfill goes into Xaero's map framebuffer straight after Xaero has drawn its own
  * terrain and before anything that sits on top of terrain (highlights, waypoints, the player
@@ -53,9 +54,12 @@ import java.util.ArrayList;
  * terrain, in the order things were added to it, so the tint lands under the world border (added at
  * the second flush) and under any other mod's shapes added there.
  *
- * <p>Right-click menu: "Copy coordinates", "Players…" and "Download" at the end of the menu Xaero shows when
- * you right-click the map itself. {@code rightClickDim} is Xaero's own reading of which
+ * <p>Right-click menu: this mod's lines ("Copy coordinates", "Players…", "Download" and the rest) on
+ * the menu Xaero shows when you right-click the map itself, laid out with everyone's by XaeroMenus,
+ * which also needs to know where a menu opens. {@code rightClickDim} is Xaero's own reading of which
  * dimension that click landed in, so the copied coordinates can say where they are.
+ *
+ * <p>Player arrow: left off while the map shows a dimension you are not in ({@link MapView}).
  *
  * <p>Other dimension: under Xaero's readout of the block under the mouse, the same block's
  * coordinates in the other dimension ({@link OtherDimensionCoords}).
@@ -72,8 +76,23 @@ import java.util.ArrayList;
 @Mixin(targets = "xaero.map.gui.GuiMap", remap = false)
 public abstract class GuiMapMixin implements MapCamera {
 
-    // Xaero's fields are looked up by name (GuiMapFields) rather than shadowed: a @Shadow field a
-    // newer Xaero has renamed stops the game starting, where a lookup only switches off its feature.
+    // Xaero's own fields. A Xaero that renames one of these stops the game starting.
+    @Shadow private double cameraX;
+    @Shadow private double cameraZ;
+    @Shadow private MapProcessor mapProcessor;
+    @Shadow private int rightClickX;
+    @Shadow private int rightClickY;
+    @Shadow private int rightClickZ;
+    @Shadow private ResourceKey<Level> rightClickDim;
+    @Shadow private MapTileSelection mapTileSelection;
+    @Shadow private int[] cameraDestination;
+    @Shadow private SlowingAnimation cameraDestinationAnimX;
+    @Shadow private SlowingAnimation cameraDestinationAnimZ;
+    @Shadow private boolean shouldResetCameraPos;
+    @Shadow private static boolean attachedCamera;
+    @Shadow private static double destScale;
+    @Shadow private int mouseBlockPosX;
+    @Shadow private int mouseBlockPosZ;
 
     /**
      * Moves the camera the way Xaero's own "hop to coordinates" does: detached from the player
@@ -83,15 +102,14 @@ public abstract class GuiMapMixin implements MapCamera {
      */
     @Override
     public void skysmapexposerCentreOn(int x, int z) {
-        if (!GuiMapFields.camera()) return;
-        GuiMapFields.attachedCamera.set(this, false);
-        if (GuiMapFields.shouldResetCameraPos.getBoolean(this)) {
-            GuiMapFields.shouldResetCameraPos.set(this, false);
-            GuiMapFields.cameraX.set(this, x + 0.5);
-            GuiMapFields.cameraZ.set(this, z + 0.5);
-            GuiMapFields.cameraDestination.set(this, null);
+        attachedCamera = false;
+        if (shouldResetCameraPos) {
+            shouldResetCameraPos = false;
+            cameraX = x + 0.5;
+            cameraZ = z + 0.5;
+            cameraDestination = null;
         } else {
-            GuiMapFields.cameraDestination.set(this, new int[]{x, z});
+            cameraDestination = new int[]{x, z};
         }
     }
 
@@ -101,14 +119,13 @@ public abstract class GuiMapMixin implements MapCamera {
      */
     @Override
     public void skysmapexposerJumpTo(int x, int z) {
-        if (!GuiMapFields.camera()) return;
-        GuiMapFields.attachedCamera.set(this, false);
-        GuiMapFields.shouldResetCameraPos.set(this, false);
-        GuiMapFields.cameraX.set(this, x + 0.5);
-        GuiMapFields.cameraZ.set(this, z + 0.5);
-        GuiMapFields.cameraDestination.set(this, null);
-        GuiMapFields.cameraDestinationAnimX.set(this, null);
-        GuiMapFields.cameraDestinationAnimZ.set(this, null);
+        attachedCamera = false;
+        shouldResetCameraPos = false;
+        cameraX = x + 0.5;
+        cameraZ = z + 0.5;
+        cameraDestination = null;
+        cameraDestinationAnimX = null;
+        cameraDestinationAnimZ = null;
     }
 
     /**
@@ -117,8 +134,12 @@ public abstract class GuiMapMixin implements MapCamera {
      */
     @Override
     public void skysmapexposerZoomIn(double scale) {
-        if (!GuiMapFields.destScale.getFound()) return;
-        if (GuiMapFields.destScale.getDouble(this) < scale) GuiMapFields.destScale.set(this, scale);
+        if (destScale < scale) destScale = scale;
+    }
+
+    @Override
+    public void skysmapexposerSetZoom(double scale) {
+        destScale = scale;
     }
 
     /**
@@ -130,17 +151,10 @@ public abstract class GuiMapMixin implements MapCamera {
      */
     @Override
     public void skysmapexposerFollowPlayer() {
-        if (!GuiMapFields.camera()) return;
-        GuiMapFields.shouldResetCameraPos.set(this, true);
-        GuiMapFields.cameraDestination.set(this, null);
-        GuiMapFields.cameraDestinationAnimX.set(this, null);
-        GuiMapFields.cameraDestinationAnimZ.set(this, null);
-    }
-
-    /** What drawing on the map needs of Xaero's screen. */
-    @Unique
-    private static boolean skysmapexposer$canDraw() {
-        return XaeroField.all(GuiMapFields.mapProcessor, GuiMapFields.cameraX, GuiMapFields.cameraZ);
+        shouldResetCameraPos = true;
+        cameraDestination = null;
+        cameraDestinationAnimX = null;
+        cameraDestinationAnimZ = null;
     }
 
     @Inject(
@@ -160,9 +174,8 @@ public abstract class GuiMapMixin implements MapCamera {
             @Local(name = "flooredCameraZ") int flooredCameraZ,
             @Local(name = "rendererProvider") MultiTextureRenderTypeRendererProvider rendererProvider
     ) {
-        if (!skysmapexposer$canDraw()) return;
-        Overlay.draw((MapProcessor) GuiMapFields.mapProcessor.get(this), matrix, flooredCameraX, flooredCameraZ,
-                GuiMapFields.cameraX.getDouble(this), GuiMapFields.cameraZ.getDouble(this), rendererProvider);
+        Overlay.draw(mapProcessor, matrix, flooredCameraX, flooredCameraZ,
+                cameraX, cameraZ, rendererProvider);
     }
 
     @Inject(
@@ -181,9 +194,8 @@ public abstract class GuiMapMixin implements MapCamera {
             @Local(name = "flooredCameraX") int flooredCameraX,
             @Local(name = "flooredCameraZ") int flooredCameraZ
     ) {
-        if (!skysmapexposer$canDraw()) return;
-        BiomeHighlight.draw((MapProcessor) GuiMapFields.mapProcessor.get(this), matrix, flooredCameraX, flooredCameraZ,
-                GuiMapFields.cameraX.getDouble(this), GuiMapFields.cameraZ.getDouble(this));
+        BiomeHighlight.draw(mapProcessor, matrix, flooredCameraX, flooredCameraZ,
+                cameraX, cameraZ);
     }
 
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true, require = 0)
@@ -273,11 +285,10 @@ public abstract class GuiMapMixin implements MapCamera {
     @Inject(method = "extractRenderState", at = @At("TAIL"), require = 0)
     private void skysmapexposer$otherDimensionLine(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         if (skysmapexposer$topLineY < 0 || HookErrors.isOff(HookErrors.OTHER_DIMENSION)) return;
-        if (!XaeroField.all(GuiMapFields.mouseBlockPosX, GuiMapFields.mouseBlockPosZ)) return;
         try {
             Screen screen = (Screen) (Object) this;
             int y = skysmapexposer$topLineY + 10;
-            String line = OtherDimensionCoords.forWorldMap(GuiMapFields.mouseBlockPosX.getInt(this), GuiMapFields.mouseBlockPosZ.getInt(this));
+            String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
             if (line != null) {
                 MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
                         screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
@@ -287,13 +298,15 @@ public abstract class GuiMapMixin implements MapCamera {
         }
     }
 
+    /** Where a right-click menu opens, so a group of it can open in its place (XaeroMenus). */
+    @Inject(method = "handleRightClick", at = @At("HEAD"), require = 0)
+    private void skysmapexposer$menuOpened(IRightClickableElement element, int x, int y, CallbackInfo ci) {
+        XaeroMenus.opened(element, x, y);
+    }
+
     @Inject(method = "getRightClickOptions", at = @At("RETURN"), require = 0)
     private void skysmapexposer$addMenuOptions(CallbackInfoReturnable<ArrayList<RightClickOption>> cir) {
-        if (!XaeroField.all(GuiMapFields.rightClickX, GuiMapFields.rightClickZ, GuiMapFields.rightClickDim, GuiMapFields.mapTileSelection)) return;
-        @SuppressWarnings("unchecked")
-        ResourceKey<Level> dimension = (ResourceKey<Level>) GuiMapFields.rightClickDim.get(this);
         MapMenus.addMapOptions(cir.getReturnValue(), (IRightClickableElement) this,
-                GuiMapFields.rightClickX.getInt(this), GuiMapFields.rightClickZ.getInt(this), dimension,
-                (MapTileSelection) GuiMapFields.mapTileSelection.get(this));
+                rightClickX, rightClickZ, rightClickY, rightClickDim, mapTileSelection);
     }
 }

@@ -23,12 +23,12 @@ object TilePixels {
      * each pixel is lit the way Xaero lights its own map ([xaeroLight]), so BlueMap's part of the
      * map has the same relief and brightness as the part you explored.
      */
-    fun decode(bytes: ByteArray, tileSize: Int, blocksPerPixel: Int): IntArray {
-        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
-        val width = image.width
-        val half = image.height / 2
-        require(width == half && width == tileSize + 1) { "unexpected tile shape ${width}x${image.height}" }
-        val source = image.getRGB(0, 0, width, image.height, null, 0, width)
+    fun decode(bytes: ByteArray, tileSize: Int, blocksPerPixel: Int): IntArray = decode(read(bytes, tileSize), tileSize, blocksPerPixel)
+
+    /** [decode] from a tile already [read]. */
+    fun decode(source: IntArray, tileSize: Int, blocksPerPixel: Int): IntArray {
+        val width = tileSize + 1
+        val half = width
 
         fun height(x: Int, z: Int): Int = source[(half + z) * width + x].toShort().toInt()
 
@@ -89,13 +89,22 @@ object TilePixels {
     private const val MAX_DIRECT = 0.6666667f
     private val SQRT2 = kotlin.math.sqrt(2f)
 
+    /**
+     * A lowres tile's pixels as BlueMap writes them, `tileSize + 1` wide, the colour half over the
+     * height half; the picture decoded once, for [decode] and `BlueMapPicture.decode` to share.
+     */
+    fun read(bytes: ByteArray, tileSize: Int): IntArray {
+        val image = BlueMap.readTile(bytes, tileSize)
+        val width = image.width
+        require(width == image.height / 2 && width == tileSize + 1) { "unexpected tile shape ${width}x${image.height}" }
+        return image.getRGB(0, 0, width, image.height, null, 0, width)
+    }
+
     /** The height of the ground at each pixel BlueMap has anything at, from the height half. */
     fun heights(bytes: ByteArray, tileSize: Int): IntArray {
-        val image = BlueMap.readImage(bytes, BlueMap.MAX_TILE_IMAGE)
-        val width = image.width
-        val half = image.height / 2
-        require(width == half && width == tileSize + 1) { "unexpected tile shape ${width}x${image.height}" }
-        val source = image.getRGB(0, 0, width, image.height, null, 0, width)
+        val source = read(bytes, tileSize)
+        val width = tileSize + 1
+        val half = width
         val heights = IntArray(width * half)
         var count = 0
         for (i in 0 until width * half) {

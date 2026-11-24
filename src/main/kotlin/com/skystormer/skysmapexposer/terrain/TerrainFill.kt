@@ -1,15 +1,20 @@
 package com.skystormer.skysmapexposer.terrain
 
+import com.skystormer.skysmapexposer.background
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.CoarseScan
 import com.skystormer.skysmapexposer.Log
-import com.skystormer.skysmapexposer.MapMenus
 import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.SharedTerrain
 import net.minecraft.client.Minecraft
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.chunk.PalettedContainerFactory
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -73,7 +78,7 @@ object TerrainFill {
         @Volatile var message = "Starting…"
         // Every target listed from the start, so one getting nothing shows as 0.
         val sent = LinkedHashMap<String, Int>().also { map -> targets.forEach { map[it.name] = 0 } }
-        val progress = FillProgress(targets, MapMenus.dimensionName(dimension) ?: dimension)
+        val progress = FillProgress(targets, Ui.dimensionName(dimension) ?: dimension)
         var endedAt = 0L
     }
 
@@ -146,21 +151,21 @@ object TerrainFill {
         val z = player.blockZ
         val blocks = radius
         val known = checkedHere(session)
-        Thread({
+        background("SkysMapExposer terrain check") {
             val answer = known[map] ?: findTiles(session, map, x, z)
             val estimate = if (answer.problem != null) null else estimate(session, map, x, z, blocks, answer.averageBytes, chosen)
             minecraft.execute {
                 if (checkedFor === session) known[map] = answer
                 done(answer.problem, estimate)
             }
-        }, "SkysMapExposer terrain check").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        }
     }
 
     /** Whether [map] has its 3D layout and a 3D tile near block ([x], [z]): the player's tile, then a little wider. */
     private fun findTiles(session: Session, map: String, x: Int, z: Int): Checked {
         val noTerrain = Checked(
             "BlueMap map '$map' has no 3D terrain here, so it can't fill Bobby, Voxy or Distant Horizons. " +
-                "It can still be shown on and downloaded into Xaero's map.", 0,
+                "It can still be shown on your map.", 0,
         )
         return try {
             val layout = session.blueMap.hiresLayout(map)
@@ -169,8 +174,7 @@ object TerrainFill {
             val cz = layout.tileOf(z, layout.offsetZ)
             val sizes = ArrayList<Int>()
             for (ring in 0..CHECK_RINGS) {
-                for (dx in -ring..ring) for (dz in -ring..ring) {
-                    if (maxOf(abs(dx), abs(dz)) != ring) continue
+                for ((dx, dz) in CoarseScan.ring(ring)) {
                     cached(cache, cx + dx, cz + dz) { session.blueMap.hiresTile(map, cx + dx, cz + dz) }?.let { sizes.add(it.size) }
                 }
                 if (sizes.isNotEmpty() && ring >= 1) break
@@ -200,7 +204,7 @@ object TerrainFill {
         }
         val size = missing * averageBytes
         val download = if (missing == 0) "BlueMap's 3D tiles there are already downloaded"
-        else "about %,d BlueMap 3D tiles, roughly %s".format(missing, if (size >= 1L shl 30) "%.1f GB".format(size / 1073741824.0) else "${maxOf(1, size / 1048576)} MB")
+        else "about %,d BlueMap 3D tiles, roughly %s".format(missing, SharedTerrain.size(size))
         return Estimate("Fill $blocks blocks around you: $download.\n\n$warning")
     }
 
@@ -229,7 +233,7 @@ object TerrainFill {
             { minY, height -> ChunkRebuilder(blocks, biomes, factory, minY, height) },
             level.minY, level.height, targets)
         job = started
-        Thread({ work(started) }, "SkysMapExposer terrain fill").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        background("SkysMapExposer terrain fill") { work(started) }
         val names = targets.joinToString(", ") { it.name }
         return "Filling $names from BlueMap, $radius blocks around you" + if (notes.isEmpty()) "" else " (skipped ${notes.joinToString("; ")})"
     }
@@ -247,7 +251,7 @@ object TerrainFill {
             val progress = job.progress
             // The fill keeps to the dimension it started in, wherever you go; the mods that can no
             // longer take its chunks drop out ([FillProgress.use]).
-            fun nowIn(): String? = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()?.let(MapMenus::dimensionName)
+            fun nowIn(): String? = Minecraft.getInstance().level?.dimension()?.identifier()?.toString()?.let(Ui::dimensionName)
 
             // Small square pieces, nearest first.
             val c = job.centre
@@ -298,7 +302,7 @@ object TerrainFill {
                         fetch.get(2, TimeUnit.MINUTES)
                     } catch (e: Exception) {
                         fetch.cancel(true)
-                        val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+                        val cause = (e as? ExecutionException)?.cause ?: e
                         failed.add(cause.toString())
                         if (progress.unreadable + failed.size <= LOGGED_FAILURES) Log.warn("Terrain fill: skipped a BlueMap 3D tile: {}", cause.toString())
                         null
@@ -309,7 +313,7 @@ object TerrainFill {
                 found += tiles.size
                 progress.batch(fetches.size, failed)
                 if (progress.hopeless) {
-                    throw java.io.IOException("every BlueMap 3D tile so far failed to download or read (${progress.firstReasons().firstOrNull()})")
+                    throw IOException("every BlueMap 3D tile so far failed to download or read (${progress.firstReasons().firstOrNull()})")
                 }
 
                 val done = rebuilder.build(chunks, tiles, textures)
@@ -328,7 +332,7 @@ object TerrainFill {
             } else if (!job.cancelled && asked > 0 && found == 0 && progress.unreadable == 0) {
                 // Without 3D tiles there is nothing to build from: say so, rather than a quiet 0.
                 "Nothing to build: BlueMap map '${job.map}' has no 3D tiles here. This server draws it as a flat map only " +
-                    "(as many do for the Nether), so it can be shown on Xaero's map but not filled into ${job.targets.joinToString(", ") { it.name }}."
+                    "(as many do for the Nether), so it can be shown on your map but not filled into ${job.targets.joinToString(", ") { it.name }}."
             } else {
                 (if (job.cancelled) "Stopped. " else "Done. ") + summary(job) +
                     (if (empty > 0) " ($empty chunks BlueMap never drew)" else "") + progress.afterword()
@@ -366,24 +370,20 @@ object TerrainFill {
     }
 
     /** Whether tile ([tx], [tz]) is on disk, or known to be missing, recently enough not to be asked for again. */
-    private fun fresh(folder: Path, tx: Int, tz: Int, now: Long): Boolean {
-        val file = folder.resolve("${tx}_$tz.prbm")
-        val empty = folder.resolve("${tx}_$tz.none")
-        return (Files.exists(file) && now - Files.getLastModifiedTime(file).toMillis() < KEEP_TILES_MS) ||
-            (Files.exists(empty) && now - Files.getLastModifiedTime(empty).toMillis() < KEEP_MISSING_MS)
-    }
+    private fun fresh(folder: Path, tx: Int, tz: Int, now: Long): Boolean =
+        recent(folder.resolve("${tx}_$tz.prbm"), KEEP_TILES_MS, now) || recent(folder.resolve("${tx}_$tz.none"), KEEP_MISSING_MS, now)
+
+    /** Whether [file] is there and was written less than [keep] before [now]. */
+    private fun recent(file: Path, keep: Long, now: Long): Boolean =
+        Files.exists(file) && now - Files.getLastModifiedTime(file).toMillis() < keep
 
     /** A tile from the disk cache if it is under a week old (a missing one, a day), else from BlueMap (and kept). Null: BlueMap has none. */
     private fun cached(folder: Path, tx: Int, tz: Int, fetch: () -> ByteArray?): ByteArray? {
         val file = folder.resolve("${tx}_$tz.prbm")
         val empty = folder.resolve("${tx}_$tz.none")
         val now = System.currentTimeMillis()
-        for (known in listOf(file, empty)) {
-            val keep = if (known == file) KEEP_TILES_MS else KEEP_MISSING_MS
-            if (Files.exists(known) && now - Files.getLastModifiedTime(known).toMillis() < keep) {
-                return if (known == file) Files.readAllBytes(file) else null
-            }
-        }
+        if (recent(file, KEEP_TILES_MS, now)) return Files.readAllBytes(file)
+        if (recent(empty, KEEP_MISSING_MS, now)) return null
         val bytes = fetch()
         Files.createDirectories(folder)
         if (bytes == null) SafeFiles.write(empty, ByteArray(0)) else SafeFiles.write(file, bytes)

@@ -1,0 +1,60 @@
+# Rule 5 memory check (JourneyMap plan) for JourneyMap: join and leave a world five times, opening the
+# full-screen map (J) each visit. The heap after each leave should level off, not keep climbing.
+# Run with SME_AUTOTEST set to this file's full path.
+heap
+join MemoryCheck
+waitworld
+wait 15
+key key.keyboard.j
+wait 8
+close
+wait 3
+leave
+waittitle
+wait 5
+heap
+join MemoryCheck
+waitworld
+wait 15
+key key.keyboard.j
+wait 8
+close
+wait 3
+leave
+waittitle
+wait 5
+heap
+join MemoryCheck
+waitworld
+wait 15
+key key.keyboard.j
+wait 8
+close
+wait 3
+leave
+waittitle
+wait 5
+heap
+join MemoryCheck
+waitworld
+wait 15
+key key.keyboard.j
+wait 8
+close
+wait 3
+leave
+waittitle
+wait 5
+heap
+join MemoryCheck
+waitworld
+wait 15
+key key.keyboard.j
+wait 8
+close
+wait 3
+leave
+waittitle
+wait 5
+heap
+quit

@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.terrain.FloorColumns
 import com.skystormer.skysmapexposer.terrain.HiresTile
+import net.minecraft.client.Minecraft
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -9,6 +10,8 @@ import java.nio.file.attribute.FileTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Experimental, "Sea floor: high res": the bed under the water, from BlueMap's 3D tiles, where the
@@ -76,11 +79,11 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     @Volatile private var closed = false
     @Volatile private var centreX = 0.0
     @Volatile private var centreZ = 0.0
-    private val failures = java.util.concurrent.atomic.AtomicInteger()
+    private val failures = AtomicInteger()
 
     /** Downloaded since joining, for the status line: 3D tiles and bytes. */
-    val downloaded = java.util.concurrent.atomic.AtomicInteger()
-    val downloadedBytes = java.util.concurrent.atomic.AtomicLong()
+    val downloaded = AtomicInteger()
+    val downloadedBytes = AtomicLong()
 
     /** BlueMap tiles whose picture changed under a build: started again when next drawn. */
     private val restart: MutableSet<TileStore.Key> = ConcurrentHashMap.newKeySet()
@@ -205,7 +208,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
                 if (lit == 0) continue
                 fun channel(shift: Int) = (((lit shr shift) and 0xFF) / FLAT_WATER_LIGHT).toInt().coerceIn(0, 255)
                 val lab = BlockPalette.toLab((channel(16) shl 16) or (channel(8) shl 8) or channel(0))
-                if (XaeroPalette.isWater(lab.l, lab.a, lab.b, SEA_LEVEL, true)) return true
+                if (BlockPalette.isWater(lab.l, lab.a, lab.b, SEA_LEVEL, true)) return true
             }
         }
         return false
@@ -367,7 +370,7 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     private fun changedUnder(key: TileStore.Key, size: Int, before: IntArray, after: IntArray) {
         try {
             // Nothing kept for this map yet (the setting never on here): nothing to follow, nor to ask BlueMap about.
-            if (sources[key.map] == null && !Files.isDirectory(folder.resolve(if (BlueMap.isMapId(key.map)) key.map else "_"))) return
+            if (sources[key.map] == null && !Files.isDirectory(folder.resolve(BlueMap.folderName(key.map)))) return
             val layout = (sources[key.map] ?: source(key.map))?.layout ?: return
             val changed = changedHires(layout, key.x * size, key.z * size, size, before, after)
             for ((hx, hz) in changed) {
@@ -382,9 +385,8 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
         }
     }
 
-    // The map id came from the server and becomes a folder name, so only ever a safe one.
     private fun fileOf(hires: Hires, suffix: String): Path =
-        folder.resolve(if (BlueMap.isMapId(hires.map)) hires.map else "_").resolve("${hires.x}_${hires.z}$suffix")
+        folder.resolve(BlueMap.folderName(hires.map)).resolve("${hires.x}_${hires.z}$suffix")
 
     private fun source(map: String): Source? {
         sources[map]?.let { return it }
@@ -461,6 +463,13 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
     }
 
     companion object {
+        /** Whether [dimensionId] has a roof over it: the game's word for the dimension you are in, else the Nether's. */
+        fun hasCeiling(dimensionId: String): Boolean {
+            val level = Minecraft.getInstance().level
+            if (level != null && level.dimension().identifier().toString() == dimensionId) return level.dimensionType().hasCeiling()
+            return dimensionId == Config.NETHER
+        }
+
         /** Blocks a texture pixel, at most, for the sea floor to be drawn: the world map at a block a pixel or closer. Further out it is only downloaded ahead. */
         const val CLOSE_UP = 1
 
@@ -488,11 +497,8 @@ class SeaFloor(private val blueMap: BlueMap, private val folder: Path, private v
          * [Config.fullDownloadHours], each tile up to half as long again later by its [spread], and
          * never when that is off.
          */
-        fun due(ageMs: Long, askable: Boolean, spread: Double): Boolean {
-            if (askable) return ageMs >= Config.tileCheckMinutes * 60_000L
-            val hours = Config.fullDownloadHours
-            return hours > 0 && ageMs >= (hours * 3_600_000L * (1 + TileStore.Schedule.SPREAD * spread)).toLong()
-        }
+        fun due(ageMs: Long, askable: Boolean, spread: Double): Boolean =
+            if (askable) TileStore.Schedule.checkDue(ageMs) else TileStore.Schedule.downloadDue(ageMs, spread)
 
         /**
          * The 3D tiles of [layout] under the pixels that differ between [before] and [after], two

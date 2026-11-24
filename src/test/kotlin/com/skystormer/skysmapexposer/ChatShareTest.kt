@@ -20,6 +20,7 @@ class ChatShareTest {
         val commands = ArrayList<String>()
         val received = ArrayList<ShareInbox.Received>()
         val failures = ArrayList<Throwable>()
+        val pings = ArrayList<ShareInbox.ReceivedPing>()
         val players = online.toList()
         val inbox = ShareInbox(
             me = { name },
@@ -30,7 +31,44 @@ class ChatShareTest {
             decode = Executor { it.run() },
             onClient = Executor { it.run() },
             clock = { now },
+            pinged = { pings.add(it) },
         )
+    }
+
+    @Test
+    fun `a ping in a private message is taken in and hidden`() {
+        val client = Client("Me", "Friend")
+        assertTrue(client.inbox.chat(Kind.PRIVATE, "Friend", ShareInbox.pingBody(-120, 64, 7, "minecraft:the_nether")))
+        val ping = client.pings.single()
+        assertEquals("Friend", ping.from)
+        assertTrue(ping.verified)
+        assertEquals(listOf(-120, 64, 7), listOf(ping.x, ping.y, ping.z))
+        assertEquals("minecraft:the_nether", ping.dimensionId)
+    }
+
+    @Test
+    fun `a ping in public chat is ignored and stays in chat`() {
+        val client = Client("Me", "Friend")
+        assertFalse(client.inbox.chat(Kind.OTHER, "Friend", ShareInbox.pingBody(1, 2, 3, "minecraft:overworld")))
+        assertTrue(client.pings.isEmpty())
+    }
+
+    @Test
+    fun `a ping read from a chat plugin's whisper line is unverified`() {
+        val client = Client("Me", "Friend")
+        assertTrue(client.inbox.system("[Friend -> me] " + ShareInbox.pingBody(1, 2, 3, "minecraft:overworld")))
+        assertFalse(client.pings.single().verified)
+    }
+
+    @Test
+    fun `a malformed or far out ping stays in chat`() {
+        val client = Client("Me", "Friend")
+        for (body in listOf(
+            "$MARKER* ping at 1 2 in minecraft:overworld",
+            "$MARKER* ping at 1 2 3 in Not A Dimension",
+            "$MARKER* ping at 99999999 2 3 in minecraft:overworld",
+        )) assertFalse(client.inbox.chat(Kind.PRIVATE, "Friend", body), body)
+        assertTrue(client.pings.isEmpty())
     }
 
     private fun ask(from: String) = "$MARKER?$from: would like to share map waypoints with you using the mod Sky's Map Exposer."
@@ -121,6 +159,16 @@ class ChatShareTest {
         // The first two were dropped; the last three are kept and can be finished.
         for (id in 5 downTo 1) bob.inbox.chat(Kind.PRIVATE, "Alice", ShareInbox.messages("Bob", big, id).last())
         assertEquals(3, bob.failures.size) // the three kept ones complete (and are not waypoints)
+    }
+
+    @Test
+    fun `a terrain file's region of a wide save opens, while chat still turns a wide area away`() {
+        // A region of a whole-map save carries the whole save's area, far over chat's limit.
+        val header = ShareFormat.Header("Alice", "minecraft:overworld", 1, 0, 1024, ShareFormat.Area(-512, -512, 511, 511))
+        val batch = ShareFormat.pack(ShareFormat.TERRAIN, header, 1) { out -> out.writeInt(0) }
+        assertEquals(1024, ShareFormat.open(batch, Int.MAX_VALUE, 3_750_000) { it.header.area.width })
+        val e = assertThrows(Exception::class.java) { ShareFormat.open(batch) { } }
+        assertTrue("bad area" in e.message.orEmpty(), e.message)
     }
 
     @Test

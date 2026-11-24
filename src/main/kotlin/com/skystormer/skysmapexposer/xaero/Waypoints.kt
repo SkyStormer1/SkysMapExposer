@@ -1,0 +1,123 @@
+package com.skystormer.skysmapexposer.xaero
+
+import com.skystormer.skysmapexposer.WaypointRules
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.MapMods
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.Ui
+import net.minecraft.client.Minecraft
+import net.minecraft.resources.ResourceKey
+import net.minecraft.world.level.Level
+import xaero.common.minimap.waypoints.Waypoint
+import xaero.hud.minimap.BuiltInHudModules
+import xaero.hud.minimap.waypoint.WaypointColor
+import xaero.hud.minimap.world.MinimapWorld
+import xaero.map.mods.SupportMods
+import kotlin.math.floor
+
+/**
+ * Turns a BlueMap marker into an ordinary, permanent Xaero waypoint — the same as one made by
+ * hand, in the waypoint set currently selected — and saves it; or puts a temporary waypoint on it,
+ * the same as Xaero's own "Set Temporary Waypoint".
+ *
+ * The answer is shown on the action bar, which is local to this client: nothing is ever sent to
+ * the server.
+ */
+object Waypoints {
+
+    fun available(): Boolean = MapMods.xaeroMinimap
+
+    fun save(pin: Markers.Pin) = say("Could not save ${pin.label} as a waypoint", "save") { add(pin) }
+
+    /** A temporary waypoint on [pin], made by Xaero exactly as its own menu makes one: gone when you leave. */
+    fun setTemporary(pin: Markers.Pin) = say("Could not set a temporary waypoint on ${pin.label}", "set") { temporary(pin) }
+
+    /** Says what [action] answers on the action bar; if it fails, logs [failed] and says it could not [verb] the waypoint. */
+    private inline fun say(failed: String, verb: String, action: () -> String) {
+        Ui.say(
+            try {
+                action()
+            } catch (e: Throwable) {
+                Log.error(failed, e)
+                "Could not $verb the waypoint: ${e.message ?: e.javaClass.simpleName}"
+            }
+        )
+    }
+
+    private fun temporary(pin: Markers.Pin): String {
+        if (!available()) return "Temporary waypoints need Xaero's Minimap"
+        wrongDimension()?.let { return it }
+        val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
+        val world = session.worldManager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
+        session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt())
+        return "Temporary waypoint set on ${pin.label}"
+    }
+
+    /**
+     * A temporary waypoint at the other dimension's counterpart of block ([x], [z]) of [dimension]:
+     * an eighth as far out in the Nether, eight times in the Overworld. It goes in that dimension's
+     * own waypoints, so it is there when you arrive, wherever you are when you set it.
+     *
+     * In the Nether it is put at Y [WaypointRules.NETHER_Y], on top of the bedrock roof, where Nether highways
+     * usually run. The Overworld has no such height, so there Y is left out and Xaero shows it as
+     * unknown.
+     */
+    fun setCounterpart(x: Int, z: Int, dimension: String) =
+        say("Could not set a temporary waypoint in the other dimension", "set") { counterpart(x, z, dimension) }
+
+    private fun counterpart(x: Int, z: Int, dimension: String): String {
+        if (!available()) return "Temporary waypoints need Xaero's Minimap"
+        val toNether = dimension == Config.OVERWORLD
+        val target = if (toNether) Level.NETHER else Level.OVERWORLD
+        val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
+        session.worldManager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
+        val world = worldFor(target) ?: return "Xaero's Minimap has no waypoints for the ${WaypointRules.counterpartName(dimension)} yet"
+        // Xaero converts from the scale it is given to the world's own, so the coordinates go in as
+        // they are in the dimension clicked, with that dimension's scale.
+        val scale = if (toNether) 1.0 else Config.NETHER_SCALE.toDouble()
+        val y = if (toNether) WaypointRules.NETHER_Y else 0
+        session.waypointSession.temporaryHandler.createTemporaryWaypoint(world, x, y, z, toNether, scale)
+        SupportMods.xaeroMinimap?.requestWaypointsRefresh()
+        return "Temporary waypoint set in the ${WaypointRules.counterpartName(dimension)} at ${WaypointRules.counterpartCoordinates(x, z, dimension)}"
+    }
+
+    /**
+     * Where Xaero's Minimap keeps [target]'s waypoints on this server: the world you are in if it
+     * is of [target], else the one found the way its world map finds it — the dimension's folder
+     * under the same root as the world you are in. Null if there is none yet.
+     */
+    fun worldFor(target: ResourceKey<Level>): MinimapWorld? {
+        val session = BuiltInHudModules.MINIMAP.currentSession ?: return null
+        val manager = session.worldManager
+        val current = manager.currentWorld ?: return null
+        if (current.dimId == target) return current
+        val path = current.container.root.path.resolve(session.dimensionHelper.getDimensionDirectoryName(target))
+        val container = manager.getWorldContainerNullable(path)
+        return container?.getFirstWorldConnectedTo(current) ?: container?.firstWorld ?: manager.getWorld(path.resolve("waypoints"))
+    }
+
+    /** Why a waypoint cannot go on a pin of the map's dimension from here, or null when it can. */
+    private fun wrongDimension(): String? {
+        val mapDimension = xaero.map.WorldMapSession.getCurrentSession()?.mapProcessor?.mapWorld?.currentDimension?.dimId
+        if (mapDimension != null && Minecraft.getInstance().level?.dimension() != mapDimension) {
+            return "Go to ${mapDimension.identifier().path} first: waypoints are saved to the dimension you are in"
+        }
+        return null
+    }
+
+    private fun add(pin: Markers.Pin): String {
+        if (!available()) return "Saving waypoints needs Xaero's Minimap"
+        wrongDimension()?.let { return it }
+        val session = BuiltInHudModules.MINIMAP.currentSession ?: return "Xaero's Minimap is not running"
+        val world = session.worldManager.currentWorld ?: return "Xaero's Minimap has no waypoint world open"
+        val set = world.currentWaypointSet ?: return "Xaero's Minimap has no waypoint set selected"
+        val x = floor(pin.x).toInt()
+        val y = floor(pin.y).toInt()
+        val z = floor(pin.z).toInt()
+        if (set.waypoints.any { it.x == x && it.z == z && it.name == pin.label }) return "${pin.label} is already a waypoint"
+        set.add(Waypoint(x, y, z, pin.label, WaypointRules.initials(pin.label), WaypointColor.values()[WaypointRules.colourFor(pin)]))
+        session.worldManagerIO.saveWorld(world)
+        return "Saved ${pin.label} as a waypoint"
+    }
+}

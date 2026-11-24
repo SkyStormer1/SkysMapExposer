@@ -1,0 +1,22 @@
+# Biome highlight on JourneyMap's full-screen map: picks a few common biomes, opens the map and
+# takes a screenshot, then shows /mapexposer's status (it says how many regions are tinted).
+# Run with SME_AUTOTEST set to this file's full path, JourneyMap only (-PmapMod=journeymap).
+join MemoryCheck
+waitworld
+wait 12
+cmd mapexposer biome plains
+cmd mapexposer biome forest
+cmd mapexposer biome river
+cmd mapexposer biome ocean
+key key.keyboard.j
+wait 10
+screenshot
+cmd mapexposer
+wait 1
+close
+wait 1
+cmd mapexposer biome
+wait 2
+leave
+waittitle
+quit

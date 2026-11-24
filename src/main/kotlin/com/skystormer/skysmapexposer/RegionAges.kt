@@ -78,8 +78,7 @@ class RegionAges(private val io: Executor) {
         return minutes
     }
 
-    private fun key(regionX: Int, regionZ: Int): Long =
-        (regionX.toLong() and 0xFFFFFFFFL) or (regionZ.toLong() shl 32)
+    private fun key(regionX: Int, regionZ: Int): Long = packXZ(regionX, regionZ)
 
     private companion object {
         val REGION_NAME = Regex("(-?\\d+)_(-?\\d+)\\.zip")

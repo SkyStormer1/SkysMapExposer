@@ -8,6 +8,7 @@ import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadFactory
 
 /**
@@ -31,6 +32,15 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     val locks = Locks(folder.resolve("locks.json"), io)
 
     val gaps = GapStore(folder, io)
+
+    /** Runs [task] on this session's workers; dropped once the session has ended. */
+    fun work(task: () -> Unit) {
+        try {
+            workers.execute(task)
+        } catch (e: RejectedExecutionException) {
+            // The session ended while this was being asked for: nothing left to do it for.
+        }
+    }
 
     init {
         io.execute {
@@ -64,7 +74,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
                 if (current === this) {
                     tiles.clear()
                     seaFloor.clear()
-                    if (Config.prepareMap) MapPrep.start(this, MarkerElements.worldMapDimension())
+                    if (Config.prepareMap) MapPrep.start(this, MapMods.adapter?.shownDimension())
                 }
                 done(said)
             }
@@ -80,7 +90,6 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
      */
     fun xaeroGapsIn(dimension: String): LongOpenHashSet = gaps.gapsIn(dimension)
 
-
     private val layouts = ConcurrentHashMap<String, BlueMap.MapLayout>()
     private val layoutAskedAt = HashMap<String, Long>()
 
@@ -91,7 +100,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
         val asked = layoutAskedAt[map]
         if (asked == null || now - asked > 60_000L) {
             layoutAskedAt[map] = now
-            workers.execute {
+            work {
                 try {
                     layouts[map] = blueMap.layout(map)
                 } catch (e: Exception) {
@@ -132,7 +141,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
         val known = views[map]
         if (asked == null || (known == null && now - asked > 60_000L)) {
             viewAskedAt[map] = now
-            workers.execute { askView(map, known) }
+            work { askView(map, known) }
         }
         return known
     }
@@ -145,8 +154,7 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
             val centreX = Math.floorDiv(x, tileBlocks)
             val centreZ = Math.floorDiv(z, tileBlocks)
             for (ring in 0..VIEW_RINGS) {
-                for (dx in -ring..ring) for (dz in -ring..ring) {
-                    if (maxOf(Math.abs(dx), Math.abs(dz)) != ring) continue
+                for ((dx, dz) in CoarseScan.ring(ring)) {
                     val bytes = blueMap.tile(map, 1, centreX + dx, centreZ + dz) ?: continue
                     val view = MapLayers.viewOf(TilePixels.heights(bytes, layout.tileSize)) ?: continue
                     views[map] = view
@@ -165,9 +173,8 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
 
     private fun saveViews() {
         try {
-            val text = Properties().apply { views.forEach { (map, view) -> setProperty(map, view.name) } }
-            val out = java.io.StringWriter().also { text.store(it, "What each BlueMap map of the Nether shows: ROOF or INSIDE") }
-            SafeFiles.write(viewsFile, out.toString().toByteArray())
+            val saved = Properties().apply { views.forEach { (map, view) -> setProperty(map, view.name) } }
+            SafeFiles.writeProperties(viewsFile, saved, "What each BlueMap map of the Nether shows: ROOF or INSIDE")
         } catch (e: Exception) {
             Log.warn("Could not save {}: {}", viewsFile, e.toString())
         }
@@ -189,8 +196,6 @@ class Session private constructor(val server: Config.Server, val folder: Path) {
     companion object {
         /** Rings of lowres tiles around where a map opens looked at for [view]. */
         private const val VIEW_RINGS = 2
-
-        fun chunkKey(chunkX: Int, chunkZ: Int): Long = (chunkX.toLong() and 0xFFFFFFFFL) or (chunkZ.toLong() shl 32)
 
         var current: Session? = null
             private set

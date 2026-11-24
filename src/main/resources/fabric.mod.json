@@ -3,7 +3,7 @@
   "id": "skysmapexposer",
   "version": "${version}",
   "name": "Sky's Map Exposer",
-  "description": "Brings the server's BlueMap into Xaero's World Map and Minimap: terrain where yours is missing or out of date, markers you can save as waypoints, players, and the world border.",
+  "description": "Brings the server's BlueMap into Xaero's World Map and Minimap or JourneyMap: terrain where yours is missing or out of date, markers you can save as waypoints, players, and the world border.",
   "authors": [
     "SkyStormer1"
   ],
@@ -27,26 +27,35 @@
         "value": "com.skystormer.skysmapexposer.gui.ModMenuIntegration",
         "adapter": "kotlin"
       }
+    ],
+    "journeymap": [
+      "com.skystormer.skysmapexposer.journeymap.MapExposerPlugin"
     ]
   },
   "mixins": [
     "skysmapexposer.mixins.json",
     "skysmapexposer.minimap.mixins.json",
     "skysmapexposer.menu.mixins.json",
-    "skysmapexposer.tooltip.mixins.json"
+    "skysmapexposer.tooltip.mixins.json",
+    "skysmapexposer.journeymap.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
     "fabric-language-kotlin": ">=${fabric_kotlin_version}",
-    "xaeroworldmap": ">=1.47.0",
     "minecraft": "${minecraft_version}",
     "java": ">=${java_version}"
   },
   "suggests": {
+    "xaeroworldmap": ">=${xaero_worldmap_min}",
     "modmenu": "*",
     "xaerominimap": "*",
+    "xaerominimapfair": "*",
+    "journeymap": "*",
     "skysmapshapes": "*",
     "skysstructuremap": "*"
+  },
+  "breaks": {
+    "xaeroworldmap": "<${xaero_worldmap_min}"
   }
 }

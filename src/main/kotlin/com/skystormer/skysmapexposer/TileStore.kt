@@ -1,16 +1,22 @@
 package com.skystormer.skysmapexposer
 
 import com.mojang.blaze3d.platform.NativeImage
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView
+*///?}
 import net.minecraft.client.renderer.texture.DynamicTexture
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.BitSet
+import java.util.HexFormat
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * BlueMap tiles: fetched on demand, kept on disk, decoded off the client thread, and turned into
@@ -104,10 +110,10 @@ class TileStore(
         var failedAt: Long = 0
 
         /** The drawing plan for this tile; rebuilt by [Backfill] from time to time. */
-        var mask: Backfill.Mask? = null
+        var mask: Mask? = null
 
         /** While this tile is on its way: where a coarser tile stands in for it, and which level that is. */
-        var standIn: Backfill.Mask? = null
+        var standIn: Mask? = null
         var standInLod: Int = 0
 
         /**
@@ -133,7 +139,7 @@ class TileStore(
     private val inMemory: MutableSet<Key> = ConcurrentHashMap.newKeySet()
 
     /** Loads and checks under way for the maps, which background preparation waits for. */
-    val busy = java.util.concurrent.atomic.AtomicInteger()
+    val busy = AtomicInteger()
 
     /**
      * Anything downloaded before this is downloaded again as it is drawn, whatever its age. Set by
@@ -210,9 +216,7 @@ class TileStore(
         if (tile.state != State.READY || !tile.requested.add(factor)) return
         workers.execute {
             try {
-                val floor = tile.floor
-                tile.pending[factor] = (if (floor == null) TileFile.pixels(tileFile(tile.key), factor) else withFloor(tile, floor, factor))
-                    ?: throw IOException("the tile file has no 1:$factor picture")
+                tile.pending[factor] = drawnPicture(tile, factor) ?: throw IOException("the tile file has no 1:$factor picture")
             } catch (e: Exception) {
                 warnOnce(tile.key, "Could not read BlueMap tile back from disk; loading it again in a minute", e)
                 tile.requested.remove(factor)
@@ -253,7 +257,16 @@ class TileStore(
     }
 
     /** [tile]'s picture at a block a pixel, `tileSize` square, as it is drawn; null if it has none. Blocking. */
-    fun picture(tile: Tile): IntArray? = TileFile.pixels(tileFile(tile.key), 1)
+    fun picture(tile: Tile): IntArray? = picture(tile, 1)
+
+    /** [tile]'s picture at [factor], `tileSize / factor` square, from its file; null if it has no such size. Blocking. */
+    fun picture(tile: Tile, factor: Int): IntArray? = TileFile.pixels(tileFile(tile.key), factor)
+
+    /** [tile]'s picture at [factor] as it is drawn: with its sea floor in, once it has one. Blocking. */
+    fun drawnPicture(tile: Tile, factor: Int): IntArray? {
+        val floor = tile.floor
+        return if (floor == null) picture(tile, factor) else withFloor(tile, floor, factor)
+    }
 
     /** The picture at [factor] with the sea floor [floor] in, where the picture has anything. */
     private fun withFloor(tile: Tile, floor: IntArray, factor: Int): IntArray? {
@@ -308,8 +321,7 @@ class TileStore(
         heldBytes += bytes
     }
 
-    // The map id came from the server and becomes a folder name, so only ever a safe one.
-    private fun base(key: Key): Path = folder.resolve("${if (BlueMap.isMapId(key.map)) key.map else "_"}/${key.lod}")
+    private fun base(key: Key): Path = folder.resolve(BlueMap.folderName(key.map)).resolve(key.lod.toString())
 
     private fun tileFile(key: Key): Path = base(key).resolve("${key.x}_${key.z}.smet")
 
@@ -575,13 +587,10 @@ class TileStore(
         return meta
     }
 
-    private fun writeMeta(file: Path, meta: Properties) {
-        val text = java.io.StringWriter().also { meta.store(it, null) }.toString()
-        SafeFiles.writeString(file, text)
-    }
+    private fun writeMeta(file: Path, meta: Properties) = SafeFiles.writeProperties(file, meta)
 
     private fun sha1(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes))
 
     /** When a tile is next asked about, and whether that is a whole download. */
     object Schedule {
@@ -595,13 +604,24 @@ class TileStore(
          * so tiles downloaded together come due over a stretch of time instead of all at once.
          */
         fun due(checkedAt: Long, hardAt: Long, refetchBefore: Long, now: Long, spread: Double = 0.0): Due {
-            val hours = Config.fullDownloadHours
             return when {
-                hardAt < refetchBefore || hours > 0 && now - hardAt >= (hours * 3_600_000L * (1 + SPREAD * spread)).toLong() -> Due.DOWNLOAD
-                now - checkedAt >= Config.tileCheckMinutes * 60_000L -> Due.CHECK
+                hardAt < refetchBefore || downloadDue(now - hardAt, spread) -> Due.DOWNLOAD
+                checkDue(now - checkedAt) -> Due.CHECK
                 else -> Due.NO
             }
         }
+
+        /**
+         * Whether a whole download is due [ageMs] after the last one: [Config.fullDownloadHours], and
+         * up to [SPREAD] of it again by [spread]. Never with whole downloads off. Sea floor tiles too.
+         */
+        fun downloadDue(ageMs: Long, spread: Double): Boolean {
+            val hours = Config.fullDownloadHours
+            return hours > 0 && ageMs >= (hours * 3_600_000L * (1 + SPREAD * spread)).toLong()
+        }
+
+        /** Whether asking "has it changed?" is due [ageMs] after the last time: [Config.tileCheckMinutes]. */
+        fun checkDue(ageMs: Long): Boolean = ageMs >= Config.tileCheckMinutes * 60_000L
 
         /** 0 to 1, the same for [key] every time and scattered between neighbours. */
         fun spread(key: Key): Double {
@@ -622,4 +642,10 @@ class TileStore(
         /** Video memory of a [side]-pixel square texture. */
         fun textureBytes(side: Int): Long = side.toLong() * side * 4
     }
+
+    /**
+     * Rectangles to draw for one tile, as `minX, minZ, maxX, maxZ` in block coordinates, four
+     * floats per rectangle.
+     */
+    class Mask(val builtAt: Long, val contentMinute: Int, val rectangles: FloatArray, val count: Int, val xaeroGaps: Int)
 }

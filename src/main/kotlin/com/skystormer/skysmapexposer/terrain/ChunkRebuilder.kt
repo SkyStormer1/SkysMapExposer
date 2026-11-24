@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.state.properties.SlabType
 import net.minecraft.world.level.chunk.DataLayer
 import net.minecraft.world.level.chunk.LevelChunkSection
 import net.minecraft.world.level.chunk.PalettedContainerFactory
+import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -105,7 +106,7 @@ class ChunkRebuilder(
             val key = pack(bx, by, bz)
             val voxel = voxels.get(key) ?: Voxel().also {
                 // A real piece has tens of thousands; this many means tiles built to use up memory.
-                if (voxels.size >= MAX_VOXELS) throw java.io.IOException("BlueMap's 3D tiles here have far more blocks than any real map")
+                if (voxels.size >= MAX_VOXELS) throw IOException("BlueMap's 3D tiles here have far more blocks than any real map")
                 voxels.put(key, it)
             }
             voxel.textures += texture
@@ -116,7 +117,8 @@ class ChunkRebuilder(
             }
             // Faces square to an axis and lying on the block's edge tell what touches the block.
             var lightKey = key
-            val axis = (0..2).maxBy { abs(n[it]) }
+            // The axis the face is most square to; written out, as this runs for every face of every tile.
+            val axis = if (abs(n[0]) >= abs(n[1]) && abs(n[0]) >= abs(n[2])) 0 else if (abs(n[1]) >= abs(n[2])) 1 else 2
             if (abs(n[axis]) > 0.99f) {
                 val origin = when (axis) { 0 -> bx; 1 -> by; else -> bz }
                 val along = centre[axis] - origin

@@ -1,10 +1,14 @@
 package com.skystormer.skysmapexposer.mixin.minimap;
 
 import com.llamalad7.mixinextras.sugar.Local;
+//? if >=26.3 {
 import com.mojang.renderpearl.api.textures.GpuTextureView;
+//?} else {
+/*import com.mojang.blaze3d.textures.GpuTextureView;
+*///?}
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.skystormer.skysmapexposer.MinimapOverlay;
+import com.skystormer.skysmapexposer.xaero.MinimapOverlay;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

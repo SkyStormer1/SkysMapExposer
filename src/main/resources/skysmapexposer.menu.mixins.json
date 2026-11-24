@@ -1,11 +1,16 @@
 {
   "required": false,
+  "plugin": "com.skystormer.skysmapexposer.plugin.MapMixinPlugin",
   "package": "com.skystormer.skysmapexposer.mixin.menu",
   "compatibilityLevel": "JAVA_${java_version}",
   "client": [
     "DropDownWidgetAccess",
     "DropDownWidgetMixin",
-    "RightClickMenuAccess"
+    "GuiMapMenuAccess",
+    "GuiRightClickMenuMixin",
+    "RightClickMenuAccess",
+    "RightClickOptionAccess",
+    "WaypointMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 0

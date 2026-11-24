@@ -16,6 +16,7 @@ pluginManagement {
 }
 
 plugins {
+    id("dev.kikugie.stonecutter") version "0.9.6"
     id("dev.kikugie.loom-back-compat") version "0.3"
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
@@ -27,6 +28,15 @@ extra["loomx.loom_unobf_plugin"] = "net.fabricmc.fabric-loom"
 loomx {
     // Minecraft 26.x ships unobfuscated, and this mod targets nothing older.
     unobfuscated { true }
+}
+
+// One source tree, a jar for each Minecraft version. The source as committed is for 26.3; the lines
+// that differ for another version are marked with //? comments.
+stonecutter {
+    create(rootProject) {
+        versions("26.2", "26.3")
+        vcsVersion = "26.3"
+    }
 }
 
 rootProject.name = "SkysMapExposer"

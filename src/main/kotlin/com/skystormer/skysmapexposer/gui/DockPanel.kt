@@ -270,6 +270,9 @@ abstract class DockPanel(protected val screen: Screen, private val id: String, t
         if (changed) save()
     }
 
+    /** True when this panel belongs to [other]. */
+    fun isOn(other: Any): Boolean = screen === other
+
     /** True when another panel is in front of this one at that point. */
     fun covered(mouseX: Double, mouseY: Double): Boolean {
         val seq = record.int("seq")

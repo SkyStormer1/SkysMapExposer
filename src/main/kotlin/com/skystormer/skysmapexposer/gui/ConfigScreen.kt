@@ -1,14 +1,17 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.background
+import com.skystormer.skysmapexposer.MapMods
+import com.skystormer.skysmapexposer.MenuLayout
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
-import com.skystormer.skysmapexposer.BlueMapDownload
+import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.Seasons
 import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.TileCache
-import com.skystormer.skysmapexposer.MapMenus
-import com.skystormer.skysmapexposer.MarkerElements
-import com.skystormer.skysmapexposer.Overlay
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.SettingsCheck
 import com.skystormer.skysmapexposer.terrain.FillTarget
@@ -24,10 +27,6 @@ import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /**
@@ -85,12 +84,14 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private var minimapMarkerScale = Config.minimapMarkerScale
     private var otherDimensionCoords = Config.otherDimensionCoords
     private var minimapBiomes = Config.minimapBiomes
+    private var pings = Config.pings
     private var matchWaypoints = Config.matchWaypointsToDimension
     private var guessBiomes = Config.guessBiomes
     private var prepareMap = Config.prepareMap
     private var fullDownloadHours = Config.fullDownloadHours
     private var seaFloorHires = Config.seaFloorHires
-    private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + Overlay.lastSummary)
+    private var pingSound = Config.pingSound
+    private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + (MapMods.adapter?.summary() ?: ""))
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
     /** Everything as it was on opening, to tell whether Cancel throws anything away. */
@@ -103,7 +104,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private val serverBefore = connectedAddress?.let(Config::serverFor)?.let(::describeServer)
 
     /** What Done or Escape found wrong, shown until fixed: where it is, and which box. */
-    private class Problem(val page: Page, val server: Int, val field: String)
+    private class Problem(val page: Page, val server: Int, val field: SettingsCheck.Field)
 
     private var problem: Problem? = null
     private var problemText: String? = null
@@ -154,6 +155,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         minimapMarkerScale = 1f
         otherDimensionCoords = true
         minimapBiomes = true
+        pings = true
         matchWaypoints = true
         guessBiomes = true
         staleDays = formatDays(7.0)
@@ -192,18 +194,17 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         // The box with the problem stands out, with the cursor in it.
         problem?.takeIf { it.page == page && (it.page != Page.SERVER || it.server == selected) }?.let { p ->
             val box = when (p.field) {
-                "stale" -> staleBox
-                "address" -> addressBox
-                "url" -> urlBox
-                "cover" -> coverBox
-                else -> null
+                SettingsCheck.Field.STALE -> staleBox
+                SettingsCheck.Field.ADDRESS -> addressBox
+                SettingsCheck.Field.URL -> urlBox
+                SettingsCheck.Field.COVER -> coverBox
             } ?: return@let
             box.setTextColor(PROBLEM_COLOUR)
             focused = box
         }
     }
 
-    /** Settings that may get you in trouble on some servers; all off as the mod comes. */
+    /** Settings that may get you in trouble on some servers, off as the mod comes, and the ping sound. */
     private fun experimentalPage(left: Int, top: Int) {
         var y = top
         addRenderableWidget(MultiLineTextWidget(left, y, Component.literal(
@@ -221,6 +222,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 "nearest the middle first, so zooming in later finds it ready; the first time, a stretch of sea takes a " +
                 "minute or so. Needs Terrain on."))
         addRenderableWidget(floor)
+        y += ROW + GAP
+        addRenderableWidget(toggle(left, y, WIDTH, "Ping sound", pingSound,
+            "Play a bell when a ping from someone you trust arrives. Off, the beam still flashes and chat still says so.") { pingSound = it })
         y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
@@ -309,7 +313,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 { start ->
                     if (start) {
                         fillStatus = TerrainFill.start()
-                        com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
+                        Log.info("Terrain fill: {}", fillStatus)
                     } else {
                         fillStatus = "Not started; nothing was downloaded."
                     }
@@ -371,7 +375,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             Button.builder(Component.literal("Stop preparing")) { MapPrep.cancel(); prepareSaid = "Stopped; what is done stays."; rebuildWidgets() }
         } else {
             Button.builder(Component.literal("Prepare now")) {
-                prepareSaid = session?.let { MapPrep.start(it, MarkerElements.worldMapDimension()) } ?: ""
+                prepareSaid = session?.let { MapPrep.start(it, MapMods.adapter?.shownDimension()) } ?: ""
                 rebuildWidgets()
             }.tooltip(SafeTooltip.of("Go over the whole map now: tiles already on disk and up to date are skipped."))
         }
@@ -425,7 +429,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun countCache() {
         val session = Session.current
         val root = minecraft.gameDirectory.toPath().resolve("skysmapexposer")
-        Thread({
+        background("SkysMapExposer cache size") {
             val line = try {
                 val all = TileCache.measureAll(root)
                 if (session == null) "Tile cache, all servers: $all"
@@ -434,7 +438,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 "Tile cache: could not count it (${e.message ?: e.javaClass.simpleName})"
             }
             minecraft.execute { cacheLine = line }
-        }, "SkysMapExposer cache size").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        }
     }
 
     /** What is shown on the maps, how big, and the players. */
@@ -452,8 +456,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(toggle(left, y, half, "Other dimension XZ", otherDimensionCoords,
             "On the world map, under the coordinates of the block under the mouse: the same block in the other dimension. " +
                 "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth).") { otherDimensionCoords = it })
-        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP, "Biomes on minimap", minimapBiomes,
+        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP * 2 - PINGS_WIDTH, "Minimap tint", minimapBiomes,
             "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map.") { minimapBiomes = it })
+        addRenderableWidget(toggle(left + WIDTH - PINGS_WIDTH, y, PINGS_WIDTH, "Pings", pings,
+            "Show the spots players you trust ping, as a flashing beam. Trust someone in the player list.") { pings = it })
         y += ROW + GAP
 
         addRenderableWidget(toggle(left, y, half, "Waypoints follow map", matchWaypoints,
@@ -502,12 +508,20 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "Size of other players' heads on the minimap.") { minimapHeadScale = it })
         y += ROW + GAP * 3
 
+        val buttonHalf = (WIDTH - GAP) / 2
         addRenderableWidget(
             Button.builder(Component.literal("Players…")) { minecraft.gui.setScreen(PlayerListScreen(this)) }
-                .bounds(left, y, WIDTH, ROW)
+                .bounds(left, y, buttonHalf, ROW)
                 .tooltip(SafeTooltip.of("Everyone BlueMap can see: jump the map to them, lock on, or copy their coordinates."))
                 .build()
         )
+        val menuMap = if (MapMods.xaeroWorldMap) MenuLayout.XAERO else MenuLayout.JOURNEYMAP
+        addRenderableWidget(
+            Button.builder(Component.literal("Edit right-click menu…")) { minecraft.gui.setScreen(MenuEditScreen(this, menuMap)) }
+                .bounds(left + buttonHalf + GAP, y, WIDTH - buttonHalf - GAP, ROW)
+                .tooltip(SafeTooltip.of("The world map's right-click menu your way: order, groups, and what is hidden under More. Also at the bottom of the menu itself."))
+                .build()
+        ).active = MapMods.any
     }
 
     /** Where this server's BlueMap is, which of its maps to use, and downloading from it. */
@@ -538,7 +552,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         label(left, y, labelWidth, "BlueMap address")
         urlBox = field(fieldLeft, y, fieldWidth, draft.url, "https://map.example.com/").also {
             it.setTooltip(SafeTooltip.of(
-                "The web address of the server's BlueMap: the page you open in a browser to see the map."
+                "The web address of the server's BlueMap: the page you open in a browser to see the map. " +
+                    "Just its port (like 8100) is enough when it runs on the server's own address."
             ))
         }
         y += ROW + GAP
@@ -584,7 +599,12 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(Button.builder(Component.literal("Find maps")) { findMaps() }.bounds(left, y, third, ROW).build())
         addRenderableWidget(Button.builder(Component.literal("Remove server")) { removeSelected() }.bounds(left + third + GAP, y, third, ROW).build())
         addRenderableWidget(downloadButton(left + (third + GAP) * 2, y, WIDTH - (third + GAP) * 2))
+        // With an address and no maps picked yet, they are looked up at once, once per server shown.
+        if (draft.url.isNotBlank() && DIMENSIONS.all { draft.maps[it.first].isNullOrBlank() } && autoFound.add(draft)) findMaps()
     }
+
+    /** The servers whose maps were looked up on their own already, so it happens once each. */
+    private val autoFound = HashSet<Any>()
 
     private fun switchPage(to: Page) {
         keepEdits()
@@ -593,31 +613,33 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     }
 
     private fun downloadButton(x: Int, y: Int, width: Int): Button {
-        if (BlueMapDownload.running) {
+        val downloading = MapMods.adapter?.downloadStatus()
+        if (downloading != null) {
             return Button.builder(Component.literal("Stop download")) {
-                BlueMapDownload.cancel()
+                MapMods.adapter?.cancelDownload()
                 message = Component.literal("Stopping the download after the region it is on.")
                 rebuildWidgets()
             }
                 .bounds(x, y, width, ROW)
-                .tooltip(SafeTooltip.of(BlueMapDownload.status() ?: "A download from BlueMap is running."))
+                .tooltip(SafeTooltip.of(downloading))
                 .build()
         }
         val button = Button.builder(Component.literal("Download…")) { confirmDownload() }
             .bounds(x, y, width, ROW)
             .tooltip(SafeTooltip.of(
-                "Download from BlueMap into your own Xaero map, for the dimension the world map is showing: " +
+                "Download from BlueMap into your own map, for the dimension its full-screen map is showing: " +
                     "only the chunks you have never explored, or everything. Each region of your map is backed up " +
                     "just before it is changed."
             ))
             .build()
-        button.active = Session.current != null
+        // Downloads write into the map's own files: Xaero's World Map or JourneyMap.
+        button.active = Session.current != null && MapMods.adapter?.canDownload == true
         return button
     }
 
     private fun confirmDownload() {
         keepEdits()
-        val dimension = MarkerElements.worldMapDimension()?.let(MapMenus::dimensionName) ?: "current"
+        val dimension = MapMods.adapter?.shownDimension()?.let(Ui::dimensionName) ?: "current"
         minecraft.gui.setScreen(DownloadScreen(dimension) { said ->
             if (said != null) message = Component.literal(said)
             minecraft.gui.setScreen(this)
@@ -700,7 +722,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         staleBox?.let { staleDays = it.value }
         val draft = drafts[selected]
         addressBox?.let { draft.addresses = it.value }
-        urlBox?.let { draft.url = it.value }
+        urlBox?.let { box ->
+            draft.url = withPort(box.value, draft.addresses)
+            if (box.value != draft.url) box.value = draft.url
+        }
         for ((dimension, box) in mapBoxes) {
             if (box.value.isBlank()) draft.maps.remove(dimension) else draft.maps[dimension] = box.value.trim()
         }
@@ -729,25 +754,44 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     /** Asks the BlueMap at the typed address which maps it has, and fills in the overworld if blank. */
     private fun findMaps() {
-        val url = urlBox?.value?.trim() ?: return
+        val box = urlBox ?: return
+        val url = withPort(box.value, addressBox?.value ?: drafts[selected].addresses).trim()
+        if (url != box.value.trim()) box.value = url
         if (url.isEmpty()) {
             show("Type the BlueMap address first: the page you open in a browser.")
             return
         }
         show("Asking $url…")
-        Thread({
+        background("SkysMapExposer find maps", Thread.NORM_PRIORITY) {
             val result = runCatching { BlueMap(url).use { it.maps() } }
             minecraft.execute {
                 result.onSuccess { maps ->
-                    val overworld = mapBoxes[Config.OVERWORLD]
-                    if (overworld != null && overworld.value.isBlank()) {
-                        (maps.firstOrNull { it.first == "world" } ?: maps.firstOrNull())?.let { overworld.value = it.first }
+                    // Each dimension's box, if empty, gets the map whose id or name says it is that dimension's.
+                    for ((dimension, _) in DIMENSIONS) {
+                        val box = mapBoxes[dimension] ?: continue
+                        if (box.value.isBlank()) guessMap(dimension, maps)?.let { box.value = it }
                     }
                     show("Maps here: " + maps.joinToString(", ") { (id, name) -> "$id ($name)" })
                 }
                 result.onFailure { show("Could not reach BlueMap at $url: ${it.message ?: it.javaClass.simpleName}") }
             }
-        }, "SkysMapExposer find maps").apply { isDaemon = true }.start()
+        }
+    }
+
+    /**
+     * The map of [maps] (id, name) for [dimension]: one named for the Nether or the End, and for the
+     * Overworld "world" or "overworld", else the first that is neither of the others.
+     */
+    private fun guessMap(dimension: String, maps: List<Pair<String, String>>): String? {
+        fun words(map: Pair<String, String>) = (map.first + " " + map.second).lowercase().replace('_', ' ').replace('-', ' ')
+        fun nether(map: Pair<String, String>) = "nether" in words(map)
+        fun end(map: Pair<String, String>) = Regex("""\bend\b""").containsMatchIn(words(map))
+        return when (dimension) {
+            Config.NETHER -> maps.firstOrNull(::nether)?.first
+            Config.END -> maps.firstOrNull { end(it) && !nether(it) }?.first
+            else -> (maps.firstOrNull { it.first.lowercase() in setOf("world", "overworld") }
+                ?: maps.firstOrNull { !nether(it) && !end(it) })?.first
+        }
     }
 
     private fun show(text: String) {
@@ -761,8 +805,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
      */
     private fun state(): String = listOf(
         enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
-        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, matchWaypoints, guessBiomes,
-        prepareMap, fullDownloadHours, seaFloorHires, Config.fillOff.sorted(),
+        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, pings, matchWaypoints, guessBiomes,
+        prepareMap, fullDownloadHours, seaFloorHires, pingSound, Config.fillOff.sorted(),
         drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
             listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
         },
@@ -794,12 +838,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun check(): Pair<String, Problem>? {
         val entries = drafts.map { SettingsCheck.Entry(splitAddresses(it.addresses), it.url, it.coverOverworld) }
         val found = SettingsCheck.check(staleDays, entries, ::parseTime) ?: return null
-        val where = when (found.field) {
-            SettingsCheck.Field.STALE -> Problem(Page.MAP, selected, "stale")
-            SettingsCheck.Field.ADDRESS -> Problem(Page.SERVER, found.server, "address")
-            SettingsCheck.Field.URL -> Problem(Page.SERVER, found.server, "url")
-            SettingsCheck.Field.COVER -> Problem(Page.SERVER, found.server, "cover")
-        }
+        val where = if (found.field == SettingsCheck.Field.STALE) Problem(Page.MAP, selected, found.field)
+        else Problem(Page.SERVER, found.server, found.field)
         return found.message to where
     }
 
@@ -828,12 +868,14 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         Config.minimapMarkerScale = minimapMarkerScale
         Config.otherDimensionCoords = otherDimensionCoords
         Config.minimapBiomes = minimapBiomes
+        Config.pings = pings
         Config.matchWaypointsToDimension = matchWaypoints
         Config.guessBiomes = guessBiomes
         Config.prepareMap = prepareMap
         Config.fullDownloadHours = fullDownloadHours
         if (Config.seaFloorHires && !seaFloorHires) Session.current?.seaFloor?.clear()
         Config.seaFloorHires = seaFloorHires
+        Config.pingSound = pingSound
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
@@ -851,7 +893,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         } else {
             // Switching background preparation on or off takes effect at once.
             val session = Session.current
-            if (session != null && Config.prepareMap && !prepareWasOn && !MapPrep.running) MapPrep.start(session, MarkerElements.worldMapDimension())
+            if (session != null && Config.prepareMap && !prepareWasOn && !MapPrep.running) MapPrep.start(session, MapMods.adapter?.shownDimension())
             if (!Config.prepareMap && prepareWasOn) MapPrep.cancel()
         }
         minecraft.setScreenAndShow(parent)
@@ -867,27 +909,32 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun splitAddresses(text: String): List<String> =
         text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
+    /**
+     * [typed] as a BlueMap address: just a port ("25464" or ":25464") becomes
+     * `http://<the server's first address>:<port>/`, as BlueMap usually runs on the same machine as
+     * the game; anything else is left as typed.
+     */
+    private fun withPort(typed: String, addresses: String): String {
+        val port = Regex(""":?(\d{1,5})""").matchEntire(typed.trim())?.groupValues?.get(1)?.toInt() ?: return typed
+        if (port !in 1..65535) return typed
+        val host = splitAddresses(addresses).firstOrNull()?.substringBefore(':')?.takeIf { it.isNotBlank() } ?: return typed
+        return "http://$host:$port/"
+    }
+
     private fun formatDays(days: Double): String =
         if (days == Math.floor(days)) days.toLong().toString() else days.toString()
 
-    private fun formatTime(millis: Long): String =
-        TIME.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault()))
+    private fun formatTime(millis: Long): String = Seasons.format(Clock.minutesOf(millis))
 
-    private fun parseTime(text: String): Long? = try {
-        if (text.isBlank()) null
-        else LocalDateTime.parse(text.trim(), TIME).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-    } catch (e: Exception) {
-        null
-    }
+    private fun parseTime(text: String): Long? = Seasons.parse(text)
 
     private companion object {
         const val WIDTH = 300
+        private const val PINGS_WIDTH = 60
         const val ROW = 20
         const val GAP = 2
         const val NEW = -1
         const val PROBLEM_COLOUR = 0xFFFF5555.toInt()
-        /** How tall each tab is, to centre it; both fit in 278 scaled pixels, so they show at large GUI scales. */
-        val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         val DIMENSIONS = listOf(Config.OVERWORLD to "Overworld", Config.NETHER to "Nether", Config.END to "End")
     }
 }

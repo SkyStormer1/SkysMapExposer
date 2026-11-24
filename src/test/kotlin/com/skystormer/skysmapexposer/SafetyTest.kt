@@ -84,8 +84,8 @@ class SafetyTest {
     fun `a town called Border Town is not taken for the world border`() {
         val town = square("Border Town", 200f)
         val border = square("World Border", 10_000f)
-        assertEquals("World Border", MapClear.worldBorder(listOf(town, border))?.label)
-        assertEquals("World Border", MapClear.worldBorder(listOf(border, town))?.label)
-        assertEquals(null, MapClear.worldBorder(listOf(square("Spawn", 50f))))
+        assertEquals("World Border", MapBorder.worldBorder(listOf(town, border))?.label)
+        assertEquals("World Border", MapBorder.worldBorder(listOf(border, town))?.label)
+        assertEquals(null, MapBorder.worldBorder(listOf(square("Spawn", 50f))))
     }
 }

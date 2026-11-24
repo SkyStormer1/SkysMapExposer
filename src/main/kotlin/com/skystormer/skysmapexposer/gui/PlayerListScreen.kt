@@ -1,12 +1,12 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.MapMods
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.LockedPlayers
 import com.skystormer.skysmapexposer.MapCamera
-import com.skystormer.skysmapexposer.MapMenus
-import com.skystormer.skysmapexposer.MapView
-import com.skystormer.skysmapexposer.MarkerElements
 import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
@@ -22,7 +22,7 @@ import kotlin.math.hypot
 
 /**
  * Everyone BlueMap can see on this server, like Xaero's waypoint list: search by name, your
- * dimension or all of them, jump the world map to someone, and lock on to them.
+ * dimension or all of them, jump the world map to someone, trust them for pings, and lock on to them.
  *
  * Opened from the Players button on the world map, its right-click menu, the settings screen, or
  * `/mapexposer players`. The list refreshes itself while it is open, because people move; the
@@ -33,7 +33,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     /** One player, and the dimension of the BlueMap map they were found on. */
     private class Row(val dimension: String, val player: Markers.Player)
 
-    private var page = 0
+    private val pages = Pages()
     private var query = ""
     private var allDimensions = false
 
@@ -69,7 +69,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         search.setHint(Component.literal("Search names…"))
         search.setMaxLength(64)
         search.value = query
-        search.setResponder { query = it; page = 0; refreshRows(force = true) }
+        search.setResponder { query = it; pages.page = 0; refreshRows(force = true) }
         addRenderableWidget(search)
         addRenderableWidget(
             CycleButton.builder<Boolean>({ Component.literal(if (it) "All dimensions" else "My dimension") }, allDimensions)
@@ -77,7 +77,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 .displayOnlyValue()
                 .create(left + half + GAP, y, listWidth - half - GAP, ROW, Component.literal("Dimension")) { _, all ->
                     allDimensions = all
-                    page = 0
+                    pages.page = 0
                     refreshRows(force = true)
                 }
         )
@@ -89,15 +89,15 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         y = rowsTop + rows * (ROW + GAP) + GAP
 
         val quarter = (listWidth - GAP * 3) / 4
-        previous = addRenderableWidget(Button.builder(Component.literal("<")) { page--; refreshRows(force = true) }
+        previous = addRenderableWidget(Button.builder(Component.literal("<")) { pages.page--; refreshRows(force = true) }
             .bounds(left, y, quarter, ROW).build())
         pageLabel = addRenderableWidget(StringWidget(left + quarter + GAP, y + 6, quarter, font.lineHeight, Component.empty(), font))
-        next = addRenderableWidget(Button.builder(Component.literal(">")) { page++; refreshRows(force = true) }
+        next = addRenderableWidget(Button.builder(Component.literal(">")) { pages.page++; refreshRows(force = true) }
             .bounds(left + (quarter + GAP) * 2, y, quarter, ROW).build())
         unlockAll = addRenderableWidget(
             Button.builder(Component.literal("Unlock all")) {
                 Session.current?.locks?.clear()
-                MapMenus.say("Unlocked everyone")
+                Ui.say("Unlocked everyone")
                 refreshRows(force = true)
             }.bounds(left + (quarter + GAP) * 3, y, listWidth - (quarter + GAP) * 3, ROW)
                 .tooltip(SafeTooltip.of("Stop following every player you have locked on to."))
@@ -147,21 +147,19 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
 
     private fun refreshRows(force: Boolean) {
         val players = players()
-        val pages = maxOf(1, (players.size + rows - 1) / rows)
-        page = page.coerceIn(0, pages - 1)
-        val visible = players.drop(page * rows).take(rows)
+        val visible = pages.of(players, rows)
         // Rebuilding every tick would flicker the tooltips, so it only happens on a real change.
         val signature = visible.joinToString("|") {
-            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}"
-        } + "/$pages/$page"
+            "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}${PlayerPings.isTrusted(it.player.uuid)}${PlayerPings.isPingedTo(it.player.uuid)}"
+        } + "/${pages.count}/${pages.page}"
         if (!force && signature == shown) return
         shown = signature
 
         rowWidgets.forEach(::removeWidget)
         rowWidgets.clear()
-        pageLabel.message = Component.literal("${page + 1} / $pages")
-        previous.active = page > 0
-        next.active = page < pages - 1
+        pageLabel.message = Component.literal("${pages.page + 1} / ${pages.count}")
+        previous.active = pages.hasPrevious
+        next.active = pages.hasNext
         unlockAll.active = LockedPlayers.count() > 0
 
         if (players.isEmpty()) {
@@ -177,9 +175,9 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         }
 
         // Go to moves the open world map, or opens one; either way only for the dimension it shows.
-        val mapDimension = MarkerElements.worldMapDimension() ?: myDimension()
+        val mapDimension = MapMods.adapter?.shownDimension() ?: myDimension()
         val buttonWidth = 44
-        val textWidth = listWidth - (buttonWidth + GAP) * 2
+        val textWidth = listWidth - (buttonWidth + GAP) * 4
 
         // The columns are as wide as the widest thing going in them, measured over every player the
         // list holds rather than just this page, so paging does not shuffle them sideways.
@@ -203,38 +201,68 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 columns,
             )
             text.setTooltip(SafeTooltip.of(
-                "${player.label}\n$coordinates in ${dimensionName(entry.dimension)}\n" +
+                "${player.label}\n$coordinates in ${Ui.dimensionName(entry.dimension) ?: entry.dimension}\n" +
                     if (locked) "Locked on: their head follows them in the world." else "Not locked on."
             ))
             row(text)
 
             var x = left + textWidth
-            val go = Button.builder(Component.literal("Go to")) { goTo(entry) }
-                .bounds(x, y, buttonWidth, ROW)
-                .tooltip(SafeTooltip.of(
-                    (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
-                    else "Switch the world map to the ${dimensionName(entry.dimension)} and zoom in on " +
-                        "${player.label}. It switches back when you leave the map.") +
-                        " Their head gets a rainbow outline until you leave the map."
-                ))
-                .build()
-            row(go)
+            rowButton(
+                "Go to", x, y, buttonWidth,
+                (if (entry.dimension == mapDimension) "Zoom the world map in on ${player.label}."
+                else "Switch the world map to the ${Ui.dimensionName(entry.dimension) ?: entry.dimension} and zoom in on " +
+                    "${player.label}. It switches back when you leave the map.") +
+                    " Their head gets a rainbow outline until you leave the map.",
+                refresh = false,
+            ) { goTo(entry) }
             x += buttonWidth + GAP
 
-            val lock = Button.builder(Component.literal(if (locked) "Unlock" else "Lock")) {
-                LockedPlayers.set(player, !locked)
-                refreshRows(force = true)
-            }
-                .bounds(x, y, listWidth - (x - left), ROW)
-                .tooltip(SafeTooltip.of(
-                    if (locked) "Stop following ${player.label}."
-                    else "Follow ${player.label}: their pin keeps up with them and their head shows over them in the world."
-                ))
-                .build()
-            lock.active = Session.current != null
-            row(lock)
+            val trusted = PlayerPings.isTrusted(player.uuid)
+            rowButton(
+                if (trusted) "Untrust" else "Trust", x, y, buttonWidth,
+                if (trusted) "Stop taking pings from ${player.label} and sending yours to them."
+                else "Take pings from ${player.label}. Ping picks whether yours go to them.",
+            ) { PlayerPings.setTrusted(player.uuid, !trusted) }
+            x += buttonWidth + GAP
+
+            val pinged = PlayerPings.isPingedTo(player.uuid)
+            rowButton(
+                if (pinged) "Unping" else "Ping", x, y, buttonWidth,
+                when {
+                    !trusted -> "Trust ${player.label} first to send them your pings."
+                    pinged -> "Stop sending your pings to ${player.label}."
+                    else -> "Send your pings to ${player.label}, by private message."
+                },
+                active = trusted,
+            ) { PlayerPings.setPingedTo(player.uuid, !pinged) }
+            x += buttonWidth + GAP
+
+            rowButton(
+                if (locked) "Unlock" else "Lock", x, y, listWidth - (x - left),
+                if (locked) "Stop following ${player.label}."
+                else "Follow ${player.label}: their pin keeps up with them and their head shows over them in the world.",
+                active = Session.current != null,
+            ) { LockedPlayers.set(player, !locked) }
             y += ROW + GAP
         }
+    }
+
+    /**
+     * One of a row's buttons, [width] wide at ([x], [y]); with [refresh], the rows are built again
+     * after it, as it changed something they show.
+     */
+    private fun rowButton(
+        label: String, x: Int, y: Int, width: Int, tooltip: String, active: Boolean = true, refresh: Boolean = true, onPress: () -> Unit,
+    ) {
+        val button = Button.builder(Component.literal(label)) {
+            onPress()
+            if (refresh) refreshRows(force = true)
+        }
+            .bounds(x, y, width, ROW)
+            .tooltip(SafeTooltip.of(tooltip))
+            .build()
+        button.active = active
+        row(button)
     }
 
     private fun row(widget: AbstractWidget) {
@@ -253,7 +281,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
             distanceTo(entry)?.let { append(it.toInt()).append("m away") }
             if (allDimensions) {
                 if (isNotEmpty()) append(" · ")
-                append(dimensionName(entry.dimension))
+                append(Ui.dimensionName(entry.dimension) ?: entry.dimension)
             }
         }
         return coordinates to distance
@@ -267,12 +295,12 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     private fun goTo(entry: Row) {
         val x = floor(entry.player.x).toInt()
         val z = floor(entry.player.z).toInt()
-        if (MapView.goTo(entry.dimension, x, z, parent, entry.player.uuid)) {
+        if (MapMods.adapter?.goTo(entry.dimension, x, z, parent, entry.player.uuid) == true) {
             // Only step back to a map that was already open. When it was not, MapView has just
             // opened one, and closing this list would put whatever was behind it back on top.
             if (parent is MapCamera) onClose()
         } else {
-            MapMenus.say("Could not open the world map at ${entry.player.label}")
+            Ui.say("Could not open the world map at ${entry.player.label}")
         }
     }
 
@@ -292,8 +320,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (scrollY != 0.0) {
-            page += if (scrollY < 0) 1 else -1
+        if (pages.scroll(scrollY)) {
             refreshRows(force = true)
             return true
         }
@@ -305,8 +332,6 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     }
 
     companion object {
-        fun dimensionName(dimension: String): String = MapMenus.dimensionName(dimension) ?: dimension
-
         private const val MAX_WIDTH = 420
         // ARGB: these are drawn onto the screen by PlayerRowWidget, not put in a Component.
         private const val NAME = 0xFFFFFFFF.toInt()

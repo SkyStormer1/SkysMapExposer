@@ -1,0 +1,239 @@
+package com.skystormer.skysmapexposer.xaero
+
+import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.FramePacer
+import com.skystormer.skysmapexposer.HookErrors
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.Session
+import com.mojang.blaze3d.vertex.VertexConsumer
+import net.minecraft.client.Minecraft
+import net.minecraft.network.chat.Component
+import org.joml.Matrix4f
+import xaero.lib.XaeroLib
+import xaero.map.MapProcessor
+import xaero.map.graphics.CustomRenderTypes
+import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRenderer
+import xaero.map.graphics.renderer.multitexture.MultiTextureRenderTypeRendererProvider
+import xaero.map.gui.GuiMap
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * The world map screen: BlueMap's terrain where [Backfill] says so, then BlueMap's outlines (world
+ * border, zones) on top of all terrain. Markers are drawn separately, by [MarkerElements], through
+ * Xaero's own element system so that they can be hovered and right-clicked.
+ */
+object Overlay {
+
+    /** Set by `/mapexposer debug regions`: the next frame writes what Xaero has of each region in view to the log. */
+    @Volatile
+    var debugRegions = false
+
+    private var regionsWatchedAt = 0L
+
+    /** One line on what the last frame did, for `/mapexposer` and the settings screen. */
+    var lastSummary = "The world map has not been opened yet."
+        private set
+
+    @JvmStatic
+    fun draw(
+        mapProcessor: MapProcessor,
+        matrix: Matrix4f,
+        flooredCameraX: Int,
+        flooredCameraZ: Int,
+        cameraX: Double,
+        cameraZ: Double,
+        rendererProvider: MultiTextureRenderTypeRendererProvider,
+    ) {
+        HookErrors.guard(HookErrors.WORLD_MAP) {
+            FramePacer.game.frame()
+            val view = MapViewport.of(matrix, cameraX, cameraZ)
+            val blocksPerUnit = view.blocksPerUnit
+            val minX = view.minX
+            val maxX = view.maxX
+            val minZ = view.minZ
+            val maxZ = view.maxZ
+
+            // Into Xaero's own overlay buffer, which it draws once its highlights are in.
+            Outlines.drawFor(mapProcessor, XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY),
+                matrix, flooredCameraX, flooredCameraZ, blocksPerUnit, minX, maxX, minZ, maxZ)
+
+            val target = Backfill.target(mapProcessor, ::standDown) ?: return
+            val now = System.currentTimeMillis()
+            if (debugRegions || now - regionsWatchedAt >= 1000L) {
+                regionsWatchedAt = now
+                val debug = debugRegions
+                debugRegions = false
+                // Close up, Xaero always loads the regions it shows, so one it has not is one it cannot.
+                Backfill.watchRegions(target, mapProcessor, minX, maxX, minZ, maxZ, closeUp = blocksPerUnit <= 1f, debug = debug)
+                if (debug) Minecraft.getInstance().player?.sendSystemMessage(Component.literal("§7Wrote what Xaero has of each region in view to the log"))
+            }
+            val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)
+            val plan = Backfill.plan(target, mapProcessor, cameraX, cameraZ, minX, maxX, minZ, maxZ, factor, Backfill.Budget(), seaFloor = true)
+                ?: return standDown("too-far", "Zoomed out too far to cover with BlueMap")
+
+            var renderer: MultiTextureRenderTypeRenderer? = null
+            // Handed back to Xaero even if a piece fails, so its renderer is never left half used.
+            try {
+                for (piece in plan.pieces) {
+                    val batch = renderer ?: rendererProvider.getRenderer(CustomRenderTypes.MAP).also { renderer = it }
+                    val size = piece.tileSize.toFloat()
+                    val r = piece.mask.rectangles
+                    for (i in 0 until piece.mask.count) {
+                        val rMinX = r[i * 4]
+                        val rMinZ = r[i * 4 + 1]
+                        val rMaxX = r[i * 4 + 2]
+                        val rMaxZ = r[i * 4 + 3]
+                        GuiMap.renderTexturedModalSubRectWithLighting(
+                            matrix,
+                            rMinX - flooredCameraX, rMinZ - flooredCameraZ,
+                            (rMinX - piece.originX) / size, (rMinZ - piece.originZ) / size,
+                            (rMaxX - piece.originX) / size, (rMaxZ - piece.originZ) / size,
+                            rMaxX - rMinX, rMaxZ - rMinZ,
+                            piece.texture, false, batch,
+                        )
+                    }
+                }
+            } finally {
+                renderer?.let(rendererProvider::draw)
+            }
+            if (plan.loading.isNotEmpty()) {
+                val buffer = XaeroLib.INSTANCE.client.bufferProvider.getBuffer(CustomRenderTypes.MAP_COLOR_OVERLAY)
+                Spinner.draw(buffer, matrix, plan.loading, target.layout.tileSize, flooredCameraX, flooredCameraZ, cameraX, cameraZ, blocksPerUnit)
+            }
+
+            val floor = target.session.seaFloor
+            val floorSaid = if (!Config.seaFloorHires) "" else
+                "; sea floor: ${floor.downloaded.get()} 3D tiles downloaded (${floor.downloadedBytes.get() / 1024} KB), ${floor.waiting} waiting"
+            lastSummary = plan.summary + floorSaid + " (${"%.2f".format(blocksPerUnit)} blocks per screen unit)"
+        }
+    }
+
+    private fun standDown(key: String, reason: String) {
+        lastSummary = "Not drawing: $reason."
+    }
+}
+
+/**
+ * A turning ring of dots over each BlueMap tile still on its way, in the middle of the part of it
+ * on screen: eight small squares, the brightest going round. Kept to a few screen units across, and
+ * left out where a tile is too small on screen to hold one.
+ */
+object Spinner {
+
+    private const val RADIUS = 6f
+    private const val DOTS = 8
+
+    fun draw(
+        buffer: VertexConsumer, matrix: Matrix4f, origins: IntArray, tileSize: Int,
+        originX: Int, originZ: Int, cameraX: Double, cameraZ: Double, blocksPerUnit: Float,
+    ) {
+        val window = Minecraft.getInstance().window
+        val halfWidth = window.guiScaledWidth * 0.5 * blocksPerUnit
+        val halfHeight = window.guiScaledHeight * 0.5 * blocksPerUnit
+        val tileOnScreen = tileSize / blocksPerUnit
+        val radius = minOf(RADIUS, tileOnScreen / 4f)
+        if (radius < 2.5f) return
+        val r = radius * blocksPerUnit
+        val dot = r * 0.32f
+        val lead = ((System.currentTimeMillis() / 90) % DOTS).toInt()
+        var i = 0
+        while (i < origins.size) {
+            // The middle of the part of the tile that is on screen.
+            val left = maxOf(origins[i].toDouble(), cameraX - halfWidth)
+            val right = minOf(origins[i] + tileSize.toDouble(), cameraX + halfWidth)
+            val top = maxOf(origins[i + 1].toDouble(), cameraZ - halfHeight)
+            val bottom = minOf(origins[i + 1] + tileSize.toDouble(), cameraZ + halfHeight)
+            i += 2
+            if (right - left < r * 3 || bottom - top < r * 3) continue
+            val cx = ((left + right) / 2 - originX).toFloat()
+            val cz = ((top + bottom) / 2 - originZ).toFloat()
+            for (d in 0 until DOTS) {
+                val angle = d * (2 * Math.PI / DOTS)
+                val x = cx + (cos(angle) * r).toFloat()
+                val z = cz + (sin(angle) * r).toFloat()
+                val age = (lead - d + DOTS) % DOTS
+                val a = 0.95f - age * 0.1f
+                val half = dot * (if (age == 0) 0.6f else 0.5f)
+                buffer.addVertex(matrix, x - half, z - half, 0f).setColor(1f, 1f, 1f, a)
+                buffer.addVertex(matrix, x - half, z + half, 0f).setColor(1f, 1f, 1f, a)
+                buffer.addVertex(matrix, x + half, z + half, 0f).setColor(1f, 1f, 1f, a)
+                buffer.addVertex(matrix, x + half, z - half, 0f).setColor(1f, 1f, 1f, a)
+            }
+        }
+    }
+}
+
+/**
+ * BlueMap's outline markers as lines of quads, into a position-and-colour buffer, for either map.
+ * Line width is kept in screen units, the way BlueMap draws it, whatever the zoom.
+ */
+object Outlines {
+
+    /**
+     * The world border and zones of the dimension Xaero's map is showing, for the world map and the
+     * minimap alike. Shown wherever the dimension has a BlueMap map, even with its terrain off.
+     */
+    fun drawFor(
+        mapProcessor: MapProcessor, buffer: VertexConsumer, matrix: Matrix4f, originX: Int, originZ: Int, blocksPerUnit: Float,
+        minX: Double, maxX: Double, minZ: Double, maxZ: Double,
+    ) {
+        // Not skipped in cave mode: Xaero shows the nether in cave mode all the time.
+        if (!Config.showOutlines) return
+        val session = Session.current ?: return
+        val dimension = mapProcessor.mapWorld?.currentDimension?.dimId?.identifier()?.toString() ?: return
+        val map = session.server.markersFor(dimension) ?: return
+        val outlines = session.markers.of(map)?.outlines ?: return
+        draw(buffer, matrix, outlines, originX, originZ, blocksPerUnit, minX, maxX, minZ, maxZ)
+    }
+
+    fun draw(
+        buffer: VertexConsumer,
+        matrix: Matrix4f,
+        outlines: List<Markers.Outline>,
+        originX: Int,
+        originZ: Int,
+        blocksPerUnit: Float,
+        minX: Double,
+        maxX: Double,
+        minZ: Double,
+        maxZ: Double,
+    ) {
+        for (outline in outlines) {
+            val p = outline.points
+            val corners = p.size / 2
+            val half = outline.width * blocksPerUnit * 0.5f
+            val a = (outline.colour ushr 24) / 255f
+            val red = ((outline.colour shr 16) and 0xFF) / 255f
+            val green = ((outline.colour shr 8) and 0xFF) / 255f
+            val blue = (outline.colour and 0xFF) / 255f
+            val segments = if (outline.closed) corners else corners - 1
+            for (i in 0 until segments) {
+                val j = (i + 1) % corners
+                val x1 = p[i * 2]
+                val z1 = p[i * 2 + 1]
+                val x2 = p[j * 2]
+                val z2 = p[j * 2 + 1]
+                if (maxOf(x1, x2) < minX || minOf(x1, x2) > maxX || maxOf(z1, z2) < minZ || minOf(z1, z2) > maxZ) continue
+                val dx = x2 - x1
+                val dz = z2 - z1
+                val length = sqrt(dx * dx + dz * dz)
+                if (length < 1e-3f) continue
+                // Widened sideways, and lengthened by half the width at each end so corners meet.
+                val nx = -dz / length * half
+                val nz = dx / length * half
+                val ex = dx / length * half
+                val ez = dz / length * half
+                val ax = x1 - ex - originX
+                val az = z1 - ez - originZ
+                val bx = x2 + ex - originX
+                val bz = z2 + ez - originZ
+                buffer.addVertex(matrix, ax + nx, az + nz, 0f).setColor(red, green, blue, a)
+                buffer.addVertex(matrix, bx + nx, bz + nz, 0f).setColor(red, green, blue, a)
+                buffer.addVertex(matrix, bx - nx, bz - nz, 0f).setColor(red, green, blue, a)
+                buffer.addVertex(matrix, ax - nx, az - nz, 0f).setColor(red, green, blue, a)
+            }
+        }
+    }
+}

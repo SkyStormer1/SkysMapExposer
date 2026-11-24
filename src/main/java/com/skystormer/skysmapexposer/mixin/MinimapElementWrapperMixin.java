@@ -1,12 +1,14 @@
 package com.skystormer.skysmapexposer.mixin;
 
-import com.skystormer.skysmapexposer.MapView;
-import com.skystormer.skysmapexposer.GuiMapFields;
+import com.skystormer.skysmapexposer.xaero.MapView;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import xaero.hud.minimap.element.render.MinimapElementRenderer;
 import xaero.hud.minimap.waypoint.render.WaypointMapRenderer;
 import xaero.map.element.render.ElementRenderLocation;
 
@@ -30,15 +32,12 @@ import xaero.map.element.render.ElementRenderLocation;
 @Mixin(targets = "xaero.map.mods.minimap.element.MinimapElementRendererWrapper", remap = false)
 public abstract class MinimapElementWrapperMixin {
 
-    /**
-     * Whether this wraps the minimap's waypoints, which are left alone. The renderer field is looked
-     * up by name rather than shadowed, so a Xaero that renamed it loses this hiding, not the game;
-     * without it, nothing is hidden.
-     */
+    @Shadow @Final private MinimapElementRenderer<?, ?> renderer;
+
+    /** Whether this wraps the minimap's waypoints, which are left alone. */
     @Unique
     private boolean skysmapexposer$leaveAlone() {
-        if (!GuiMapFields.wrappedRenderer.getFound()) return true;
-        return GuiMapFields.wrappedRenderer.get(this) instanceof WaypointMapRenderer;
+        return renderer instanceof WaypointMapRenderer;
     }
 
     /**

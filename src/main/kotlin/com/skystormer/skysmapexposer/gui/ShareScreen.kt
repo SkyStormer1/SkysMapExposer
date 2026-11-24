@@ -1,7 +1,11 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
-import com.skystormer.skysmapexposer.MapMenus
+import com.skystormer.skysmapexposer.Markers
+import com.skystormer.skysmapexposer.ShareFormat
+import com.skystormer.skysmapexposer.WaypointRules
+import kotlin.math.floor
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.StringWidget
@@ -10,34 +14,49 @@ import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 
 /**
- * Picks who to share with: everyone else on the server, narrowed by a search box. Picking a name
- * hands it to [share], goes to [after] (the map) and says what [share] said; Cancel goes back to
- * [parent].
+ * Picks who to share with: everyone else on the server, a page at a time (the arrows or the
+ * scroll wheel), narrowed by a search box; or, given [everyone], everyone at once in chat. Picking
+ * hands the name to [share] (or calls [everyone]), goes to [after] (the map) and says what it said;
+ * Cancel goes back to [parent].
  */
 class ShareScreen(
     private val parent: Screen?,
     title: String,
     private val after: Screen? = parent,
+    private val everyone: (() -> String)? = null,
     private val share: (String) -> String,
 ) : Screen(Component.literal(title)) {
 
     private var search: EditBox? = null
     private val rows = ArrayList<Button>()
+    private val pages = Pages()
+    private var pageLabel: StringWidget? = null
+    private var previous: Button? = null
+    private var nextPage: Button? = null
 
     override fun init() {
         val width = minOf(WIDTH, this.width - 32)
         val left = (this.width - width) / 2
-        var y = this.height / 2 - (ROWS * (ROW + GAP) + 60) / 2
+        val extra = if (everyone != null) ROW + GAP else 0
+        var y = maxOf(8, this.height / 2 - (ROWS * (ROW + GAP) + 76 + extra) / 2)
 
         addRenderableWidget(StringWidget(left, y, width, font.lineHeight, title, font))
         y += font.lineHeight + GAP * 2
-        val box = EditBox(font, left, y, width, ROW, Component.literal("Search"))
+        val arrows = ROW + GAP
+        val box = EditBox(font, left, y, width - arrows * 2, ROW, Component.literal("Search"))
         box.setHint(Component.literal("Search players"))
         box.setValue(search?.value ?: "")
-        box.setResponder { fill() }
+        box.setResponder { pages.page = 0; fill() }
         search = box
         addRenderableWidget(box)
+        previous = addRenderableWidget(Button.builder(Component.literal("<")) { turn(-1) }.bounds(left + width - arrows * 2 + GAP, y, ROW, ROW).build())
+        nextPage = addRenderableWidget(Button.builder(Component.literal(">")) { turn(1) }.bounds(left + width - arrows + GAP, y, ROW, ROW).build())
         y += ROW + GAP * 2
+        everyone?.let { toAll ->
+            addRenderableWidget(Button.builder(Component.literal("Everyone, in chat")) { done(toAll()) }.bounds(left, y, width, ROW)
+                .tooltip(SafeTooltip.of("Posts them in chat as Xaero's waypoint lines: anyone with Xaero's Minimap or JourneyMap can add them, with this mod or without.")).build())
+            y += ROW + GAP
+        }
         rows.clear()
         repeat(ROWS) {
             val row = Button.builder(Component.empty()) { button -> pick(button.message.string) }.bounds(left, y, width, ROW).build()
@@ -45,18 +64,28 @@ class ShareScreen(
             addRenderableWidget(row)
             y += ROW + GAP
         }
-        y += GAP
+        pageLabel = addRenderableWidget(StringWidget(left, y, width, font.lineHeight, Component.empty(), font))
+        y += font.lineHeight + GAP * 2
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL) { onClose() }.bounds(left, y, width, ROW).build())
         setInitialFocus(box)
         fill()
     }
 
-    /** The first [ROWS] players whose names have the search in them; the spare rows hide. */
+    private fun turn(by: Int) {
+        pages.page += by
+        fill()
+    }
+
+    /** This page of the players whose names have the search in them; the spare rows hide. */
     private fun fill() {
         val wanted = search?.value?.trim()?.lowercase().orEmpty()
         val names = ChatShare.others().filter { wanted in it.lowercase() }
+        val onPage = pages.of(names, ROWS)
+        pageLabel?.message = Component.literal("§7Page ${pages.page + 1} of ${pages.count} · ${names.size} player${if (names.size == 1) "" else "s"}")
+        previous?.active = pages.hasPrevious
+        nextPage?.active = pages.hasNext
         rows.forEachIndexed { i, row ->
-            val name = names.getOrNull(i)
+            val name = onPage.getOrNull(i)
             row.visible = name != null
             row.active = name != null
             row.message = Component.literal(name ?: "")
@@ -70,20 +99,38 @@ class ShareScreen(
         }
     }
 
-    private fun pick(name: String) {
-        val said = share(name)
-        MapMenus.open(after)
-        MapMenus.say(said)
+    private fun pick(name: String) = done(share(name))
+
+    private fun done(said: String) {
+        Ui.open(after)
+        Ui.say(said)
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (pages.count <= 1 || !pages.scroll(scrollY)) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        fill()
+        return true
     }
 
     override fun onClose() {
-        MapMenus.open(parent)
+        Ui.open(parent)
     }
 
-    private companion object {
-        const val WIDTH = 200
-        const val ROWS = 6
-        const val ROW = 20
-        const val GAP = 4
+    companion object {
+        private const val WIDTH = 200
+        private const val ROWS = 6
+        private const val ROW = 20
+        private const val GAP = 4
+
+        /** Picks who gets [waypoint] of [dimension]: a player, or everyone in chat; back to [parent] after. */
+        fun forWaypoint(parent: Screen?, dimension: String, waypoint: ShareFormat.SharedWaypoint): ShareScreen =
+            ShareScreen(parent, "Share ${waypoint.name} with…", everyone = { ChatShare.shareWaypointsWithEveryone(dimension, listOf(waypoint)) }) { name ->
+                ChatShare.shareWaypoints(name, dimension, listOf(waypoint))
+            }
+
+        /** A BlueMap marker or player as a waypoint to share, named and coloured as saving it makes one. */
+        fun forPin(parent: Screen?, dimension: String, pin: Markers.Pin): ShareScreen = forWaypoint(parent, dimension, ShareFormat.SharedWaypoint(
+            pin.label, WaypointRules.initials(pin.label), floor(pin.x).toInt(), floor(pin.y).toInt(), floor(pin.z).toInt(), true, WaypointRules.colourFor(pin),
+        ))
     }
 }

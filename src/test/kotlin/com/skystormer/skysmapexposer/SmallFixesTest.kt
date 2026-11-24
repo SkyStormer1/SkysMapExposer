@@ -20,7 +20,10 @@ class SmallFixesTest {
     @Test
     fun `no tooltip is made or placed outside the helpers`() {
         val helpers = setOf("SafeTooltip.kt", "DockPanel.kt", "WidgetTooltipHolderMixin.java")
-        val offenders = Files.walk(Path.of("src/main")).use { files ->
+        // Tests run in versions/<version>/, under the project's own src/main.
+        val sources = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .map { it.resolve("src/main") }.first { Files.isDirectory(it) }
+        val offenders = Files.walk(sources).use { files ->
             files.toList()
                 .filter { it.extension == "kt" || it.extension == "java" }
                 .filter { it.name !in helpers }
@@ -55,9 +58,9 @@ class SmallFixesTest {
 
     @Test
     fun `waypoint initials keep the label's colour but never take a code for a letter`() {
-        assertEquals("§cSH", Waypoints.initials("§cShop"))
-        assertEquals("§c§lMS", Waypoints.initials("§c§lMain §eSpawn"))
-        assertEquals("FB", Waypoints.initials("Farm Base"))
+        assertEquals("§cSH", WaypointRules.initials("§cShop"))
+        assertEquals("§c§lMS", WaypointRules.initials("§c§lMain §eSpawn"))
+        assertEquals("FB", WaypointRules.initials("Farm Base"))
     }
 
     @Test
@@ -71,7 +74,7 @@ class SmallFixesTest {
             ShareFormat.varint(out, 3) // block 3 of none
         }
         val error = runCatching {
-            ShareFormat.readTerrain(DataInputStream(ByteArrayInputStream(bytes.toByteArray())), 1, HashMap())
+            SharedTerrain.readBatch(DataInputStream(ByteArrayInputStream(bytes.toByteArray())), 1, HashMap())
         }.exceptionOrNull()
         assertTrue(error?.message?.startsWith("the file is damaged") == true, "got $error")
     }
