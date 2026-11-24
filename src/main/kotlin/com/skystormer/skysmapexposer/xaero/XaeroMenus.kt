@@ -127,6 +127,15 @@ object XaeroMenus {
     private fun renumber(options: List<RightClickOption>) =
         options.forEachIndexed { i, option -> (option as RightClickOptionAccess).`skysmapexposer$setIndex`(i) }
 
+    /**
+     * True while this mod opens a page of the menu itself. A page is a new Xaero menu, which clicks as
+     * it opens; the click on More or the group that asked for it has just clicked, so this one is
+     * kept quiet (`DropDownWidgetMixin`), or every page would sound like a double click.
+     */
+    @JvmStatic
+    var openingPage = false
+        private set
+
     /** Client thread, each tick: a group's page (or More, or back to the menu) opened where the menu was. */
     fun tick(minecraft: Minecraft) {
         val page = pending ?: return
@@ -141,7 +150,12 @@ object XaeroMenus {
             }
             val access = map as GuiMapMenuAccess
             access.`skysmapexposer$setSelection`(selection)
-            access.`skysmapexposer$handleRightClick`(element, openedX, openedY)
+            openingPage = true
+            try {
+                access.`skysmapexposer$handleRightClick`(element, openedX, openedY)
+            } finally {
+                openingPage = false
+            }
         } catch (e: Throwable) {
             Log.warn("Could not open a group of Xaero's right-click menu: {}", e.toString())
         }
