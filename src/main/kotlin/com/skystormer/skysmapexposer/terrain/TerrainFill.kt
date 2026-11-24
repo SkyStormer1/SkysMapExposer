@@ -3,9 +3,11 @@ package com.skystormer.skysmapexposer.terrain
 import com.skystormer.skysmapexposer.background
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.CoarseScan
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.SharedTerrain
 import net.minecraft.client.Minecraft
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.chunk.PalettedContainerFactory
@@ -170,8 +172,7 @@ object TerrainFill {
             val cz = layout.tileOf(z, layout.offsetZ)
             val sizes = ArrayList<Int>()
             for (ring in 0..CHECK_RINGS) {
-                for (dx in -ring..ring) for (dz in -ring..ring) {
-                    if (maxOf(abs(dx), abs(dz)) != ring) continue
+                for ((dx, dz) in CoarseScan.ring(ring)) {
                     cached(cache, cx + dx, cz + dz) { session.blueMap.hiresTile(map, cx + dx, cz + dz) }?.let { sizes.add(it.size) }
                 }
                 if (sizes.isNotEmpty() && ring >= 1) break
@@ -201,7 +202,7 @@ object TerrainFill {
         }
         val size = missing * averageBytes
         val download = if (missing == 0) "BlueMap's 3D tiles there are already downloaded"
-        else "about %,d BlueMap 3D tiles, roughly %s".format(missing, if (size >= 1L shl 30) "%.1f GB".format(size / 1073741824.0) else "${maxOf(1, size / 1048576)} MB")
+        else "about %,d BlueMap 3D tiles, roughly %s".format(missing, SharedTerrain.size(size))
         return Estimate("Fill $blocks blocks around you: $download.\n\n$warning")
     }
 
@@ -367,24 +368,20 @@ object TerrainFill {
     }
 
     /** Whether tile ([tx], [tz]) is on disk, or known to be missing, recently enough not to be asked for again. */
-    private fun fresh(folder: Path, tx: Int, tz: Int, now: Long): Boolean {
-        val file = folder.resolve("${tx}_$tz.prbm")
-        val empty = folder.resolve("${tx}_$tz.none")
-        return (Files.exists(file) && now - Files.getLastModifiedTime(file).toMillis() < KEEP_TILES_MS) ||
-            (Files.exists(empty) && now - Files.getLastModifiedTime(empty).toMillis() < KEEP_MISSING_MS)
-    }
+    private fun fresh(folder: Path, tx: Int, tz: Int, now: Long): Boolean =
+        recent(folder.resolve("${tx}_$tz.prbm"), KEEP_TILES_MS, now) || recent(folder.resolve("${tx}_$tz.none"), KEEP_MISSING_MS, now)
+
+    /** Whether [file] is there and was written less than [keep] before [now]. */
+    private fun recent(file: Path, keep: Long, now: Long): Boolean =
+        Files.exists(file) && now - Files.getLastModifiedTime(file).toMillis() < keep
 
     /** A tile from the disk cache if it is under a week old (a missing one, a day), else from BlueMap (and kept). Null: BlueMap has none. */
     private fun cached(folder: Path, tx: Int, tz: Int, fetch: () -> ByteArray?): ByteArray? {
         val file = folder.resolve("${tx}_$tz.prbm")
         val empty = folder.resolve("${tx}_$tz.none")
         val now = System.currentTimeMillis()
-        for (known in listOf(file, empty)) {
-            val keep = if (known == file) KEEP_TILES_MS else KEEP_MISSING_MS
-            if (Files.exists(known) && now - Files.getLastModifiedTime(known).toMillis() < keep) {
-                return if (known == file) Files.readAllBytes(file) else null
-            }
-        }
+        if (recent(file, KEEP_TILES_MS, now)) return Files.readAllBytes(file)
+        if (recent(empty, KEEP_MISSING_MS, now)) return null
         val bytes = fetch()
         Files.createDirectories(folder)
         if (bytes == null) SafeFiles.write(empty, ByteArray(0)) else SafeFiles.write(file, bytes)

@@ -64,9 +64,10 @@ interface FillTarget {
         fun ready(level: ClientLevel, factory: PalettedContainerFactory): Pair<List<FillTarget>, List<String>> {
             val targets = ArrayList<FillTarget>()
             val notes = ArrayList<String>()
-            if ("Bobby" in chosen()) BobbyTarget.create(level, factory).fold({ targets += it }, { notes += "Bobby: ${it.message}" })
-            if ("Voxy" in chosen()) VoxyTarget.create(level).fold({ targets += it }, { notes += "Voxy: ${it.message}" })
-            if ("Distant Horizons" in chosen()) DhTarget.create(level).fold({ targets += it }, { notes += "Distant Horizons: ${it.message}" })
+            val chosen = chosen()
+            if ("Bobby" in chosen) BobbyTarget.create(level, factory).fold({ targets += it }, { notes += "Bobby: ${it.message}" })
+            if ("Voxy" in chosen) VoxyTarget.create(level).fold({ targets += it }, { notes += "Voxy: ${it.message}" })
+            if ("Distant Horizons" in chosen) DhTarget.create(level).fold({ targets += it }, { notes += "Distant Horizons: ${it.message}" })
             return targets to notes
         }
     }

@@ -116,7 +116,8 @@ class ChunkRebuilder(
             }
             // Faces square to an axis and lying on the block's edge tell what touches the block.
             var lightKey = key
-            val axis = (0..2).maxBy { abs(n[it]) }
+            // The axis the face is most square to; written out, as this runs for every face of every tile.
+            val axis = if (abs(n[0]) >= abs(n[1]) && abs(n[0]) >= abs(n[2])) 0 else if (abs(n[1]) >= abs(n[2])) 1 else 2
             if (abs(n[axis]) > 0.99f) {
                 val origin = when (axis) { 0 -> bx; 1 -> by; else -> bz }
                 val along = centre[axis] - origin
