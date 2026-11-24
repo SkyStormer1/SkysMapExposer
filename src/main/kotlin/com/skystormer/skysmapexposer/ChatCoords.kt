@@ -160,12 +160,47 @@ object ChatCoords {
         }
     }
 
+    /**
+     * ([x], [z]) of [dimension], clicked in chat, shown on the map on the next tick, once the chat
+     * screen the click came from has had its way: for JourneyMap's own chat links (`JourneyMapChat`).
+     */
+    fun show(dimension: String, x: Int, z: Int) {
+        toShow = Position(null, x, UNKNOWN_Y, z, dimension)
+    }
+
     /** Client thread, each tick: the world map opened on a position clicked in chat. */
     fun tick() {
         val position = toShow ?: return
         toShow = null
+        // Chat closed first: the map would otherwise put it back when it closes, as it does for
+        // the player list a Go to there came from.
+        if (Minecraft.getInstance().gui.screen() is net.minecraft.client.gui.screens.ChatScreen) Ui.open(null)
         val shown = MapMods.adapter?.goTo(position.dimension, position.x, position.z, null, null) ?: false
         if (!shown) Ui.say("The map can't show that just now")
+    }
+
+    /**
+     * The first position in [text], in JourneyMap's chat form or Xaero's shared-waypoint line, with
+     * its coordinates exactly as written. JourneyMap's own reader converts them to the dimension you
+     * are in, which sent an Overworld position clicked from the Nether to an eighth of it.
+     */
+    fun read(text: String): Position? {
+        PATTERN.find(text)?.let { return parse(it.groupValues[1]) }
+        val at = text.indexOf("xaero-waypoint:")
+        if (at < 0) return null
+        // xaero-waypoint:name:initials:x:y:z:colour:…:…:Internal-<dimension>, with ":" in names written as ^col^.
+        val parts = text.substring(at).trim().split(':')
+        if (parts.size < 10) return null
+        val x = parts[3].toIntOrNull() ?: return null
+        val z = parts[5].toIntOrNull() ?: return null
+        val where = parts.drop(9).joinToString(":").substringAfter('-').removeSuffix("-waypoints")
+        val dimension = when (where) {
+            "overworld" -> Config.OVERWORLD
+            "the_nether", "the-nether" -> Config.NETHER
+            "the_end", "the-end" -> Config.END
+            else -> where.replace('$', ':').takeIf { ':' in it }
+        } ?: Minecraft.getInstance().level?.dimension()?.identifier()?.toString() ?: return null
+        return Position(parts[1].replace("^col^", ":").ifBlank { null }, x, parts[4].toIntOrNull() ?: UNKNOWN_Y, z, dimension)
     }
 
     /**

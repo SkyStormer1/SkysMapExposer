@@ -6,6 +6,7 @@
   "client": [
     "BlockInfoBiomeMixin",
     "ChatPositionMixin",
+    "ChatWaypointMixin",
     "FullscreenMapTypeMixin",
     "FullscreenSelfMixin",
     "FullscreenShownMixin",
