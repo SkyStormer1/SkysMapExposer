@@ -1,8 +1,6 @@
 package com.skystormer.skysmapexposer.gui
 
 import com.skystormer.skysmapexposer.ShareableWaypoint
-import com.skystormer.skysmapexposer.gui.SafeTooltip
-import com.skystormer.skysmapexposer.gui.ShareScreen
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
 import com.skystormer.skysmapexposer.Config
@@ -22,7 +20,7 @@ import java.util.IdentityHashMap
  * box; click a row to tick it. "Share with…" then picks the player
  * ([ShareScreen]) and sends them in chat ([ChatShare.shareWaypoints]).
  *
- * Only opened with Xaero's Minimap installed.
+ * The waypoints are whichever map's are installed ([com.skystormer.skysmapexposer.MapAdapter.myWaypoints]).
  */
 class WaypointShareScreen(
     private val parent: Screen?,

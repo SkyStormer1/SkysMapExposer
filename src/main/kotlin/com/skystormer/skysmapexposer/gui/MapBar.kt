@@ -1,15 +1,15 @@
 package com.skystormer.skysmapexposer.gui
 
+import com.mojang.blaze3d.platform.InputConstants
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.MapRefresh
 import com.skystormer.skysmapexposer.Session
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
-import com.mojang.blaze3d.platform.InputConstants
-import com.skystormer.skysmapexposer.MapMods
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
@@ -296,9 +296,9 @@ object MapBar {
             if (shown == biomes.dimension && version == biomes.unknownVersion && biomes.all.isNotEmpty()) return biomes.all
             val registry = Minecraft.getInstance().level?.registryAccess()?.lookupOrThrow(Registries.BIOME) ?: return emptyList()
             val tag = when (shown) {
-                "minecraft:the_nether" -> BiomeTags.IS_NETHER
-                "minecraft:the_end" -> BiomeTags.IS_END
-                "minecraft:overworld" -> BiomeTags.IS_OVERWORLD
+                Config.NETHER -> BiomeTags.IS_NETHER
+                Config.END -> BiomeTags.IS_END
+                Config.OVERWORLD -> BiomeTags.IS_OVERWORLD
                 else -> null
             }
             val holders = registry.listElements().toList()
@@ -431,7 +431,6 @@ object MapBar {
                 graphics.text(font, font.plainSubstrByWidth(name, baseWidth - 18), 14, top + 2, if (colour != null) WHITE else 0xFFD0D0D0.toInt(), false)
                 if (over) tooltip(graphics, (if (colour != null) "Stop highlighting " else "Highlight ") + name + " on the map", mouseX, mouseY)
             }
-
         }
 
         private fun button(graphics: GuiGraphicsExtractor, label: String, left: Int, top: Int, on: Boolean, hovered: Boolean) {
