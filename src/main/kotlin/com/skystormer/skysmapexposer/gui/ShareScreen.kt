@@ -29,8 +29,7 @@ class ShareScreen(
 
     private var search: EditBox? = null
     private val rows = ArrayList<Button>()
-    private var page = 0
-    private var pages = 1
+    private val pages = Pages()
     private var pageLabel: StringWidget? = null
     private var previous: Button? = null
     private var nextPage: Button? = null
@@ -47,7 +46,7 @@ class ShareScreen(
         val box = EditBox(font, left, y, width - arrows * 2, ROW, Component.literal("Search"))
         box.setHint(Component.literal("Search players"))
         box.setValue(search?.value ?: "")
-        box.setResponder { page = 0; fill() }
+        box.setResponder { pages.page = 0; fill() }
         search = box
         addRenderableWidget(box)
         previous = addRenderableWidget(Button.builder(Component.literal("<")) { turn(-1) }.bounds(left + width - arrows * 2 + GAP, y, ROW, ROW).build())
@@ -73,7 +72,7 @@ class ShareScreen(
     }
 
     private fun turn(by: Int) {
-        page += by
+        pages.page += by
         fill()
     }
 
@@ -81,13 +80,12 @@ class ShareScreen(
     private fun fill() {
         val wanted = search?.value?.trim()?.lowercase().orEmpty()
         val names = ChatShare.others().filter { wanted in it.lowercase() }
-        pages = maxOf(1, (names.size + ROWS - 1) / ROWS)
-        page = page.coerceIn(0, pages - 1)
-        pageLabel?.message = Component.literal("§7Page ${page + 1} of $pages · ${names.size} player${if (names.size == 1) "" else "s"}")
-        previous?.active = page > 0
-        nextPage?.active = page < pages - 1
+        val onPage = pages.of(names, ROWS)
+        pageLabel?.message = Component.literal("§7Page ${pages.page + 1} of ${pages.count} · ${names.size} player${if (names.size == 1) "" else "s"}")
+        previous?.active = pages.hasPrevious
+        nextPage?.active = pages.hasNext
         rows.forEachIndexed { i, row ->
-            val name = names.getOrNull(page * ROWS + i)
+            val name = onPage.getOrNull(i)
             row.visible = name != null
             row.active = name != null
             row.message = Component.literal(name ?: "")
@@ -109,8 +107,8 @@ class ShareScreen(
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (scrollY == 0.0 || pages <= 1) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
-        turn(if (scrollY < 0) 1 else -1)
+        if (pages.count <= 1 || !pages.scroll(scrollY)) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        fill()
         return true
     }
 

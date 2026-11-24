@@ -5,7 +5,10 @@ import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.MenuLayout
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.BlueMap
+import com.skystormer.skysmapexposer.Clock
 import com.skystormer.skysmapexposer.Config
+import com.skystormer.skysmapexposer.Log
+import com.skystormer.skysmapexposer.Seasons
 import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.TileCache
@@ -24,10 +27,6 @@ import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /**
@@ -105,7 +104,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private val serverBefore = connectedAddress?.let(Config::serverFor)?.let(::describeServer)
 
     /** What Done or Escape found wrong, shown until fixed: where it is, and which box. */
-    private class Problem(val page: Page, val server: Int, val field: String)
+    private class Problem(val page: Page, val server: Int, val field: SettingsCheck.Field)
 
     private var problem: Problem? = null
     private var problemText: String? = null
@@ -195,11 +194,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         // The box with the problem stands out, with the cursor in it.
         problem?.takeIf { it.page == page && (it.page != Page.SERVER || it.server == selected) }?.let { p ->
             val box = when (p.field) {
-                "stale" -> staleBox
-                "address" -> addressBox
-                "url" -> urlBox
-                "cover" -> coverBox
-                else -> null
+                SettingsCheck.Field.STALE -> staleBox
+                SettingsCheck.Field.ADDRESS -> addressBox
+                SettingsCheck.Field.URL -> urlBox
+                SettingsCheck.Field.COVER -> coverBox
             } ?: return@let
             box.setTextColor(PROBLEM_COLOUR)
             focused = box
@@ -315,7 +313,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 { start ->
                     if (start) {
                         fillStatus = TerrainFill.start()
-                        com.skystormer.skysmapexposer.Log.info("Terrain fill: {}", fillStatus)
+                        Log.info("Terrain fill: {}", fillStatus)
                     } else {
                         fillStatus = "Not started; nothing was downloaded."
                     }
@@ -840,12 +838,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun check(): Pair<String, Problem>? {
         val entries = drafts.map { SettingsCheck.Entry(splitAddresses(it.addresses), it.url, it.coverOverworld) }
         val found = SettingsCheck.check(staleDays, entries, ::parseTime) ?: return null
-        val where = when (found.field) {
-            SettingsCheck.Field.STALE -> Problem(Page.MAP, selected, "stale")
-            SettingsCheck.Field.ADDRESS -> Problem(Page.SERVER, found.server, "address")
-            SettingsCheck.Field.URL -> Problem(Page.SERVER, found.server, "url")
-            SettingsCheck.Field.COVER -> Problem(Page.SERVER, found.server, "cover")
-        }
+        val where = if (found.field == SettingsCheck.Field.STALE) Problem(Page.MAP, selected, found.field)
+        else Problem(Page.SERVER, found.server, found.field)
         return found.message to where
     }
 
@@ -930,15 +924,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private fun formatDays(days: Double): String =
         if (days == Math.floor(days)) days.toLong().toString() else days.toString()
 
-    private fun formatTime(millis: Long): String =
-        TIME.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault()))
+    private fun formatTime(millis: Long): String = Seasons.format(Clock.minutesOf(millis))
 
-    private fun parseTime(text: String): Long? = try {
-        if (text.isBlank()) null
-        else LocalDateTime.parse(text.trim(), TIME).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-    } catch (e: Exception) {
-        null
-    }
+    private fun parseTime(text: String): Long? = Seasons.parse(text)
 
     private companion object {
         const val WIDTH = 300
@@ -947,8 +935,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         const val GAP = 2
         const val NEW = -1
         const val PROBLEM_COLOUR = 0xFFFF5555.toInt()
-        /** How tall each tab is, to centre it; both fit in 278 scaled pixels, so they show at large GUI scales. */
-        val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         val DIMENSIONS = listOf(Config.OVERWORLD to "Overworld", Config.NETHER to "Nether", Config.END to "End")
     }
 }

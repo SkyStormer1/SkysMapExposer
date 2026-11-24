@@ -233,22 +233,25 @@ object MapBar {
         override fun savedLeft(width: Int): Int {
             val room = maxOf(0, screen.width - width)
             if (Config.barLeftShare < 0) {
-                Config.barLeftShare = if (room > 0) (Config.barLeft.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+                Config.barLeftShare = shareOf(Config.barLeft, room)
                 Config.save()
                 return Config.barLeft
             }
             return (Config.barLeftShare * room).roundToInt()
         }
+        /** [place] as a share of [room], 0 to 1. */
+        private fun shareOf(place: Int, room: Int) = if (room > 0) (place.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+
         override fun saveLeft(left: Int, width: Int) {
             Config.barLeft = left
             val room = screen.width - width
-            Config.barLeftShare = if (room > 0) (left.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+            Config.barLeftShare = shareOf(left, room)
         }
         override var savedTop: Int
             get() {
                 val room = maxOf(0, screen.height - ROW)
                 if (Config.barTopShare < 0) {
-                    Config.barTopShare = if (room > 0) (Config.barTop.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+                    Config.barTopShare = shareOf(Config.barTop, room)
                     Config.save()
                     return Config.barTop
                 }
@@ -257,7 +260,7 @@ object MapBar {
             set(value) {
                 Config.barTop = value
                 val room = screen.height - ROW
-                Config.barTopShare = if (room > 0) (value.toDouble() / room).coerceIn(0.0, 1.0) else 0.0
+                Config.barTopShare = shareOf(value, room)
             }
         override var savedRows: Int
             get() = Config.barRows
@@ -301,7 +304,7 @@ object MapBar {
             val holders = registry.listElements().toList()
             val inDimension = tag?.let { t -> holders.filter { it.`is`(t) } }?.ifEmpty { null } ?: holders
             val all = (inDimension.map { it.key() } + MapMods.adapter?.unknownBiomes(shown).orEmpty()).distinct()
-                .map { it to nameOf(it) }.sortedBy { it.second.lowercase() }
+                .map { it to BiomePicks.nameOf(it) }.sortedBy { it.second.lowercase() }
             if (shown != biomes.dimension) offset = 0
             biomes = Biomes(shown, version, all)
             return all
@@ -479,10 +482,4 @@ object MapBar {
             return Click.DONE
         }
     }
-
-    /**
-     * The biome's name in the game's language, as its own screens show it; one this version has no
-     * name for is named from its id (`dappled_forest` is "Dappled Forest").
-     */
-    private fun nameOf(key: ResourceKey<Biome>): String = BiomePicks.nameOf(key)
 }

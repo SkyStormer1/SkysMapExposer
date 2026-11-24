@@ -46,7 +46,8 @@ object Seasons {
         else "The $name's season started ${format(Clock.minutesOf(millis))}: your map from before then is replaced by downloads and shared maps, and left out when you share"
     }
 
-    private fun parse(text: String): Long? {
+    /** [text] as a time, `yyyy-MM-dd HH:mm`, a date alone, or `now`; null if it is none of those (or blank). */
+    fun parse(text: String): Long? {
         val trimmed = text.trim()
         if (trimmed.equals("now", ignoreCase = true)) return System.currentTimeMillis()
         val time = runCatching { LocalDateTime.parse(trimmed, TIME) }.getOrNull()

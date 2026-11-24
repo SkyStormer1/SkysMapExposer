@@ -21,7 +21,7 @@ class MenuEditScreen(private val parent: Screen?, private val map: String) : Scr
 
     /** Which list is shown: the menu, or More. */
     private var showingMore = false
-    private var page = 0
+    private val pages = Pages()
 
     private sealed interface Line {
         class Item(val id: String, val group: Entry.Group?, val index: Int, val count: Int) : Line
@@ -51,9 +51,9 @@ class MenuEditScreen(private val parent: Screen?, private val map: String) : Scr
         // The menu or More, and a new group in the one shown.
         val third = (width - GAP * 2) / 3
         val moreCount = count(layout.more)
-        addRenderableWidget(Button.builder(Component.literal(if (!showingMore) "§e§nMenu" else "Menu")) { showingMore = false; page = 0; rebuildWidgets() }
+        addRenderableWidget(Button.builder(Component.literal(if (!showingMore) "§e§nMenu" else "Menu")) { showingMore = false; pages.page = 0; rebuildWidgets() }
             .bounds(left, y, third, ROW).tooltip(SafeTooltip.of("What the right-click menu shows, top to bottom.")).build())
-        addRenderableWidget(Button.builder(Component.literal((if (showingMore) "§e§n" else "") + "More ($moreCount)")) { showingMore = true; page = 0; rebuildWidgets() }
+        addRenderableWidget(Button.builder(Component.literal((if (showingMore) "§e§n" else "") + "More ($moreCount)")) { showingMore = true; pages.page = 0; rebuildWidgets() }
             .bounds(left + third + GAP, y, third, ROW).tooltip(SafeTooltip.of("What you hid: still on the menu under More, laid out the same way. More is left off the menu while it is empty.")).build())
         addRenderableWidget(Button.builder(Component.literal("+ New group")) { newGroup() }
             .bounds(left + (third + GAP) * 2, y, width - (third + GAP) * 2, ROW).tooltip(SafeTooltip.of("A group in this list. Put items in it with their group button; it stays off the menu while it is empty.")).build())
@@ -63,9 +63,7 @@ class MenuEditScreen(private val parent: Screen?, private val map: String) : Scr
         val footer = ROW * 2 + GAP * 3
         val rowsPerPage = maxOf(3, (this.height - y - footer) / (ROW + GAP))
         val all = lines()
-        val pages = maxOf(1, (all.size + rowsPerPage - 1) / rowsPerPage)
-        page = page.coerceIn(0, pages - 1)
-        for (line in all.drop(page * rowsPerPage).take(rowsPerPage)) {
+        for (line in pages.of(all, rowsPerPage)) {
             addLine(line, left, y, width)
             y += ROW + GAP
         }
@@ -77,10 +75,10 @@ class MenuEditScreen(private val parent: Screen?, private val map: String) : Scr
         // Pages, reset and done, along the bottom.
         val bottom = this.height - ROW - GAP
         val quarter = (width - GAP * 3) / 4
-        addRenderableWidget(Button.builder(Component.literal("<")) { page--; rebuildWidgets() }.bounds(left, bottom - ROW - GAP, quarter / 2 - 2, ROW).build()).active = page > 0
-        addRenderableWidget(Button.builder(Component.literal(">")) { page++; rebuildWidgets() }.bounds(left + quarter / 2 + 2, bottom - ROW - GAP, quarter / 2 - 2, ROW).build()).active = page < pages - 1
+        addRenderableWidget(Button.builder(Component.literal("<")) { pages.page--; rebuildWidgets() }.bounds(left, bottom - ROW - GAP, quarter / 2 - 2, ROW).build()).active = pages.hasPrevious
+        addRenderableWidget(Button.builder(Component.literal(">")) { pages.page++; rebuildWidgets() }.bounds(left + quarter / 2 + 2, bottom - ROW - GAP, quarter / 2 - 2, ROW).build()).active = pages.hasNext
         addRenderableWidget(StringWidget(left + quarter + GAP, bottom - ROW - GAP + 6, width - quarter - GAP, font.lineHeight,
-            Component.literal("§7Page ${page + 1} of $pages · changes show next time the menu opens"), font))
+            Component.literal("§7Page ${pages.page + 1} of ${pages.count} · changes show next time the menu opens"), font))
         addRenderableWidget(Button.builder(Component.literal("Reset to default")) {
             MenuLayout.reset(map)
             layout = withAll(MenuLayout.get(map))
@@ -184,17 +182,17 @@ class MenuEditScreen(private val parent: Screen?, private val map: String) : Scr
         change(withShown(list))
     }
 
-    private fun flip(id: String) {
-        val here = without(shown(), id)
-        val there = (if (showingMore) layout.menu else layout.more) + Entry.Item(id)
-        change(if (showingMore) layout.copy(more = here, menu = there) else layout.copy(menu = here, more = there))
-    }
+    private fun flip(id: String) = moveAcross(without(shown(), id), Entry.Item(id))
 
     private fun flipGroup(groupId: String) {
         val group = shown().firstOrNull { it.id == groupId } ?: return
-        val here = shown().filterNot { it.id == groupId }
-        val there = (if (showingMore) layout.menu else layout.more) + group
-        change(if (showingMore) layout.copy(more = here, menu = there) else layout.copy(menu = here, more = there))
+        moveAcross(shown().filterNot { it.id == groupId }, group)
+    }
+
+    /** The list shown becomes [rest], and [moved] goes to the end of the other one (the menu or More). */
+    private fun moveAcross(rest: List<Entry>, moved: Entry) {
+        val there = (if (showingMore) layout.menu else layout.more) + moved
+        change(if (showingMore) layout.copy(more = rest, menu = there) else layout.copy(menu = rest, more = there))
     }
 
     private fun ungroup(groupId: String) = change(withShown(shown().flatMap {

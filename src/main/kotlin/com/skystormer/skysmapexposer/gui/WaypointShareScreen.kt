@@ -33,7 +33,7 @@ class WaypointShareScreen(
     private val picked: MutableSet<ShareableWaypoint> = Collections.newSetFromMap(IdentityHashMap())
     private var search: EditBox? = null
     private val rows = ArrayList<Button>()
-    private var page = 0
+    private val pages = Pages()
     private var shown: List<ShareableWaypoint> = entries
     private var pageLabel: StringWidget? = null
     private var previous: Button? = null
@@ -57,7 +57,7 @@ class WaypointShareScreen(
         val box = EditBox(font, left, y, width, ROW, Component.literal("Search"))
         box.setHint(Component.literal("Search waypoints"))
         box.setValue(search?.value ?: "")
-        box.setResponder { page = 0; fill() }
+        box.setResponder { pages.page = 0; fill() }
         search = box
         addRenderableWidget(box)
         y += ROW + GAP
@@ -67,9 +67,9 @@ class WaypointShareScreen(
             .bounds(left, y, third, ROW).tooltip(SafeTooltip.of("Ticks every waypoint the search shows, on every page.")).build())
         addRenderableWidget(Button.builder(Component.literal("Untick all")) { picked.clear(); fill() }
             .bounds(left + third + GAP, y, third, ROW).build())
-        previous = addRenderableWidget(Button.builder(Component.literal("<")) { page--; fill() }
+        previous = addRenderableWidget(Button.builder(Component.literal("<")) { pages.page--; fill() }
             .bounds(left + (third + GAP) * 2, y, (third - GAP) / 2, ROW).build())
-        nextPage = addRenderableWidget(Button.builder(Component.literal(">")) { page++; fill() }
+        nextPage = addRenderableWidget(Button.builder(Component.literal(">")) { pages.page++; fill() }
             .bounds(left + (third + GAP) * 2 + (third - GAP) / 2 + GAP, y, third - (third - GAP) / 2 - GAP, ROW).build())
         y += ROW + GAP * 2
 
@@ -96,12 +96,12 @@ class WaypointShareScreen(
         dimensionId = next
         entries = MapMods.adapter?.myWaypoints(next)?.second.orEmpty()
         picked.clear()
-        page = 0
+        pages.page = 0
         rebuildWidgets()
     }
 
     private fun toggle(row: Int) {
-        val entry = shown.getOrNull(page * ROWS + row) ?: return
+        val entry = shown.getOrNull(pages.page * ROWS + row) ?: return
         if (!picked.add(entry)) picked.remove(entry)
         fill()
     }
@@ -109,10 +109,9 @@ class WaypointShareScreen(
     private fun fill() {
         val wanted = search?.value?.trim()?.lowercase().orEmpty()
         shown = entries.filter { wanted.isEmpty() || wanted in it.name.lowercase() || wanted in it.set.lowercase() }
-        val pages = maxOf(1, (shown.size + ROWS - 1) / ROWS)
-        page = page.coerceIn(0, pages - 1)
+        val onPage = pages.of(shown, ROWS)
         rows.forEachIndexed { i, row ->
-            val entry = shown.getOrNull(page * ROWS + i)
+            val entry = onPage.getOrNull(i)
             row.visible = entry != null
             row.active = entry != null
             row.message = Component.literal(if (entry == null) "" else (if (entry in picked) "§a☑ " else "§7☐ ") + "§r" + entry.label)
@@ -125,9 +124,9 @@ class WaypointShareScreen(
                 message = Component.literal(if (entries.isEmpty()) "You have no waypoints there" else "None by that name")
             }
         }
-        pageLabel?.message = Component.literal("§7Page ${page + 1} of $pages · ${picked.size} ticked")
-        previous?.active = page > 0
-        nextPage?.active = page < pages - 1
+        pageLabel?.message = Component.literal("§7Page ${pages.page + 1} of ${pages.count} · ${picked.size} ticked")
+        previous?.active = pages.hasPrevious
+        nextPage?.active = pages.hasNext
         shareButton?.active = picked.isNotEmpty()
         shareButton?.message = Component.literal(if (picked.isEmpty()) "Share with…" else "Share ${picked.size} with…")
     }
@@ -142,8 +141,7 @@ class WaypointShareScreen(
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (scrollY == 0.0) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
-        page += if (scrollY < 0) 1 else -1
+        if (!pages.scroll(scrollY)) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
         fill()
         return true
     }

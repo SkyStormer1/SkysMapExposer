@@ -33,7 +33,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     /** One player, and the dimension of the BlueMap map they were found on. */
     private class Row(val dimension: String, val player: Markers.Player)
 
-    private var page = 0
+    private val pages = Pages()
     private var query = ""
     private var allDimensions = false
 
@@ -69,7 +69,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         search.setHint(Component.literal("Search names…"))
         search.setMaxLength(64)
         search.value = query
-        search.setResponder { query = it; page = 0; refreshRows(force = true) }
+        search.setResponder { query = it; pages.page = 0; refreshRows(force = true) }
         addRenderableWidget(search)
         addRenderableWidget(
             CycleButton.builder<Boolean>({ Component.literal(if (it) "All dimensions" else "My dimension") }, allDimensions)
@@ -77,7 +77,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 .displayOnlyValue()
                 .create(left + half + GAP, y, listWidth - half - GAP, ROW, Component.literal("Dimension")) { _, all ->
                     allDimensions = all
-                    page = 0
+                    pages.page = 0
                     refreshRows(force = true)
                 }
         )
@@ -89,10 +89,10 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
         y = rowsTop + rows * (ROW + GAP) + GAP
 
         val quarter = (listWidth - GAP * 3) / 4
-        previous = addRenderableWidget(Button.builder(Component.literal("<")) { page--; refreshRows(force = true) }
+        previous = addRenderableWidget(Button.builder(Component.literal("<")) { pages.page--; refreshRows(force = true) }
             .bounds(left, y, quarter, ROW).build())
         pageLabel = addRenderableWidget(StringWidget(left + quarter + GAP, y + 6, quarter, font.lineHeight, Component.empty(), font))
-        next = addRenderableWidget(Button.builder(Component.literal(">")) { page++; refreshRows(force = true) }
+        next = addRenderableWidget(Button.builder(Component.literal(">")) { pages.page++; refreshRows(force = true) }
             .bounds(left + (quarter + GAP) * 2, y, quarter, ROW).build())
         unlockAll = addRenderableWidget(
             Button.builder(Component.literal("Unlock all")) {
@@ -147,21 +147,19 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
 
     private fun refreshRows(force: Boolean) {
         val players = players()
-        val pages = maxOf(1, (players.size + rows - 1) / rows)
-        page = page.coerceIn(0, pages - 1)
-        val visible = players.drop(page * rows).take(rows)
+        val visible = pages.of(players, rows)
         // Rebuilding every tick would flicker the tooltips, so it only happens on a real change.
         val signature = visible.joinToString("|") {
             "${it.player.uuid}${it.player.x.toInt()}${it.player.z.toInt()}${LockedPlayers.isLocked(it.player.uuid)}${PlayerPings.isTrusted(it.player.uuid)}${PlayerPings.isPingedTo(it.player.uuid)}"
-        } + "/$pages/$page"
+        } + "/${pages.count}/${pages.page}"
         if (!force && signature == shown) return
         shown = signature
 
         rowWidgets.forEach(::removeWidget)
         rowWidgets.clear()
-        pageLabel.message = Component.literal("${page + 1} / $pages")
-        previous.active = page > 0
-        next.active = page < pages - 1
+        pageLabel.message = Component.literal("${pages.page + 1} / ${pages.count}")
+        previous.active = pages.hasPrevious
+        next.active = pages.hasNext
         unlockAll.active = LockedPlayers.count() > 0
 
         if (players.isEmpty()) {
@@ -322,8 +320,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (scrollY != 0.0) {
-            page += if (scrollY < 0) 1 else -1
+        if (pages.scroll(scrollY)) {
             refreshRows(force = true)
             return true
         }
