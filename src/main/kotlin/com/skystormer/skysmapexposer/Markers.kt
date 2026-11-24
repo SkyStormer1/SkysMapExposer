@@ -134,8 +134,9 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
             } ?: emptyList()
             playersByMap[map] = players
         } catch (e: Exception) {
-            // Asked every couple of seconds, so said once per map; the last players known stay.
-            if (warned.add("players:$map")) Log.warn("Could not read BlueMap's players for {}: {}", map, e.toString())
+            // Asked every couple of seconds, so said once per map; the last players known stay. Not on
+            // leaving, when the session's threads are stopped part way through a reply.
+            if (!closed && warned.add("players:$map")) Log.warn("Could not read BlueMap's players for {}: {}", map, e.toString())
         }
     }
 
@@ -228,8 +229,8 @@ class Markers(private val blueMap: BlueMap, private val workers: ExecutorService
             byMap[map] = Snapshot(points, outlines)
             if (skipped > 0 && warned.add(map)) Log.warn("Left out {} BlueMap marker(s) on {} that could not be read", skipped, map)
         } catch (e: Exception) {
-            // Said once per map, not on every refresh; the markers already shown stay.
-            if (warned.add(map)) Log.warn("Could not read BlueMap's markers for {}: {}", map, e.toString())
+            // Said once per map, not on every refresh; the markers already shown stay. Not on leaving.
+            if (!closed && warned.add(map)) Log.warn("Could not read BlueMap's markers for {}: {}", map, e.toString())
         }
     }
 
