@@ -29,7 +29,7 @@ class DownloadScreen(
         val text = MultiLineTextWidget(
             left, y,
             Component.literal(
-                "Writes BlueMap's terrain for the $dimension into your own Xaero map. Each region is backed " +
+                "Writes BlueMap's terrain for the $dimension into your own map. Each region is backed " +
                     "up just before it is changed. You can close this and play while it runs."
             ),
             font,
