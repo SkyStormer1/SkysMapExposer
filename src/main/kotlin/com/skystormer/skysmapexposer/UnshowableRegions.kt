@@ -10,7 +10,7 @@ import java.util.concurrent.Executor
  * Regions Xaero has a file for but cannot show: damaged, from another Xaero version, or given up
  * on while loading. Where Xaero has no region open the overlay dates a chunk by its region file, so
  * such a region would stay black rather than being covered by BlueMap. A region on screen close up
- * (where Xaero always loads what it shows) that Xaero has tried to open and not loaded for
+ * that Xaero has tried to open, but has neither loaded nor any cached picture of to draw, for
  * [GIVE_UP_MS] counts as a gap, like a region Xaero never mapped, until its file changes. A region
  * Xaero has not tried yet is left alone, so nothing flashes over regions that are only loading.
  *
@@ -24,9 +24,10 @@ class UnshowableRegions(private val file: Path?, private val io: Executor) {
     enum class Seen {
         /** No region object: not tried yet. */
         NOTHING,
-        LOADED,
-        /** Tried but not loaded: loading, failed, or let go. */
-        NOT_LOADED,
+        /** Loaded, or drawn from Xaero's cached picture of it. */
+        SHOWN,
+        /** Tried, but neither loaded nor any picture of it to draw: loading, failed, or let go. */
+        NOT_SHOWN,
     }
 
     private class Watch(val fileMinute: Int, val since: Long, var lastSeen: Long)
@@ -60,11 +61,11 @@ class UnshowableRegions(private val file: Path?, private val io: Executor) {
         regions[key]?.let { if (it != fileMinute) forget(key) } // the file changed: ask again
         when (seen) {
             Seen.NOTHING -> watching.remove(key)
-            Seen.LOADED -> {
+            Seen.SHOWN -> {
                 watching.remove(key)
                 forget(key)
             }
-            Seen.NOT_LOADED -> {
+            Seen.NOT_SHOWN -> {
                 if (key in regions) return
                 val watch = watching[key]
                 if (watch == null || watch.fileMinute != fileMinute || now - watch.lastSeen > CONTINUOUS_MS) {

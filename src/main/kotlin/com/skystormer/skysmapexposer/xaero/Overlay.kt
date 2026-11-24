@@ -65,8 +65,11 @@ object Overlay {
                 regionsWatchedAt = now
                 val debug = debugRegions
                 debugRegions = false
-                // Close up, Xaero always loads the regions it shows, so one it has not is one it cannot.
-                Backfill.watchRegions(target, mapProcessor, minX, maxX, minZ, maxZ, closeUp = blocksPerUnit <= 1f, debug = debug)
+                // Close up, a region on screen that Xaero has tried but has nothing at all to draw
+                // for is one it cannot show. Only what is really on screen: the area drawn above
+                // reaches past the edges, and Xaero leaves regions out there unloaded.
+                val seen = MapViewport.onScreen(matrix, cameraX, cameraZ)
+                Backfill.watchRegions(target, mapProcessor, seen.minX, seen.maxX, seen.minZ, seen.maxZ, closeUp = blocksPerUnit <= 1f, debug = debug)
                 if (debug) Minecraft.getInstance().player?.sendSystemMessage(Component.literal("§7Wrote what Xaero has of each region in view to the log"))
             }
             val factor = Backfill.factorFor(target.layout.tileSize, blocksPerUnit)

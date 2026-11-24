@@ -391,9 +391,9 @@ class TileCacheTest {
     fun `a region whose file is there but which Xaero never loads is covered, one still loading is not`(@TempDir folder: Path) {
         val regions = UnshowableRegions(null, Direct())
         var now = 0L
-        repeat(20) { regions.observe(folder, 1, 2, 500, UnshowableRegions.Seen.NOT_LOADED, now); now += 1000 }
+        repeat(20) { regions.observe(folder, 1, 2, 500, UnshowableRegions.Seen.NOT_SHOWN, now); now += 1000 }
         assertFalse(regions.covers(folder, 1, 2, 500), "covered while it may only be loading")
-        repeat(15) { regions.observe(folder, 1, 2, 500, UnshowableRegions.Seen.NOT_LOADED, now); now += 1000 }
+        repeat(15) { regions.observe(folder, 1, 2, 500, UnshowableRegions.Seen.NOT_SHOWN, now); now += 1000 }
         assertTrue(regions.covers(folder, 1, 2, 500))
         assertEquals(1, regions.count)
 
@@ -401,8 +401,8 @@ class TileCacheTest {
         repeat(60) { regions.observe(folder, 3, 3, 500, UnshowableRegions.Seen.NOTHING, now); now += 1000 }
         assertFalse(regions.covers(folder, 3, 3, 500))
         // Off screen in between: the wait starts again.
-        regions.observe(folder, 4, 4, 500, UnshowableRegions.Seen.NOT_LOADED, now)
-        regions.observe(folder, 4, 4, 500, UnshowableRegions.Seen.NOT_LOADED, now + 60_000)
+        regions.observe(folder, 4, 4, 500, UnshowableRegions.Seen.NOT_SHOWN, now)
+        regions.observe(folder, 4, 4, 500, UnshowableRegions.Seen.NOT_SHOWN, now + 60_000)
         assertFalse(regions.covers(folder, 4, 4, 500))
     }
 
@@ -411,13 +411,13 @@ class TileCacheTest {
         val file = folder.resolve("unshowable.json")
         val regions = UnshowableRegions(file, Direct())
         var now = 0L
-        repeat(35) { regions.observe(folder, 1, 2, 500, UnshowableRegions.Seen.NOT_LOADED, now); now += 1000 }
+        repeat(35) { regions.observe(folder, 1, 2, 500, UnshowableRegions.Seen.NOT_SHOWN, now); now += 1000 }
         assertTrue(regions.covers(folder, 1, 2, 500))
         regions.save()
         assertTrue(UnshowableRegions(file, Direct()).covers(folder, 1, 2, 500), "not kept on disk")
 
         assertFalse(regions.covers(folder, 1, 2, 600)) // Xaero saved the region again
-        regions.observe(folder, 1, 2, 600, UnshowableRegions.Seen.LOADED, now)
+        regions.observe(folder, 1, 2, 600, UnshowableRegions.Seen.SHOWN, now)
         assertEquals(0, regions.count)
     }
 }

@@ -285,5 +285,18 @@ class MapViewport(val blocksPerUnit: Float, val minX: Double, val maxX: Double, 
             val halfHeight = window.height * blocksPerUnit * 0.5 + 32
             return MapViewport(blocksPerUnit, cameraX - halfWidth, cameraX + halfWidth, cameraZ - halfHeight, cameraZ + halfHeight)
         }
+
+        /**
+         * What is really on screen, measured in the screen's own (GUI-scaled) units: never more
+         * than the map shows, where [of] is never less. For judging what Xaero should have loaded,
+         * which it does only for what is on screen.
+         */
+        fun onScreen(matrix: Matrix4f, cameraX: Double, cameraZ: Double): MapViewport {
+            val blocksPerUnit = Matrix4f(matrix).invert().transformDirection(Vector3f(1f, 0f, 0f)).length().coerceAtLeast(1e-4f)
+            val window = Minecraft.getInstance().window
+            val halfWidth = window.guiScaledWidth * blocksPerUnit * 0.5
+            val halfHeight = window.guiScaledHeight * blocksPerUnit * 0.5
+            return MapViewport(blocksPerUnit, cameraX - halfWidth, cameraX + halfWidth, cameraZ - halfHeight, cameraZ + halfHeight)
+        }
     }
 }

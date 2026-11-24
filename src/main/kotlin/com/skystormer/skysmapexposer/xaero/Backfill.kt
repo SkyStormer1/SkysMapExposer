@@ -468,8 +468,8 @@ object Backfill {
                 if (closeUp) {
                     val seen = when {
                         region == null -> UnshowableRegions.Seen.NOTHING
-                        state == LOADED -> UnshowableRegions.Seen.LOADED
-                        else -> UnshowableRegions.Seen.NOT_LOADED
+                        state == LOADED || showsPicture(region) -> UnshowableRegions.Seen.SHOWN
+                        else -> UnshowableRegions.Seen.NOT_SHOWN
                     }
                     session.unshowable.observe(folder, rx, rz, minute, seen, now)
                 }
@@ -495,11 +495,28 @@ object Backfill {
             var chunks = 0
             for (x in 0 until 8) for (z in 0 until 8) if (region.getChunk(x, z) != null) chunks++
             "load state $state, loaded ${region.isLoaded}, resting ${region.isResting}, has had terrain ${region.hasHadTerrain()}, " +
-                "being written ${region.isBeingWritten}, $chunks of 64 tile chunks"
+                "being written ${region.isBeingWritten}, $chunks of 64 tile chunks, ${pictures(region)} of 64 pictures on screen"
         } catch (e: RuntimeException) {
             "region object, load state $state, unreadable: $e"
         }
         return "${rx}_$rz: $xaero; $file"
+    }
+
+    /**
+     * Whether Xaero has a picture of [region] on the graphics card, which is what it draws. It
+     * often draws a region from its cache without loading the region's data at all, so "not
+     * loaded" alone does not mean the region is black on screen.
+     */
+    private fun showsPicture(region: xaero.map.region.MapRegion): Boolean = pictures(region) > 0
+
+    /** How many of [region]'s 64 pictures Xaero has on the graphics card. */
+    private fun pictures(region: xaero.map.region.MapRegion): Int = try {
+        var count = 0
+        for (x in 0 until 8) for (z in 0 until 8) if (region.getTexture(x, z)?.isUploaded == true) count++
+        count
+    } catch (e: RuntimeException) {
+        // Xaero's threads may be swapping the textures under us; count it as shown and ask again later.
+        64
     }
 
     /**
