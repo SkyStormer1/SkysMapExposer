@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.state.properties.SlabType
 import net.minecraft.world.level.chunk.DataLayer
 import net.minecraft.world.level.chunk.LevelChunkSection
 import net.minecraft.world.level.chunk.PalettedContainerFactory
+import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -105,7 +106,7 @@ class ChunkRebuilder(
             val key = pack(bx, by, bz)
             val voxel = voxels.get(key) ?: Voxel().also {
                 // A real piece has tens of thousands; this many means tiles built to use up memory.
-                if (voxels.size >= MAX_VOXELS) throw java.io.IOException("BlueMap's 3D tiles here have far more blocks than any real map")
+                if (voxels.size >= MAX_VOXELS) throw IOException("BlueMap's 3D tiles here have far more blocks than any real map")
                 voxels.put(key, it)
             }
             voxel.textures += texture

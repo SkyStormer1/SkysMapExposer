@@ -11,8 +11,10 @@ import com.skystormer.skysmapexposer.SharedTerrain
 import net.minecraft.client.Minecraft
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.chunk.PalettedContainerFactory
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -300,7 +302,7 @@ object TerrainFill {
                         fetch.get(2, TimeUnit.MINUTES)
                     } catch (e: Exception) {
                         fetch.cancel(true)
-                        val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+                        val cause = (e as? ExecutionException)?.cause ?: e
                         failed.add(cause.toString())
                         if (progress.unreadable + failed.size <= LOGGED_FAILURES) Log.warn("Terrain fill: skipped a BlueMap 3D tile: {}", cause.toString())
                         null
@@ -311,7 +313,7 @@ object TerrainFill {
                 found += tiles.size
                 progress.batch(fetches.size, failed)
                 if (progress.hopeless) {
-                    throw java.io.IOException("every BlueMap 3D tile so far failed to download or read (${progress.firstReasons().firstOrNull()})")
+                    throw IOException("every BlueMap 3D tile so far failed to download or read (${progress.firstReasons().firstOrNull()})")
                 }
 
                 val done = rebuilder.build(chunks, tiles, textures)

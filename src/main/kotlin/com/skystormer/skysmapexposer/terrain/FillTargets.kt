@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer.terrain
 
 import com.seibel.distanthorizons.api.DhApi
+import com.skystormer.skysmapexposer.Config
 import com.seibel.distanthorizons.api.interfaces.world.IDhApiLevelWrapper
 import de.johni0702.minecraft.bobby.FakeChunkManager
 import de.johni0702.minecraft.bobby.FakeChunkStorage
@@ -48,7 +49,7 @@ interface FillTarget {
         fun isInstalled(mod: String): Boolean = FabricLoader.getInstance().isModLoaded(mod)
 
         /** The installed mods switched on in the settings. */
-        fun chosen(): List<String> = installed().filter { it !in com.skystormer.skysmapexposer.Config.fillOff }
+        fun chosen(): List<String> = installed().filter { it !in Config.fillOff }
 
         /** The installed mods' names, for the settings screen. */
         fun installed(): List<String> = buildList {
