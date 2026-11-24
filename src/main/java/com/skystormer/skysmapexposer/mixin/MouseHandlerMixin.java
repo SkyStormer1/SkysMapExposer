@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * Map files dropped onto the game window open wherever you are, with a screen up or not
- * ({@link TerrainFiles#dropped}). A drop of nothing but map files goes no further.
+ * ({@link SharedTerrain#dropped}). A drop of nothing but map files goes no further.
  */
 @Mixin(MouseHandler.class)
 public class MouseHandlerMixin {

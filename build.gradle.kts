@@ -46,9 +46,8 @@ dependencies {
         modLocalRuntime("maven.modrinth:xaeros-world-map:${property("xaero_worldmap_version")}")
         modLocalRuntime("maven.modrinth:xaeros-minimap:${property("xaero_minimap_version")}")
     }
-    // JourneyMap's API, which the plugin talks to it through; and JourneyMap itself, only for the
-    // one hook into its full-screen map's dimension (mixin/journeymap), as Xaero's hooks are
-    // compiled against Xaero. Never bundled.
+    // JourneyMap's API, which the plugin talks to it through; and JourneyMap itself, for this mod's
+    // hooks into it (mixin/journeymap), as Xaero's hooks are compiled against Xaero. Never bundled.
     compileOnly(files(nestedJar("maven.modrinth:journeymap:${property("journeymap_version")}", "META-INF/jars/journeymap-api-", "journeymap-api")))
     modCompileOnly("maven.modrinth:journeymap:${property("journeymap_version")}")
     if (mapMod == "journeymap" || mapMod == "both") {

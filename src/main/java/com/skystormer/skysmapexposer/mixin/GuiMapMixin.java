@@ -39,7 +39,7 @@ import xaero.map.gui.dropdown.rightclick.RightClickOption;
 import java.util.ArrayList;
 
 /**
- * Six things on Xaero's world map screen.
+ * What this mod adds to Xaero's world map screen.
  *
  * <p>Drawing: the backfill goes into Xaero's map framebuffer straight after Xaero has drawn its own
  * terrain and before anything that sits on top of terrain (highlights, waypoints, the player
@@ -54,9 +54,12 @@ import java.util.ArrayList;
  * terrain, in the order things were added to it, so the tint lands under the world border (added at
  * the second flush) and under any other mod's shapes added there.
  *
- * <p>Right-click menu: "Copy coordinates", "Players…" and "Download" at the end of the menu Xaero shows when
- * you right-click the map itself. {@code rightClickDim} is Xaero's own reading of which
+ * <p>Right-click menu: this mod's lines ("Copy coordinates", "Players…", "Download" and the rest) on
+ * the menu Xaero shows when you right-click the map itself, laid out with everyone's by XaeroMenus,
+ * which also needs to know where a menu opens. {@code rightClickDim} is Xaero's own reading of which
  * dimension that click landed in, so the copied coordinates can say where they are.
+ *
+ * <p>Player arrow: left off while the map shows a dimension you are not in ({@link MapView}).
  *
  * <p>Other dimension: under Xaero's readout of the block under the mouse, the same block's
  * coordinates in the other dimension ({@link OtherDimensionCoords}).

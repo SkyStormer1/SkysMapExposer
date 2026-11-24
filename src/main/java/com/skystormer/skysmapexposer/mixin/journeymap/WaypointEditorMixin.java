@@ -2,6 +2,7 @@ package com.skystormer.skysmapexposer.mixin.journeymap;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.skystormer.skysmapexposer.Config;
 import com.skystormer.skysmapexposer.journeymap.JourneyMapDimension;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -43,6 +44,6 @@ public abstract class WaypointEditorMixin {
     }
 
     private static double scaleOf(ResourceKey<Level> dimension) {
-        return Level.NETHER.equals(dimension) ? 8.0 : 1.0;
+        return Level.NETHER.equals(dimension) ? Config.NETHER_SCALE : 1.0;
     }
 }
