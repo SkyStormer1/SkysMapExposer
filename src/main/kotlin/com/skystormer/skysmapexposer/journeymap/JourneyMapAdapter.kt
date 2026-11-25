@@ -171,8 +171,8 @@ object JourneyMapAdapter : MapAdapter {
                     .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
                         .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
                             .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
-                                .executes { Ui.reply(it, JourneyMapEdits.download(true, areaOf(it))) }
-                                .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, areaOf(it))) }))))))
+                                .executes { Ui.reply(it, JourneyMapEdits.download(true, SharedTerrain.areaOf(it))) }
+                                .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, SharedTerrain.areaOf(it))) }))))))
                 .then(ClientCommands.literal("cancel").executes {
                     Ui.reply(it, if (JourneyMapEdits.cancel()) "Stopping after the region it is on" else "Nothing is being written into JourneyMap's map")
                 })
@@ -198,27 +198,11 @@ object JourneyMapAdapter : MapAdapter {
         root.then(clear)
         root.then(biomeCommand())
         // The same as Xaero's: the chunks between two block positions, from the map shown.
-        root.then(ClientCommands.literal("terrain")
-            .then(ClientCommands.literal("save")
-                .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
-                    .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
-                        .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
-                            .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
-                                .executes { saveTerrain(it, whole = false, confirmed = false) }
-                                .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = false, confirmed = true) })))))
-                .then(ClientCommands.literal("all")
-                    .executes { saveTerrain(it, whole = true, confirmed = false) }
-                    .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = true, confirmed = true) })))
-            .then(ClientCommands.literal("cancel").executes {
-                Ui.reply(it, if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No map file is being saved")
-            }))
-    }
-
-    /** The chunks between two block positions, inclusive, or the whole map ([whole]) shown, to a terrain file; a big one asks first. */
-    private fun saveTerrain(context: CommandContext<FabricClientCommandSource>, whole: Boolean, confirmed: Boolean): Int {
-        val dimension = shownDimension() ?: return Ui.reply(context, "Not in a world")
-        val area = if (whole) null else areaOf(context)
-        return SharedTerrain.reply(context, JourneyMapTerrainSave.save(dimension, area, confirmed))
+        root.then(SharedTerrain.command({ area, confirmed ->
+            shownDimension()?.let { JourneyMapTerrainSave.save(it, area, confirmed) } ?: SharedTerrain.Answer("Not in a world")
+        }) {
+            if (JourneyMapTerrainSave.cancel()) "Stopping the terrain file save…" else "No map file is being saved"
+        })
     }
 
     /**
@@ -254,12 +238,6 @@ object JourneyMapAdapter : MapAdapter {
         val rx = Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION)
         val rz = Math.floorDiv(IntegerArgumentType.getInteger(context, "z"), JourneyMapFiles.REGION)
         return ShareFormat.Area(rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31)
-    }
-
-    /** The chunks between block positions x1, z1 and x2, z2, inclusive. */
-    private fun areaOf(context: CommandContext<FabricClientCommandSource>): ShareFormat.Area {
-        fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
-        return ShareFormat.Area(minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")), maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")))
     }
 
     private fun boxOf(context: CommandContext<FabricClientCommandSource>, centred: Boolean) = MapBorder.Box(

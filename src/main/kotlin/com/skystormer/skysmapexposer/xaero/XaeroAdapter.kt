@@ -152,23 +152,6 @@ object XaeroAdapter : MapAdapter {
         return Ui.reply(context, BlueMapDownload.start(null, unexploredOnly))
     }
 
-    /** The chunks between two block positions of a command, inclusive: left, top, right, bottom. */
-    private fun chunks(context: CommandContext<FabricClientCommandSource>): IntArray {
-        fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
-        val (x1, x2) = chunk("x1") to chunk("x2")
-        val (z1, z2) = chunk("z1") to chunk("z2")
-        return intArrayOf(minOf(x1, x2), minOf(z1, z2), maxOf(x1, x2), maxOf(z1, z2))
-    }
-
-    /**
-     * The terrain of the chunks between two block positions, inclusive, or of the whole map
-     * ([whole]), to a file in the shared maps folder. A big one asks first ([SharedTerrain.reply]).
-     */
-    private fun saveTerrain(context: CommandContext<FabricClientCommandSource>, whole: Boolean, confirmed: Boolean): Int {
-        val area = if (whole) null else chunks(context).let { (left, top, right, bottom) -> ShareFormat.Area(left, top, right, bottom) }
-        return SharedTerrain.reply(context, TerrainFiles.save(area, confirmed))
-    }
-
     override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
         TerrainFiles.add(file, id, unexploredOnly, confirmed)
 
@@ -363,22 +346,10 @@ object XaeroAdapter : MapAdapter {
                     .then(ClientCommands.literal("unexplored").executes { download(it, unexploredOnly = true) })
                     .then(ClientCommands.literal("cancel").executes(::cancelDownloadCommand))
             )
-            .then(
-                ClientCommands.literal("terrain")
-                    .then(ClientCommands.literal("save")
-                        .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
-                            .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
-                                .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
-                                    .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
-                                        .executes { saveTerrain(it, whole = false, confirmed = false) }
-                                        .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = false, confirmed = true) })))))
-                        .then(ClientCommands.literal("all")
-                            .executes { saveTerrain(it, whole = true, confirmed = false) }
-                            .then(ClientCommands.literal("confirm").executes { saveTerrain(it, whole = true, confirmed = true) })))
-                    .then(ClientCommands.literal("cancel").executes {
-                        Ui.reply(it, if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved")
-                    })
-            )
+            // The terrain of the chunks picked, or of the whole map, to a file in the shared maps folder.
+            .then(SharedTerrain.command(TerrainFiles::save) {
+                if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved"
+            })
             .then(
                 ClientCommands.literal("clear")
                     .then(clearCommand(MapClear.Kind.OLD_SEASON))

@@ -72,6 +72,20 @@ object MapExposerClient : ClientModInitializer {
     /** Whether dropping map files onto the game window reaches [TerrainFiles] (`MouseHandlerMixin`). */
     fun dropHookInstalled() = injected("net.minecraft.client.MouseHandler", "skysmapexposer\$onDrop")
 
+    /**
+     * The test driver (`AutoTest`), when a test launch names a steps file. It is only in jars built
+     * for testing (`-Pautotest`, or a dev client run with `SME_AUTOTEST`), never in a release, so
+     * it is found by name: loading it registers its own tick.
+     */
+    private fun startAutoTest() {
+        if (System.getProperty("skysmapexposer.autotest") == null) return
+        try {
+            Class.forName("com.skystormer.skysmapexposer.AutoTest")
+        } catch (e: ClassNotFoundException) {
+            Log.warn("A test steps file was given, but this jar was built without the test driver (-Pautotest)")
+        }
+    }
+
     override fun onInitializeClient() {
         Config.load()
         KeyMappingHelper.registerKeyMapping(pingKey)
@@ -82,6 +96,7 @@ object MapExposerClient : ClientModInitializer {
 
         MapMods.adapter?.init()
         ChatShare.register()
+        startAutoTest()
 
         // On the client thread, like leaving, so a quick rejoin never starts before the last leave ends.
         ClientPlayConnectionEvents.JOIN.register { _, _, client ->
@@ -136,7 +151,6 @@ object MapExposerClient : ClientModInitializer {
             while (pingKey.consumeClick()) Ui.say(PlayerPings.sendLookedAt())
             MapPrep.tick(Session.current)
             CaveNotice.tick(client)
-            AutoTest.tick(client)
             val session = Session.current ?: return@register
             ticks++
             // Chunks you stay near are kept up to date by Xaero, so they stay current here too.

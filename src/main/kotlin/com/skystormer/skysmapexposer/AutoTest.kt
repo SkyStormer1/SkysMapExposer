@@ -1,6 +1,7 @@
 package com.skystormer.skysmapexposer
 
 import com.mojang.blaze3d.platform.InputConstants
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
@@ -73,6 +74,11 @@ object AutoTest {
     private var started = false
     private var waitUntil = 0L
     private var loadedFrom = 0L
+
+    // Loaded by name from MapExposerClient, only in jars built with the test driver.
+    init {
+        ClientTickEvents.END_CLIENT_TICK.register(::tick)
+    }
 
     fun tick(client: Minecraft) {
         val file = file ?: return

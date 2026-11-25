@@ -2,7 +2,10 @@ package com.skystormer.skysmapexposer
 
 import com.skystormer.skysmapexposer.ShareFormat.unzigzag
 import com.skystormer.skysmapexposer.ShareFormat.varint
+import com.mojang.brigadier.arguments.IntegerArgumentType
+import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.ChatFormatting
@@ -128,6 +131,34 @@ object SharedTerrain {
         val command = context.input.removePrefix("/").trim() + " confirm"
         context.source.sendFeedback(Component.literal(answer.text + "  ").append(ChatButton.of("[Save anyway]", "/$command", "Starts saving it")))
         return 1
+    }
+
+    /**
+     * `terrain save <x1> <z1> <x2> <z2> [confirm]`, `terrain save all [confirm]` and `terrain cancel`,
+     * for either map: [save] is given the chunks between the two block positions, inclusive (null
+     * for the whole map shown) and whether it was confirmed; [cancel] says what stopping came to.
+     */
+    fun command(save: (ShareFormat.Area?, Boolean) -> Answer, cancel: () -> String): LiteralArgumentBuilder<FabricClientCommandSource> {
+        fun run(context: CommandContext<FabricClientCommandSource>, whole: Boolean, confirmed: Boolean) =
+            reply(context, save(if (whole) null else areaOf(context), confirmed))
+        return ClientCommands.literal("terrain")
+            .then(ClientCommands.literal("save")
+                .then(ClientCommands.argument("x1", IntegerArgumentType.integer())
+                    .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
+                        .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
+                            .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
+                                .executes { run(it, whole = false, confirmed = false) }
+                                .then(ClientCommands.literal("confirm").executes { run(it, whole = false, confirmed = true) })))))
+                .then(ClientCommands.literal("all")
+                    .executes { run(it, whole = true, confirmed = false) }
+                    .then(ClientCommands.literal("confirm").executes { run(it, whole = true, confirmed = true) })))
+            .then(ClientCommands.literal("cancel").executes { Ui.reply(it, cancel()) })
+    }
+
+    /** The chunks between block positions x1, z1 and x2, z2 of a command, inclusive. */
+    fun areaOf(context: CommandContext<FabricClientCommandSource>): ShareFormat.Area {
+        fun chunk(name: String) = Math.floorDiv(IntegerArgumentType.getInteger(context, name), 16)
+        return ShareFormat.Area(minOf(chunk("x1"), chunk("x2")), minOf(chunk("z1"), chunk("z2")), maxOf(chunk("x1"), chunk("x2")), maxOf(chunk("z1"), chunk("z2")))
     }
 
     /**

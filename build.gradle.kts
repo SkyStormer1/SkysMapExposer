@@ -137,6 +137,17 @@ tasks.jar {
     from(rootProject.file("LICENSE")) { rename { "${it}_${base.archivesName.get()}" } }
 }
 
+// The test driver (AutoTest) is left out of the jar unless asked for: `-Pautotest` builds a jar for
+// testing (named -autotest), and a dev client run with SME_AUTOTEST set gets it as well. Stonecutter
+// still switches its version lines like any other file's.
+val withAutoTest = providers.gradleProperty("autotest").isPresent || System.getenv("SME_AUTOTEST") != null
+if (!withAutoTest) {
+    sourceSets.main { kotlin.exclude("com/skystormer/skysmapexposer/AutoTest.kt") }
+    tasks.named<Jar>("sourcesJar") { exclude("com/skystormer/skysmapexposer/AutoTest.kt") }
+} else {
+    tasks.jar { archiveClassifier = "autotest" }
+}
+
 // A development client drives itself through the steps in the file SME_AUTOTEST names (AutoTest).
 tasks.withType<JavaExec>().configureEach {
     System.getenv("SME_AUTOTEST")?.let { systemProperty("skysmapexposer.autotest", it) }
