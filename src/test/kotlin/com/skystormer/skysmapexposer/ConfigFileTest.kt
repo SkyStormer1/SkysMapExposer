@@ -1,7 +1,10 @@
 package com.skystormer.skysmapexposer
 
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -9,6 +12,26 @@ import java.nio.file.Path
 
 /** The settings file reads and writes back the same, whatever the code behind it looks like. */
 class ConfigFileTest {
+
+    /** The settings as they were before each test, put back after it so other tests see them unchanged. */
+    private lateinit var before: JsonObject
+
+    @BeforeEach
+    fun keepSettings() {
+        before = Config.toJson()
+    }
+
+    @AfterEach
+    fun putSettingsBack() {
+        val file = Files.createTempFile("skysmapexposer-before", ".json")
+        try {
+            Files.writeString(file, before.toString())
+            Config.load(file)
+            Config.takeLoadProblem()
+        } finally {
+            Files.deleteIfExists(file)
+        }
+    }
 
     /** Every setting the file holds, none of them at its default. */
     private val everything = """
@@ -90,8 +113,6 @@ class ConfigFileTest {
         assertEquals(true, edits[Config::pings])
         assertEquals(untouched, edits.toString())
         assertEquals(7.0, edits.default(Config::staleDays))
-        Config.pings = true
-        Config.barRows = 6
     }
 
     @Test
