@@ -82,6 +82,9 @@ class PlayerRowWidget(
          * mostly gap, and share what there is in proportion when there is not, so the columns still
          * line up on a narrow screen.
          */
+        /** The row width that fits [name], [coordinates] and [distance] text widths in full: [columns] then shrinks nothing. */
+        fun widthFor(name: Int, coordinates: Int, distance: Int): Int = HEAD + GAP * 3 + name + coordinates + distance + 1
+
         fun columns(name: Int, coordinates: Int, distance: Int, rowWidth: Int): IntArray {
             val room = (rowWidth - HEAD - GAP * 3).coerceAtLeast(3)
             val wanted = name + coordinates + distance

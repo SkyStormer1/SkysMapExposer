@@ -52,9 +52,17 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
     private lateinit var unlockAll: Button
 
     private val left get() = width / 2 - listWidth / 2
-    private val listWidth get() = minOf(MAX_WIDTH, width - 16)
+    /** As wide as the rows need ([wanted]), at least [MAX_WIDTH] where it fits, never wider than the screen. */
+    private val listWidth get() = minOf(maxOf(MAX_WIDTH, wanted), width - 16)
+    /** The width that shows every name, position and distance in full, worked out on opening. */
+    private var wanted = 0
 
     override fun init() {
+        wanted = players().takeIf { it.isNotEmpty() }?.let { all ->
+            val cells = all.map { text(it) }
+            PlayerRowWidget.widthFor(all.maxOf { font.width(it.player.label) }, cells.maxOf { font.width(it.first) }, cells.maxOf { font.width(it.second) }) +
+                GAP + (BUTTON + GAP) * 4
+        } ?: 0
         var y = 6
         val session = Session.current
         val heading = when {
@@ -78,7 +86,8 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 .create(left + half + GAP, y, listWidth - half - GAP, ROW, Component.literal("Dimension")) { _, all ->
                     allDimensions = all
                     pages.page = 0
-                    refreshRows(force = true)
+                    // Rows say their dimension too now, so the list is measured again.
+                    rebuildWidgets()
                 }
         )
         y += ROW + GAP * 2
@@ -176,7 +185,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
 
         // Go to moves the open world map, or opens one; either way only for the dimension it shows.
         val mapDimension = MapMods.adapter?.shownDimension() ?: myDimension()
-        val buttonWidth = 44
+        val buttonWidth = BUTTON
         val textWidth = listWidth - (buttonWidth + GAP) * 4
 
         // The columns are as wide as the widest thing going in them, measured over every player the
@@ -333,6 +342,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
 
     companion object {
         private const val MAX_WIDTH = 420
+        private const val BUTTON = 44
         // ARGB: these are drawn onto the screen by PlayerRowWidget, not put in a Component.
         private const val NAME = 0xFFFFFFFF.toInt()
         private const val LOCKED = 0xFF55FF55.toInt()
