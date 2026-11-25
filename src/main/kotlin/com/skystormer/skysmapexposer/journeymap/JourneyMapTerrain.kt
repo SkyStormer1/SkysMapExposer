@@ -165,10 +165,7 @@ internal object JourneyMapTerrain {
         // map and is never kept up to date for the minimap.
         val area = ScreenSquares.areaOf(ui, state)
             ?: return say(if (fullscreen) "JourneyMap has not said what is on screen" else "waiting for the minimap to draw")
-        val minX = area[0]
-        val minZ = area[1]
-        val maxX = area[2]
-        val maxZ = area[3]
+        val (minX, minZ, maxX, maxZ) = area
 
         // The tile's own size for this zoom, as on Xaero's map ([TilePixels.factorsFor]); coarser
         // only while the pictures on screen would not fit the budget.
@@ -220,9 +217,7 @@ internal object JourneyMapTerrain {
         fun isNear(regionX: Int, regionZ: Int) = near && Math.abs(regionX - playerRegionX) <= 1 && Math.abs(regionZ - playerRegionZ) <= 1
 
         val seaFloor = Config.seaFloorHires && !SeaFloor.hasCeiling(dimension)
-        val useIndex = layout.lodCount > 1 &&
-            ((maxX - minX) / layout.tileSize + 1) * ((maxZ - minZ) / layout.tileSize + 1) > TileIndex.ABOVE
-        val pass = Pass(session, map, layout, scale, holding, mapTypeOf(folder), useIndex, seaFloor, now, ::isNear, minX, maxX, minZ, maxZ, centreX, centreZ)
+        val pass = Pass(session, map, layout, scale, holding, mapTypeOf(folder), seaFloor, now, ::isNear, minX, maxX, minZ, maxZ, centreX, centreZ)
 
         // Nearest first, within a slice of each tick, as Xaero spreads its masks over frames.
         val started = System.nanoTime()
@@ -249,20 +244,22 @@ internal object JourneyMapTerrain {
         // Once everything on screen is up: the next zoom out, over twice the room, built ahead and kept
         // aside, so zooming out shows it at once rather than filling in from the middle.
         if (fullscreen && waiting == 0 && building.isEmpty()) {
-            buildAhead(session, dimension, map, layout, folder, holding, factors, step, blocksPerPixel, seaFloor, now, ::isNear,
-                minX, maxX, minZ, maxZ, centreX, centreZ, started)
+            buildAhead(pass, dimension, folder, factors, step, blocksPerPixel, started)
         }
         if (mapped.size > MAX_REMEMBERED) mapped.entries.removeIf { now - it.value.at > FORGET_MS }
         if (seen.size > MAX_REMEMBERED) seen.entries.removeIf { now - it.value.at > FORGET_MS }
     }
 
     /** What every square on screen this tick is decided against. */
-    private class Pass(
+    private data class Pass(
         val session: Session, val map: String, val layout: BlueMap.MapLayout, val scale: Int,
-        val holding: Map<Long, RegionImageSet>, val mapType: MapType?, val useIndex: Boolean, val seaFloor: Boolean, val now: Long,
+        val holding: Map<Long, RegionImageSet>, val mapType: MapType?, val seaFloor: Boolean, val now: Long,
         val isNear: (Int, Int) -> Boolean,
         val minX: Double, val maxX: Double, val minZ: Double, val maxZ: Double, val centreX: Double, val centreZ: Double,
-    )
+    ) {
+        /** Over many tiles, BlueMap's index says which have anything before any is asked for ([TileIndex]). */
+        val useIndex = layout.lodCount > 1 && ((maxX - minX) / layout.tileSize + 1) * ((maxZ - minZ) / layout.tileSize + 1) > TileIndex.ABOVE
+    }
 
     /**
      * The tiles under a square for its picture: a grid of the finest tiles from ([firstX], [firstZ]),
@@ -507,34 +504,25 @@ internal object JourneyMapTerrain {
      * built off the map, nearest first within what is left of this tick's slice; skipped if they would
      * not fit half the texture budget.
      */
-    private fun buildAhead(
-        session: Session, dimension: String, map: String, layout: BlueMap.MapLayout, folder: Folder,
-        holding: Map<Long, RegionImageSet>, factors: List<Int>, step: Int, blocksPerPixel: Double, seaFloor: Boolean, now: Long,
-        isNear: (Int, Int) -> Boolean, minX: Double, maxX: Double, minZ: Double, maxZ: Double, centreX: Double, centreZ: Double, started: Long,
-    ) {
+    private fun buildAhead(onScreen: Pass, dimension: String, folder: Folder, factors: List<Int>, step: Int, blocksPerPixel: Double, started: Long) {
         val aheadStep = factors.indexOfLast { it <= (blocksPerPixel * 2).coerceAtLeast(1.0) }
         if (aheadStep <= step) return
         val scale = factors[aheadStep]
         val group = groupFor(scale)
         val span = REGION * group
-        val width = maxX - minX
-        val height = maxZ - minZ
-        val aMinX = centreX - width
-        val aMaxX = centreX + width
-        val aMinZ = centreZ - height
-        val aMaxZ = centreZ + height
+        val width = onScreen.maxX - onScreen.minX
+        val height = onScreen.maxZ - onScreen.minZ
+        val pass = with(onScreen) { copy(scale = scale, minX = centreX - width, maxX = centreX + width, minZ = centreZ - height, maxZ = centreZ + height) }
         val ahead = ArrayList<Square>()
-        for (z in Math.floorDiv(aMinZ.toInt(), span)..Math.floorDiv(aMaxZ.toInt(), span)) {
-            for (x in Math.floorDiv(aMinX.toInt(), span)..Math.floorDiv(aMaxX.toInt(), span)) ahead.add(Square(dimension, x, z, group, Context.UI.Fullscreen))
+        for (z in Math.floorDiv(pass.minZ.toInt(), span)..Math.floorDiv(pass.maxZ.toInt(), span)) {
+            for (x in Math.floorDiv(pass.minX.toInt(), span)..Math.floorDiv(pass.maxX.toInt(), span)) ahead.add(Square(dimension, x, z, group, Context.UI.Fullscreen))
         }
         if (ahead.size > MAX_SQUARES || ahead.size * pictureBytes(span, scale) > budget() / 2) return
-        ahead.sortBy { val dx = it.westX + it.span / 2.0 - centreX; val dz = it.northZ + it.span / 2.0 - centreZ; dx * dx + dz * dz }
-        val useIndex = layout.lodCount > 1 && ((aMaxX - aMinX) / layout.tileSize + 1) * ((aMaxZ - aMinZ) / layout.tileSize + 1) > TileIndex.ABOVE
-        val pass = Pass(session, map, layout, scale, holding, mapTypeOf(folder), useIndex, seaFloor, now, isNear, aMinX, aMaxX, aMinZ, aMaxZ, centreX, centreZ)
+        ahead.sortBy { val dx = it.westX + it.span / 2.0 - pass.centreX; val dz = it.northZ + it.span / 2.0 - pass.centreZ; dx * dx + dz * dz }
         for (square in ahead) {
             if (System.nanoTime() - started > SLICE_NS) return
             if (square in building || squares.containsKey(square)) continue
-            val held = State().also { it.hidden = true; it.lastWanted = now; squares[square] = it }
+            val held = State().also { it.hidden = true; it.lastWanted = pass.now; squares[square] = it }
             decide(square, held, pass, folder, nearYou = false)
         }
     }

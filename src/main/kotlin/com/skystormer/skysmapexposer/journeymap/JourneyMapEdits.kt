@@ -513,24 +513,24 @@ internal object JourneyMapEdits {
             for (backup in files.toList()) {
                 val name = backup.fileName.toString().removeSuffix(".none")
                 val match = REGION_FILE.matchEntire(name) ?: continue
-                val (rx, rz) = match.destructured
-                if (JourneyMapFiles.held(folder.parent, rx.toInt(), rz.toInt())) {
+                val (rx, rz) = match.destructured.toList().map(String::toInt)
+                if (JourneyMapFiles.held(folder.parent, rx, rz)) {
                     // Open in JourneyMap: put back in its memory, as it was changed.
-                    val holder = JourneyMapFiles.heldDay(folder.parent, dimension, rx.toInt(), rz.toInt())
+                    val holder = JourneyMapFiles.heldDay(folder.parent, dimension, rx, rz)
                     val pixels = JourneyMapFiles.backupPixels(backups.resolve(name))
                     if (holder != null && pixels != null && JourneyMapFiles.replaceHeld(holder, pixels)) {
                         restored++
-                        JourneyMapTerrain.changed(dimension, rx.toInt(), rz.toInt())
+                        JourneyMapTerrain.changed(dimension, rx, rz)
                     } else {
                         held++
                     }
                     continue
                 }
-                val file = JourneyMapFiles.regionFile(folder, rx.toInt(), rz.toInt())
+                val file = JourneyMapFiles.regionFile(folder, rx, rz)
                 if (JourneyMapFiles.restore(file, backups.resolve(name))) {
                     restored++
-                    JourneyMapFiles.written(dimension, folder, rx.toInt(), rz.toInt(), exists = Files.exists(file))
-                    JourneyMapTerrain.changed(dimension, rx.toInt(), rz.toInt())
+                    JourneyMapFiles.written(dimension, folder, rx, rz, exists = Files.exists(file))
+                    JourneyMapTerrain.changed(dimension, rx, rz)
                 }
             }
         }
