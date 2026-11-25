@@ -40,8 +40,8 @@ import kotlin.math.roundToInt
  */
 class BlueMap(baseUrl: String) : AutoCloseable {
 
-    /** The web address with exactly one trailing slash. */
-    val base: String = baseUrl.trimEnd('/') + "/"
+    /** The web address cleaned as the settings screen cleans it ([SettingsCheck.blueMapAddress]), with exactly one trailing slash. */
+    val base: String = SettingsCheck.blueMapAddress(baseUrl).takeIf { it.problem == null }?.url ?: (baseUrl.trimEnd('/') + "/")
 
     /** Requests of this one still waiting for their reply, so [close] can stop them. */
     private val inFlight: MutableSet<CompletableFuture<*>> = ConcurrentHashMap.newKeySet()

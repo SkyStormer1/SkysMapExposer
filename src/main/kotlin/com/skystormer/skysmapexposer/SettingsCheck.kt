@@ -27,11 +27,51 @@ object SettingsCheck {
             if (entry.addresses.isEmpty() && url.isEmpty()) return@forEachIndexed
             if (entry.addresses.isEmpty()) return Problem("The server with BlueMap $url has no server address", i, Field.ADDRESS)
             if (url.isEmpty()) return Problem("${entry.addresses.first()} has no BlueMap address", i, Field.URL)
+            blueMapAddress(url).problem?.let { return Problem("${entry.addresses.first()}: $it", i, Field.URL) }
             if (entry.coverOverworld.isNotBlank() && parseTime(entry.coverOverworld) == null) {
                 return Problem("${entry.addresses.first()}: the season date must look like 2026-10-20 14:00", i, Field.COVER)
             }
         }
         return null
+    }
+
+    /**
+     * A BlueMap address as typed, cleaned into the address of the map's own page: [url], with what
+     * was changed ([fixed], or null), or why it can't be used ([problem]). An address copied from a
+     * browser often carries the view after a `#` (`#world:0:64:0:…`) or a page name (`index.html`),
+     * and one typed by hand often has no `http://`; those are fixed rather than refused.
+     */
+    class Address(val url: String, val fixed: String?, val problem: String?)
+
+    fun blueMapAddress(typed: String): Address {
+        var text = typed.trim()
+        if (text.isEmpty()) return Address("", null, null)
+        val changes = ArrayList<String>()
+        if (!text.contains("://")) {
+            text = "http://$text"
+            changes += "added http://"
+        }
+        val uri = try {
+            java.net.URI(text)
+        } catch (e: java.net.URISyntaxException) {
+            return Address(typed.trim(), null, "\"${typed.trim()}\" is not a web address")
+        }
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return Address(typed.trim(), null, "a BlueMap address starts with http:// or https://")
+        val host = uri.host
+        if (host.isNullOrBlank()) return Address(typed.trim(), null, "\"${typed.trim()}\" has no server name in it")
+        if (uri.rawFragment != null) changes += "took off #${uri.rawFragment.take(16)}${if (uri.rawFragment.length > 16) "…" else ""}"
+        if (uri.rawQuery != null) changes += "took off ?${uri.rawQuery.take(16)}"
+        var path = uri.rawPath.orEmpty()
+        val last = path.substringAfterLast('/')
+        if ('.' in last) {
+            path = path.dropLast(last.length)
+            changes += "took off $last"
+        }
+        if (!path.endsWith('/')) path += "/"
+        val port = if (uri.port >= 0) ":${uri.port}" else ""
+        val url = "$scheme://$host$port$path"
+        return Address(url, changes.takeIf { it.isNotEmpty() }?.joinToString(", "), null)
     }
 
     /** The settings of one server that a session is built from, to compare before and after. */

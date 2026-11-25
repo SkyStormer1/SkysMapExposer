@@ -293,4 +293,22 @@ class SettingsAndScheduleTest {
         assertEquals("%.1f GB".format(1.5), TileCache.megabytes(1536L * 1024 * 1024))
         assertEquals("%,d MB · %,d tiles".format(0, 3180), TileCache.Size(1000, 3180).toString())
     }
+
+    @Test
+    fun `BlueMap addresses are cleaned the way people type and copy them`() {
+        fun clean(typed: String) = SettingsCheck.blueMapAddress(typed)
+        assertEquals("http://map.example.com:8100/", clean("map.example.com:8100").url)
+        assertEquals("added http://", clean("map.example.com:8100").fixed)
+        assertEquals("http://1.2.3.4:8100/", clean(" http://1.2.3.4:8100/#world:0:64:0:500:0:0:0:0:perspective ").url)
+        assertEquals("https://map.example.com/", clean("https://map.example.com").url)
+        assertNull(clean("https://map.example.com/").fixed)
+        assertEquals("http://host:8100/", clean("http://host:8100/index.html").url)
+        assertEquals("http://host/map/", clean("host/map/index.html?x=1").url)
+        assertEquals("", clean("   ").url)
+        assertTrue(clean("ftp://host/").problem != null)
+        assertTrue(clean("http:// spaced name/").problem != null)
+        assertTrue(clean("http://").problem != null)
+        val entry = SettingsCheck.Entry(listOf("play.example.com"), "ftp://x/", "")
+        assertEquals(SettingsCheck.Field.URL, SettingsCheck.check("7", listOf(entry), ::parse)?.field)
+    }
 }
