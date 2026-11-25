@@ -30,6 +30,10 @@ object PlayerPings {
     /** How far the ping key reaches, in blocks; only what the game has loaded can be hit. */
     private const val KEY_REACH = 1024.0
     private const val SHARE_NAME_LIMIT = 24
+    /** Where a roofed dimension's roof starts, as the Nether's bedrock ceiling does at 123 to 127. */
+    private const val ROOF = 120
+    /** The height of a ping in another dimension than yours with nothing better to go on. */
+    private const val UNKNOWN_Y = 64
 
     private class Active(val from: String, val pin: Markers.Ping, val dimension: String, val startedAt: Long)
 
@@ -158,18 +162,33 @@ object PlayerPings {
         return send(me.level().dimension().identifier().toString(), pos.x, pos.z, pos.y)
     }
 
-    /** Pings block ([x], [z]) right-clicked on the world map, at [mapY], the height the map shows, when it knows one. */
+    /**
+     * Pings block ([x], [z]) right-clicked on the world map, at [mapY], the height the map shows,
+     * when it knows one; not the roof of a dimension with one, which is what a map of the Nether
+     * shows from outside it, and nowhere anyone could stand.
+     */
     fun sendFromMap(dimension: String, x: Int, z: Int, mapY: Int?): String =
-        send(dimension, x, z, mapY?.takeIf { Minecraft.getInstance().level?.isOutsideBuildHeight(it) == false } ?: surface(dimension, x, z))
+        send(dimension, x, z, mapY?.takeIf { Minecraft.getInstance().level?.isOutsideBuildHeight(it) == false && !onRoof(dimension, it) } ?: surface(dimension, x, z))
 
-    /** The top block at ([x], [z]) if you are in [dimension] with that chunk loaded, else what you stand on. */
+    private fun onRoof(dimension: String, y: Int): Boolean = y >= ROOF && SeaFloor.hasCeiling(dimension)
+
+    /**
+     * The ground at ([x], [z]) if you are in [dimension] with that chunk loaded: its top block, or
+     * under a roof (the Nether) the highest floor below it. Otherwise where you stand in [dimension],
+     * or from another dimension [UNKNOWN_Y].
+     */
     private fun surface(dimension: String, x: Int, z: Int): Int {
         val minecraft = Minecraft.getInstance()
         val level = minecraft.level
-        val own = (minecraft.player?.blockY ?: 64) - 1
-        if (level == null || level.dimension().identifier().toString() != dimension) return own
-        if (!level.chunkSource.hasChunk(x shr 4, z shr 4)) return own
-        return level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, BlockPos(x, 0, z)).y - 1
+        val here = level?.dimension()?.identifier()?.toString() == dimension
+        val own = minecraft.player?.blockY?.minus(1)?.takeIf { here } ?: UNKNOWN_Y
+        if (level == null || !here || !level.chunkSource.hasChunk(x shr 4, z shr 4)) return own
+        if (!level.dimensionType().hasCeiling()) return level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, BlockPos(x, 0, z)).y - 1
+        // Down from under the roof to the first open space, then on down to what it stands on.
+        val pos = BlockPos.MutableBlockPos(x, ROOF - 1, z)
+        while (pos.y > level.minY && !level.getBlockState(pos).isAir) pos.move(0, -1, 0)
+        while (pos.y > level.minY && level.getBlockState(pos).isAir) pos.move(0, -1, 0)
+        return if (pos.y > level.minY) pos.y else own
     }
 
     // ---- receiving ----
