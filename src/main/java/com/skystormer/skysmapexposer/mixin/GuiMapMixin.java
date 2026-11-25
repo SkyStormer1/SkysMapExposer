@@ -2,6 +2,8 @@ package com.skystormer.skysmapexposer.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
+import com.skystormer.skysmapexposer.Log;
+import com.skystormer.skysmapexposer.xaero.XaeroAdapter;
 import com.skystormer.skysmapexposer.xaero.BiomeHighlight;
 import com.skystormer.skysmapexposer.HookErrors;
 import com.skystormer.skysmapexposer.MapCamera;
@@ -326,6 +328,11 @@ public abstract class GuiMapMixin implements MapCamera {
             } catch (Throwable e) {
                 HookErrors.failed(HookErrors.OTHER_DIMENSION, e);
             }
+        }
+        try {
+            XaeroAdapter.drawStatusLine((Screen) (Object) this, graphics);
+        } catch (Throwable e) {
+            Log.INSTANCE.warn("Could not draw the status line on Xaero's map: {}", e.toString());
         }
         graphics.nextStratum();
     }

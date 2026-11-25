@@ -69,31 +69,32 @@ object XaeroAdapter : MapAdapter {
         false
     }
 
-    /**
-     * This mod's bar ([MapBar]) on Xaero's world map, and a line at the top of the map saying how a
-     * download is going.
-     */
+    /** This mod's bar ([MapBar]) on Xaero's world map. */
     private fun addToMapScreen() {
         ScreenEvents.AFTER_INIT.register { _, screen, _, _ ->
             if (screen.javaClass.name != "xaero.map.gui.GuiMap") return@register
             try {
                 MapBar.addTo(screen)
-
-                ScreenEvents.afterExtract(screen).register { _, graphics, _, _, _ ->
-                    val status = BlueMapDownload.status() ?: TerrainFiles.status() ?: MapPrep.status() ?: CaveNotice.line() ?: return@register
-                    val font = Screens.getMinecraft(screen).font
-                    val half = font.width(status) / 2 + 4
-                    val middle = screen.width / 2
-                    // Under Xaero's own lines at the top (the block under the mouse, its biome, and
-                    // the other dimension's coordinates), never over them.
-                    val top = STATUS_TOP
-                    graphics.fill(middle - half, top, middle + half, top + 12, 0xA0000000.toInt())
-                    graphics.centeredText(font, status, middle, top + 2, 0xFFFFFFFF.toInt())
-                }
             } catch (e: Throwable) {
                 Log.error("Could not add the bar to Xaero's world map", e)
             }
         }
+    }
+
+    /**
+     * For `GuiMapMixin`, before the screen's widgets, so the panels cover it: a line at the top of
+     * the map saying how a download, a map file or the map's preparation is going, or why there is
+     * no BlueMap terrain in cave mode. Under Xaero's own lines at the top (the block under the mouse,
+     * its biome, and the other dimension's coordinates), never over them.
+     */
+    @JvmStatic
+    fun drawStatusLine(screen: Screen, graphics: GuiGraphicsExtractor) {
+        val status = BlueMapDownload.status() ?: TerrainFiles.status() ?: MapPrep.status() ?: CaveNotice.line() ?: return
+        val font = Screens.getMinecraft(screen).font
+        val half = font.width(status) / 2 + 4
+        val middle = screen.width / 2
+        graphics.fill(middle - half, STATUS_TOP, middle + half, STATUS_TOP + 12, 0xA0000000.toInt())
+        graphics.centeredText(font, status, middle, STATUS_TOP + 2, 0xFFFFFFFF.toInt())
     }
 
     /**
