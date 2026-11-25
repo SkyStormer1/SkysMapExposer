@@ -52,7 +52,7 @@ import java.nio.file.Path
  * - `menurows` / `menupick <text>` logs the rows of Xaero's open right-click menu, or picks the first with that text
  * - `editmenu` opens the right-click menu editor
  * - `settings` opens the settings screen; `settingslog` logs the settings as they would be saved (servers left out)
- * - `widgets` logs what every widget on the open screen says; `press <text>` clicks the first one starting with that
+ * - `widgets` logs what every widget on the open screen says; `bounds` where each is; `press <text>` clicks the first one starting with that
  * - `zoom in|out` zooms the open screen, as JourneyMap's full-screen map does
  * - `gotoplayer` centres the map on the first player BlueMap lists in your dimension
  * - `addshared blank|all` adds the map file opened last, as its chat button would
@@ -196,6 +196,10 @@ object AutoTest {
                 // middle of the first one whose text starts so, through the screen as a real click goes.
                 "widgets" -> Log.info("AutoTest: widgets: {}", client.gui.screen()?.children()?.filterIsInstance<net.minecraft.client.gui.components.AbstractWidget>()
                     ?.joinToString(" | ") { it.message.string + if (it.active) "" else " (off)" })
+                // `bounds`: where every widget on the screen open is, one line each, to compare layouts.
+                "bounds" -> client.gui.screen()?.children()?.filterIsInstance<net.minecraft.client.gui.components.AbstractWidget>()?.forEach {
+                    Log.info("AutoTest: bounds {} {} {} {} {}", it.x, it.y, it.width, it.height, it.message.string)
+                }
                 "press" -> {
                     val screen = client.gui.screen() ?: return Log.warn("AutoTest: no screen to press on")
                     val widget = screen.children().filterIsInstance<net.minecraft.client.gui.components.AbstractWidget>()
