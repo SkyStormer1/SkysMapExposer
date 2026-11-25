@@ -21,7 +21,6 @@ import com.skystormer.skysmapexposer.SafeFiles
 import com.skystormer.skysmapexposer.SeaFloor
 import com.skystormer.skysmapexposer.Seasons
 import com.skystormer.skysmapexposer.Session
-import com.skystormer.skysmapexposer.TilePixels
 import com.skystormer.skysmapexposer.Ui
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
@@ -104,25 +103,17 @@ internal object JourneyMapEdits {
     private fun findDownload(
         job: Job, mapId: String, blocks: BlockArea?, unexploredOnly: Boolean, biomes: Path?, registries: net.minecraft.core.RegistryAccess,
     ) {
-        val blueMap = job.session!!.blueMap
-        val found = job.findOnBlueMap(blueMap, mapId, blocks) ?: return
+        val found = job.findOnBlueMap(job.session!!.blueMap, mapId, blocks) ?: return
         val size = found.tileSize
-        val finest = found.finest
         job.total = found.regions.size
         job.finding = false
-        // BlueMap's tiles, fetched and decoded once while neighbouring regions still need them.
-        // Each tile's picture read once, for both the shaded colours and the heights.
-        val read = lruMap<Pair<Int, Int>, IntArray?>(KEEP_TILES)
-        fun source(tx: Int, tz: Int): IntArray? = read.getOrPut(tx to tz) {
-            if (tx to tz in finest) blueMap.tile(mapId, 1, tx, tz)?.let { TilePixels.read(it, size) } else null
-        }
-        val tiles = lruMap<Pair<Int, Int>, IntArray?>(KEEP_TILES)
+        // BlueMap's tiles, fetched and decoded once while neighbouring regions still need them: for
+        // the picture, the biomes and the blocks kept in JourneyMap's chunk cache.
+        val decoded = lruMap<Pair<Int, Int>, BlueMapPicture.Tile?>(KEEP_TILES)
+        fun tile(tx: Int, tz: Int): BlueMapPicture.Tile? = decoded.getOrPut(tx to tz) { found.tile(tx, tz) }
         // The biomes, guessed from BlueMap's ground by the same guide as a download into Xaero's map
         // ([BiomeGuide]), from the same tiles, and kept for JourneyMap ([JourneyMapImportedBiomes]).
         val guide = if (Config.guessBiomes && biomes != null) BiomeGuide.forDimension(job.dimensionId) else null
-        // BlueMap's colours and heights, for the blocks kept in JourneyMap's chunk cache.
-        val decoded = lruMap<Pair<Int, Int>, BlueMapPicture.Tile?>(KEEP_TILES)
-        fun tile(tx: Int, tz: Int): BlueMapPicture.Tile? = decoded.getOrPut(tx to tz) { source(tx, tz)?.let { BlueMapPicture.decode(tx, tz, size, it) } }
         val ground = guide?.let {
             LowresSource(size, hasSea = job.dimensionId == Config.OVERWORLD) { tx, tz -> tile(tx, tz) }
         }
@@ -140,12 +131,10 @@ internal object JourneyMapEdits {
             val originX = rx * JourneyMapFiles.REGION
             val originZ = rz * JourneyMapFiles.REGION
             for ((tx, tz) in BlueMapPicture.tilesOver(originX, originZ, originX + JourneyMapFiles.REGION - 1, originZ + JourneyMapFiles.REGION - 1, size)) {
-                if (tx to tz !in finest) continue
-                val pixels = tiles.getOrPut(tx to tz) { source(tx, tz)?.let { TilePixels.decode(it, size, 1) } } ?: continue
-                val width = size + 1
+                val tile = tile(tx, tz) ?: continue
                 for (z in 0 until size) for (x in 0 until size) {
-                    val colour = pixels[z * width + x]
-                    if (colour ushr 24 == 0) continue
+                    val colour = tile.shaded(x, z)
+                    if (colour == 0) continue
                     val px = tx * size + x - originX
                     val pz = tz * size + z - originZ
                     if (px !in 0 until JourneyMapFiles.REGION || pz !in 0 until JourneyMapFiles.REGION) continue

@@ -244,23 +244,17 @@ object BlueMapDownload {
         },
     ) {
         job.message = "Asking BlueMap what it has…"
-        val blueMap = job.blueMap!!
-        val mapId = job.mapId!!
-        val found = job.findOnBlueMap(blueMap, mapId, job.area) ?: return@findOff
-        val finest = found.finest
+        val found = job.findOnBlueMap(job.blueMap!!, job.mapId!!, job.area) ?: return@findOff
         val size = found.tileSize
         job.total = found.regions.size
         if (found.regions.isEmpty()) return@findOff fail(job, "BlueMap has nothing there to download")
-        Log.info("Download: {} regions to look at, {} BlueMap tiles", found.regions.size, finest.size)
+        Log.info("Download: {} regions to look at, {} BlueMap tiles", found.regions.size, found.finest.size)
 
         job.phase = Phase.WRITING
         job.finding = false
         // BlueMap's tiles, fetched once each while neighbouring regions need them. Only tiles
         // BlueMap has anything in are asked for.
-        val source = LowresSource(size, hasSea = job.dimensionId == Config.OVERWORLD) { tx, tz ->
-            if (tx to tz !in finest) null
-            else blueMap.tile(mapId, 1, tx, tz)?.let { BlueMapPicture.decode(tx, tz, size, it) }
-        }
+        val source = LowresSource(size, hasSea = job.dimensionId == Config.OVERWORLD, found::tile)
         for ((rx, rz) in found.regions) {
             if (job.cancelled) break
             val a = job.area

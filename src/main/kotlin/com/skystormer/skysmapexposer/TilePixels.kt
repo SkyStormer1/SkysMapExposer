@@ -42,16 +42,16 @@ object TilePixels {
                 val colour = source[z * width + x]
                 if (colour ushr 24 == 0) continue
                 val here = height(x, z)
-                val north = heightOr(x, z - 1, here)
-                val northWest = heightOr(x - 1, z - 1, here)
-                val shade = xaeroLight(here, here - Math.floorDiv(here - north, blocksPerPixel), here - Math.floorDiv(here - northWest, blocksPerPixel))
-                pixels[z * width + x] = OPAQUE or
-                    (channel(colour shr 16, shade) shl 16) or
-                    (channel(colour shr 8, shade) shl 8) or
-                    channel(colour, shade)
+                pixels[z * width + x] = shade(colour, here, heightOr(x, z - 1, here), heightOr(x - 1, z - 1, here), blocksPerPixel)
             }
         }
         return pixels
+    }
+
+    /** [colour] lit as [decode] lights it, with the ground at [here], [north] of it and [northWest] of it. */
+    fun shade(colour: Int, here: Int, north: Int, northWest: Int, blocksPerPixel: Int): Int {
+        val shade = xaeroLight(here, here - Math.floorDiv(here - north, blocksPerPixel), here - Math.floorDiv(here - northWest, blocksPerPixel))
+        return OPAQUE or (channel(colour shr 16, shade) shl 16) or (channel(colour shr 8, shade) shl 8) or channel(colour, shade)
     }
 
     /**

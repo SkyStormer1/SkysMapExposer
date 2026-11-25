@@ -19,6 +19,14 @@ object BlueMapPicture {
     class Tile(val tileX: Int, val tileZ: Int, val size: Int, val colour: IntArray, val height: ShortArray, val light: ByteArray) {
         val originX: Int get() = tileX * size
         val originZ: Int get() = tileZ * size
+
+        /** The colour at ([x], [z]) lit as [TilePixels.decode] lights it, 0 where BlueMap has nothing. */
+        fun shaded(x: Int, z: Int): Int {
+            val here = height[z * size + x].toInt()
+            fun at(x: Int, z: Int) = if (x < 0 || z < 0 || colour[z * size + x] == 0) here else height[z * size + x].toInt()
+            val c = colour[z * size + x]
+            return if (c == 0) 0 else TilePixels.shade(c, here, at(x, z - 1), at(x - 1, z - 1), 1)
+        }
     }
 
     /**

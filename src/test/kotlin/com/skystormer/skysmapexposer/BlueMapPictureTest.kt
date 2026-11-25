@@ -101,4 +101,20 @@ class BlueMapPictureTest {
         BlueMapPicture.finestTilesIn(coarse, 25, 500, found)
         assertEquals(setOf(1 to 0), found)
     }
+
+    /** A JourneyMap download lights each tile's colours from the decoded tile; it must match the map's own lighting. */
+    @Test
+    fun shadedTileMatchesTheMapsLighting() {
+        val size = 20
+        val width = size + 1
+        val random = java.util.Random(7)
+        val source = IntArray(width * width * 2)
+        for (z in 0 until width) for (x in 0 until width) {
+            if (random.nextInt(6) != 0) source[z * width + x] = (0x80 + random.nextInt(0x80)) shl 24 or random.nextInt(0x1000000)
+            source[(width + z) * width + x] = (random.nextInt(16) shl 16) or ((random.nextInt(200) - 64) and 0xFFFF)
+        }
+        val lit = TilePixels.decode(source, size, 1)
+        val tile = BlueMapPicture.decode(0, 0, size, source)
+        for (z in 0 until size) for (x in 0 until size) assertEquals(lit[z * width + x], tile.shaded(x, z), "at $x, $z")
+    }
 }

@@ -79,7 +79,11 @@ open class RegionJob<T>(
     }
 
     /** What [findOnBlueMap] found: BlueMap's finest tiles worth reading, and the regions over them, nearest first. */
-    class Found(val tileSize: Int, val finest: Set<Pair<Int, Int>>, val regions: List<Pair<Int, Int>>)
+    class Found(private val blueMap: BlueMap, private val mapId: String, val tileSize: Int, val finest: Set<Pair<Int, Int>>, val regions: List<Pair<Int, Int>>) {
+        /** Finest tile ([tx], [tz]) fetched and decoded, or null where BlueMap has nothing worth reading. */
+        fun tile(tx: Int, tz: Int): BlueMapPicture.Tile? =
+            if (tx to tz in finest) blueMap.tile(mapId, 1, tx, tz)?.let { BlueMapPicture.decode(tx, tz, tileSize, it) } else null
+    }
 
     /**
      * Asks BlueMap what it has of map [mapId]: every finest tile under [area], or, with no area, the
@@ -103,7 +107,7 @@ open class RegionJob<T>(
             for ((tx, tz) in finest) found.addAll(BlueMapPicture.regionsOver(tx * size, tz * size, tx * size + size - 1, tz * size + size - 1))
             regions = found
         }
-        return Found(size, finest, nearestFirst(regions))
+        return Found(blueMap, mapId, size, finest, nearestFirst(regions))
     }
 
     /** [endedAt] less [startedAt], as "4.2s", "3m 10s" or "1h 5m". */
