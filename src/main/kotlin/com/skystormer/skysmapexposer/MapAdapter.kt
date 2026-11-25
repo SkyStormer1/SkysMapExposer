@@ -85,8 +85,11 @@ interface MapAdapter {
     /** Whether BlueMap can be downloaded into this map ([download]). */
     val canDownload: Boolean get() = false
 
-    /** Downloads BlueMap into this map for the dimension its full-screen map shows, all of it or only where it has nothing; what to tell you. */
-    fun download(unexploredOnly: Boolean): String = "This map can't take downloads"
+    /**
+     * Downloads BlueMap into this map, the chunks of [area] or everywhere BlueMap has the map, all of
+     * it or only where the map has nothing ([DownloadOffer]); what to tell you.
+     */
+    fun download(unexploredOnly: Boolean, area: ShareFormat.Area? = null): String = "This map can't take downloads"
 
     /** Stops a running download; false if none was running. */
     fun cancelDownload(): Boolean = false

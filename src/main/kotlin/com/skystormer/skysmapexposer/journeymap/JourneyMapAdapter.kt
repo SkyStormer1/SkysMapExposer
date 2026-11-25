@@ -155,28 +155,6 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
-        root.then(
-            ClientCommands.literal("download")
-                .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(unexploredOnly = false)) })
-                .then(ClientCommands.literal("unexplored").executes { Ui.reply(it, JourneyMapEdits.download(unexploredOnly = true)) })
-                .then(ClientCommands.literal("region").then(
-                    ClientCommands.argument("x", IntegerArgumentType.integer()).then(
-                        ClientCommands.argument("z", IntegerArgumentType.integer())
-                            .executes { Ui.reply(it, JourneyMapEdits.download(true, regionOf(it))) }
-                            .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, regionOf(it))) })
-                    )
-                ))
-                // The chunks between two block positions: the area picked on the map ([JourneyMapSelection]).
-                .then(ClientCommands.literal("area").then(ClientCommands.argument("x1", IntegerArgumentType.integer())
-                    .then(ClientCommands.argument("z1", IntegerArgumentType.integer())
-                        .then(ClientCommands.argument("x2", IntegerArgumentType.integer())
-                            .then(ClientCommands.argument("z2", IntegerArgumentType.integer())
-                                .executes { Ui.reply(it, JourneyMapEdits.download(true, SharedTerrain.areaOf(it))) }
-                                .then(ClientCommands.literal("all").executes { Ui.reply(it, JourneyMapEdits.download(false, SharedTerrain.areaOf(it))) }))))))
-                .then(ClientCommands.literal("cancel").executes {
-                    Ui.reply(it, if (JourneyMapEdits.cancel()) "Stopping after the region it is on" else "Nothing is being written into JourneyMap's map")
-                })
-        )
         root.then(ClientCommands.literal("undo").executes { Ui.reply(it, JourneyMapEdits.undo()) })
         // `clear <kind>` says what would go; `clear <kind> confirm` takes it off; a border can be given by hand.
         val clear = ClientCommands.literal("clear")
@@ -234,12 +212,6 @@ object JourneyMapAdapter : MapAdapter {
     }
 
     /** The region holding block (`x`, `z`) of a command, as the chunks it covers. */
-    private fun regionOf(context: CommandContext<FabricClientCommandSource>): ShareFormat.Area {
-        val rx = Math.floorDiv(IntegerArgumentType.getInteger(context, "x"), JourneyMapFiles.REGION)
-        val rz = Math.floorDiv(IntegerArgumentType.getInteger(context, "z"), JourneyMapFiles.REGION)
-        return ShareFormat.Area(rx * 32, rz * 32, rx * 32 + 31, rz * 32 + 31)
-    }
-
     private fun boxOf(context: CommandContext<FabricClientCommandSource>, centred: Boolean) = MapBorder.Box(
         IntegerArgumentType.getInteger(context, "radius"),
         if (centred) IntegerArgumentType.getInteger(context, "centerX") else 0,
@@ -307,7 +279,7 @@ object JourneyMapAdapter : MapAdapter {
 
     override val canDownload: Boolean get() = true
 
-    override fun download(unexploredOnly: Boolean): String = JourneyMapEdits.download(unexploredOnly)
+    override fun download(unexploredOnly: Boolean, area: ShareFormat.Area?): String = JourneyMapEdits.download(unexploredOnly, area)
 
     override fun myWaypoints(dimension: String?): Pair<String, List<ShareableWaypoint>>? = api?.let { JourneyMapWaypoints.mine(it, dimension) }
 

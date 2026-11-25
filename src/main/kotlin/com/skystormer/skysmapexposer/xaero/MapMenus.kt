@@ -1,13 +1,13 @@
 package com.skystormer.skysmapexposer.xaero
 
 import com.skystormer.skysmapexposer.WaypointRules
-import com.skystormer.skysmapexposer.BlockArea
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.ChatShare
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapCamera
 import com.skystormer.skysmapexposer.PlayerPings
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.DownloadOffer
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.gui.PlayerListScreen
 import com.skystormer.skysmapexposer.gui.ShareScreen
@@ -62,7 +62,7 @@ object MapMenus {
             // The list reads BlueMap, so it is only worth offering on a server that has one.
             if (Session.current != null) {
                 ours += "players" to option("Players…", 0, target) { parent -> Ui.open(PlayerListScreen(parent)) }
-                if (selection != null) ours += "download" to downloadOption(0, target, selection)
+                if (selection != null) ours += "download" to downloadOption(0, target, x, z, selection)
                 ours += "season" to clearOption(0, target, MapClear.Kind.OLD_SEASON, "Clear old season…",
                     "Takes your map from before the season began (/mapexposer season) off this dimension's map. Asks first; each region is copied aside.")
             }
@@ -106,21 +106,21 @@ object MapMenus {
     }
 
     /**
-     * "Download" for the chunks Xaero has selected: every right-click selects the chunk under the
-     * mouse, and dragging with the right button held selects a rectangle of them, which Xaero
-     * outlines on the map.
+     * "Download BlueMap…": closes the map and asks in chat, as on JourneyMap's ([DownloadOffer]): the
+     * chunks Xaero has selected, when a right-button drag picked more than one, else the region of
+     * block ([x], [z]); or everything.
      */
-    private fun downloadOption(index: Int, target: IRightClickableElement, selection: MapTileSelection): RightClickOption {
+    private fun downloadOption(index: Int, target: IRightClickableElement, x: Int, z: Int, selection: MapTileSelection): RightClickOption {
         val busy = BlueMapDownload.running
+        val picked = ShareFormat.Area(selection.left, selection.top, selection.right, selection.bottom).takeIf { it.width > 1 || it.height > 1 }
         val tooltip = listOf(
-            Component.literal("Download from BlueMap"),
+            Component.literal("Download BlueMap"),
             Component.literal(
                 if (busy) "§7A download is already running."
-                else "§7${sizeOf(selection)}, written into your own map wherever BlueMap has them. Each region is backed up just before it is replaced."
+                else "§7Asks in chat: ${picked?.let { "the ${it.width} × ${it.height} chunks picked" } ?: "this region"} or everything, only where your map has nothing or over it too. Each region is backed up just before it is replaced."
             ),
         )
-        val area = BlockArea(selection.left * 16, selection.top * 16, selection.right * 16 + 15, selection.bottom * 16 + 15)
-        return MenuTooltips.Option("Download", index, target, tooltip) { Ui.say(BlueMapDownload.start(area)) }
+        return MenuTooltips.Option("Download BlueMap…", index, target, tooltip) { DownloadOffer.offer(x, z, picked) }
             .also { it.setActive(!busy) }
     }
 

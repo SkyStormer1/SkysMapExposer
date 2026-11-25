@@ -17,6 +17,7 @@ import com.skystormer.skysmapexposer.MapMods
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.Session
 import com.skystormer.skysmapexposer.SharedTerrain
+import com.skystormer.skysmapexposer.BlockArea
 import com.skystormer.skysmapexposer.ShareFormat
 import com.skystormer.skysmapexposer.Ui
 import com.skystormer.skysmapexposer.gui.MapBar
@@ -148,21 +149,8 @@ object XaeroAdapter : MapAdapter {
      * Downloads everything BlueMap has into the dimension the world map is showing; with
      * [unexploredOnly], only into chunks you have never mapped.
      */
-    private fun download(context: CommandContext<FabricClientCommandSource>, unexploredOnly: Boolean): Int {
-        return Ui.reply(context, BlueMapDownload.start(null, unexploredOnly))
-    }
-
     override fun addSharedTerrain(file: SharedTerrain.Opened, id: Int, unexploredOnly: Boolean, confirmed: Boolean): String? =
         TerrainFiles.add(file, id, unexploredOnly, confirmed)
-
-    private fun cancelDownloadCommand(context: CommandContext<FabricClientCommandSource>): Int {
-        if (BlueMapDownload.cancel()) {
-            context.source.sendFeedback(Component.literal("Stopping the download after the region it is on"))
-        } else {
-            context.source.sendFeedback(Component.literal("No download from BlueMap is running"))
-        }
-        return 1
-    }
 
     /** Copies every region of the layer on screen, to retreat to. */
     private fun backup(context: CommandContext<FabricClientCommandSource>): Int {
@@ -340,12 +328,6 @@ object XaeroAdapter : MapAdapter {
 
     override fun commands(root: LiteralArgumentBuilder<FabricClientCommandSource>) {
         root
-            .then(
-                ClientCommands.literal("download")
-                    .then(ClientCommands.literal("all").executes { download(it, unexploredOnly = false) })
-                    .then(ClientCommands.literal("unexplored").executes { download(it, unexploredOnly = true) })
-                    .then(ClientCommands.literal("cancel").executes(::cancelDownloadCommand))
-            )
             // The terrain of the chunks picked, or of the whole map, to a file in the shared maps folder.
             .then(SharedTerrain.command(TerrainFiles::save) {
                 if (TerrainFiles.cancel()) "Stopped saving the map file" else "No map file is being saved"
@@ -444,5 +426,6 @@ object XaeroAdapter : MapAdapter {
 
     override val canDownload: Boolean get() = true
 
-    override fun download(unexploredOnly: Boolean): String = BlueMapDownload.start(null, unexploredOnly)
+    override fun download(unexploredOnly: Boolean, area: ShareFormat.Area?): String =
+        BlueMapDownload.start(area?.let(BlockArea::ofChunks), unexploredOnly)
 }

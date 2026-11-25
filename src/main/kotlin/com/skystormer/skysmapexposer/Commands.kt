@@ -126,6 +126,7 @@ object Commands {
                         ClientCommands.argument("days", DoubleArgumentType.doubleArg(0.0, 3650.0)).executes(::setStale)
                     )
                 )
+        if (MapMods.adapter?.canDownload == true) root.then(DownloadOffer.command())
         MapMods.adapter?.commands(root)
         dispatcher.register(root)
     }

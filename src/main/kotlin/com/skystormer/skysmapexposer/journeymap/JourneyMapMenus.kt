@@ -3,7 +3,7 @@ package com.skystormer.skysmapexposer.journeymap
 import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.BiomePicks
 import com.skystormer.skysmapexposer.CaveNotice
-import com.skystormer.skysmapexposer.ChatButton
+import com.skystormer.skysmapexposer.DownloadOffer
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.OtherDimensionCoords
@@ -196,7 +196,7 @@ internal object JourneyMapMenus {
         if (Session.current != null) {
             item(menu, "players", "Players…") { Ui.open(PlayerListScreen(map.screen)) }
             if (!JourneyMapEdits.running) {
-                item(menu, "download", "Download BlueMap…") { block -> offerDownload(block.x, block.z, JourneyMapSelection.area) }
+                item(menu, "download", "Download BlueMap…") { block -> DownloadOffer.offer(block.x, block.z, JourneyMapSelection.area) }
                 // As on Xaero's map: what would go is said in chat, with the button to go ahead.
                 item(menu, "season", "Clear old season…") { offerClear(JourneyMapEdits.Clear.OLD_SEASON) }
                 item(menu, "border", "Clear past border…") { offerClear(JourneyMapEdits.Clear.BORDER) }
@@ -291,31 +291,6 @@ internal object JourneyMapMenus {
         } finally {
             pose.popMatrix()
         }
-    }
-
-    /**
-     * "Download BlueMap…": closes the map and asks in chat, where the buttons to go ahead are, as on
-     * Xaero's map; nothing is written from here. Into the dimension you are in, which is the map
-     * JourneyMap keeps for this world.
-     */
-    private fun offerDownload(x: Int, z: Int, picked: ShareFormat.Area?) {
-        Ui.open(null)
-        val here = if (picked != null) {
-            val blocks = "${picked.left * 16} ${picked.top * 16} ${picked.right * 16 + 15} ${picked.bottom * 16 + 15}"
-            val size = "the ${picked.width} × ${picked.height} chunks you picked"
-            ChatButton.of("[Picked area, unexplored]", "/mapexposer download area $blocks", "Only where JourneyMap has nothing, in $size.")
-                .copy().append(" ")
-                .append(ChatButton.of("[Picked area]", "/mapexposer download area $blocks all", "All of $size, over your own map too."))
-        } else {
-            ChatButton.of("[This region, unexplored]", "/mapexposer download region $x $z", "Only where JourneyMap has nothing, in the 512-block region you clicked.")
-        }
-        val message = Component.literal("Download BlueMap into JourneyMap's map, backing up each region first: ")
-            .append(here)
-            .append(" ")
-            .append(ChatButton.of("[Everything, unexplored]", "/mapexposer download unexplored", "Only where JourneyMap has nothing, everywhere BlueMap has the map."))
-            .append(" ")
-            .append(ChatButton.of("[Everything]", "/mapexposer download all", "Everywhere BlueMap has the map, over your own map too."))
-        Minecraft.getInstance().player?.sendSystemMessage(message)
     }
 
     /** "Clear old season…", "Clear past border…": closes the map and says in chat what would go, with the button to clear it. */
