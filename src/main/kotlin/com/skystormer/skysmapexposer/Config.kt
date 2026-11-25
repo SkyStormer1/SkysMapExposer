@@ -119,6 +119,13 @@ object Config {
      */
     var otherDimensionCoords by bool(true)
 
+    /**
+     * Whether your arrow shows on the full-screen map of the Nether while you are in the Overworld,
+     * and the other way round, where you are in that dimension's terms (an eighth, or eight times, as
+     * far out). Never on the End's map, or from it, where nothing lines up.
+     */
+    var otherDimensionArrow by bool(true)
+
     /** Which of those players the minimap shows. */
     var minimapPlayers by setting(MinimapPlayers.FAR_ONLY, { element -> MinimapPlayers.entries.first { it.name == element.asString } }, { JsonPrimitive(it.name) })
 
@@ -192,6 +199,9 @@ object Config {
 
     /** Experimental: the mods ("Bobby", "Voxy", "Distant Horizons") the terrain fill is switched off for. */
     val fillOff: MutableSet<String> = HashSet()
+
+    /** Servers, by address as [normalise] writes it, whose "not set up" line ([SetupPrompt]) you turned off. */
+    val setupDeclined: MutableSet<String> = HashSet()
 
     /**
      * Experimental: the world map's sea floor from BlueMap's 3D tiles close up ([SeaFloor]), rather
@@ -335,6 +345,11 @@ object Config {
                 fillOff.clear()
                 fillOff.addAll(names)
             }
+            read("setupDeclined") { element ->
+                val names = element.asJsonArray.map { it.asString }
+                setupDeclined.clear()
+                setupDeclined.addAll(names)
+            }
             // The old "tileRefreshSeconds" and "tileHardRefreshHours" are ignored: they asked and
             // downloaded far too often ([tileCheckMinutes] and [fullDownloadHours] took over).
             read("servers") { element ->
@@ -415,6 +430,7 @@ object Config {
         json.add("trusted", playersJson(trusted))
         json.add("pingTo", playersJson(pingTo))
         json.add("fillOff", JsonArray().also { list -> fillOff.sorted().forEach(list::add) })
+        json.add("setupDeclined", JsonArray().also { list -> setupDeclined.sorted().forEach(list::add) })
         val array = JsonArray()
         for (server in servers) {
             val entry = JsonObject()

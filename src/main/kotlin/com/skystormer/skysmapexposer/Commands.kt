@@ -109,6 +109,11 @@ object Commands {
                     )
                 )
                 .then(
+                    ClientCommands.literal("setup")
+                        .executes { SetupPrompt.openSettings(); 1 }
+                        .then(ClientCommands.literal("off").executes { Ui.reply(it, SetupPrompt.decline()) })
+                )
+                .then(
                     ClientCommands.literal("cavenotice")
                         .then(ClientCommands.literal("on").executes { setCaveNotice(it, true) })
                         .then(ClientCommands.literal("off").executes { setCaveNotice(it, false) })

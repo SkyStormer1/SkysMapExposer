@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.journeymap
 
+import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.Config
 import com.skystormer.skysmapexposer.SeaFloor
@@ -31,6 +32,17 @@ object JourneyMapDimension {
     fun showingOther(): Boolean {
         val picked = chosen ?: return false
         return picked != Minecraft.getInstance().level?.dimension()
+    }
+
+    /**
+     * For `FullscreenSelfMixin`: how far out your arrow goes on the other dimension's map shown
+     * ([WaypointRules.arrowScale]), or null to leave it off. JourneyMap places it at your own
+     * coordinates whatever the map shows, so they are scaled by this first.
+     */
+    @JvmStatic
+    fun arrowScale(): Double? {
+        val shown = chosen ?: return null
+        return WaypointRules.arrowScale(Minecraft.getInstance().level?.dimension()?.identifier()?.toString(), shown.identifier().toString())
     }
 
     /** How deep the render thread is in JourneyMap's work for the full-screen map: drawing it, its Chat Position key. */

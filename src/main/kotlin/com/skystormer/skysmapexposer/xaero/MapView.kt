@@ -1,5 +1,6 @@
 package com.skystormer.skysmapexposer.xaero
 
+import com.skystormer.skysmapexposer.WaypointRules
 import com.skystormer.skysmapexposer.levelKey
 import com.skystormer.skysmapexposer.Log
 import com.skystormer.skysmapexposer.MapCamera
@@ -129,9 +130,14 @@ object MapView {
         waited = 0
     }
 
-    /** For `GuiMapMixin`: hide the player arrow. */
+    /**
+     * For `GuiMapMixin`: hide the player arrow, on another dimension's map, unless it is the
+     * Overworld's or the Nether's and [Config.otherDimensionArrow] lets it show there
+     * ([WaypointRules.arrowScale]); Xaero puts it where you are in that dimension's terms itself.
+     */
     @JvmStatic
-    fun hideArrow(): Boolean = viewingAnotherDimension()
+    fun hideArrow(): Boolean = viewingAnotherDimension() &&
+        WaypointRules.arrowScale(Minecraft.getInstance().level?.dimension()?.identifier()?.toString(), MarkerElements.worldMapDimension()) == null
 
     /** For `RadarRendererMixin`: hide Xaero's entity radar on the world map. */
     @JvmStatic

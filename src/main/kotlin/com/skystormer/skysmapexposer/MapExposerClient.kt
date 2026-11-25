@@ -102,6 +102,7 @@ object MapExposerClient : ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register { _, _, client ->
             client.execute {
                 Session.start(addressOf(client))
+                SetupPrompt.joined(addressOf(client))
                 MapMods.adapter?.join()
                 CaveNotice.forget()
             }

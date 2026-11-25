@@ -18,9 +18,9 @@ object DownloadOffer {
 
     /**
      * Asks in chat what to download, after a right-click at block ([x], [z]): [picked], the chunks
-     * dragged over, when there are any, else the 512-block region clicked; or everything.
+     * dragged over, when there are any, else the 512-block region there ([region] says which); or everything.
      */
-    fun offer(x: Int, z: Int, picked: ShareFormat.Area?) {
+    fun offer(x: Int, z: Int, picked: ShareFormat.Area?, region: String = "the 512-block region you clicked") {
         Ui.open(null)
         val here = if (picked != null) {
             val blocks = "${picked.left * 16} ${picked.top * 16} ${picked.right * 16 + 15} ${picked.bottom * 16 + 15}"
@@ -29,9 +29,9 @@ object DownloadOffer {
                 .copy().append(" ")
                 .append(ChatButton.of("[Picked area]", "/mapexposer download area $blocks all", "All of $size, over your own map too."))
         } else {
-            ChatButton.of("[This region, unexplored]", "/mapexposer download region $x $z", "Only where your map has nothing, in the 512-block region you clicked.")
+            ChatButton.of("[This region, unexplored]", "/mapexposer download region $x $z", "Only where your map has nothing, in $region.")
                 .copy().append(" ")
-                .append(ChatButton.of("[This region]", "/mapexposer download region $x $z all", "All of the 512-block region you clicked, over your own map too."))
+                .append(ChatButton.of("[This region]", "/mapexposer download region $x $z all", "All of $region, over your own map too."))
         }
         val message = Component.literal("Download BlueMap into your map, backing up each region first: ")
             .append(here)

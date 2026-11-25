@@ -60,6 +60,18 @@ object WaypointRules {
     private val NOT_LETTERS = Regex("[^A-Za-z0-9]+")
 
     /** "Nether" for the Overworld and "Overworld" for the Nether: the dimensions with a counterpart. */
+    /**
+     * How far out your arrow goes on the full-screen map of [shown] while you are in [here], where
+     * [Config.otherDimensionArrow] lets it show there: 8 for the Overworld seen from the Nether, an
+     * eighth the other way round; null anywhere else (the End, or a dimension of its own).
+     */
+    fun arrowScale(here: String?, shown: String?): Double? = when {
+        !Config.otherDimensionArrow -> null
+        here == Config.NETHER && shown == Config.OVERWORLD -> Config.NETHER_SCALE.toDouble()
+        here == Config.OVERWORLD && shown == Config.NETHER -> 1.0 / Config.NETHER_SCALE
+        else -> null
+    }
+
     fun counterpartName(dimension: String?): String? = when (dimension) {
         Config.OVERWORLD -> "Nether"
         Config.NETHER -> "Overworld"

@@ -13,6 +13,7 @@ import com.skystormer.skysmapexposer.MapExposerClient
 import com.skystormer.skysmapexposer.MapPrep
 import com.skystormer.skysmapexposer.TileCache
 import com.skystormer.skysmapexposer.Session
+import com.skystormer.skysmapexposer.DownloadOffer
 import com.skystormer.skysmapexposer.SettingsCheck
 import com.skystormer.skysmapexposer.terrain.FillTarget
 import com.skystormer.skysmapexposer.terrain.TerrainFill
@@ -131,7 +132,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         edits.reset(
             Config::enabled, Config::showMarkers, Config::showOutlines, Config::showPlayers, Config::minimapPlayers,
             Config::minimapShrinkChunks, Config::worldMapMarkerScale, Config::playerHeadScale, Config::minimapHeadScale,
-            Config::minimapMarkerScale, Config::otherDimensionCoords, Config::minimapBiomes, Config::pings,
+            Config::minimapMarkerScale, Config::otherDimensionCoords, Config::otherDimensionArrow, Config::minimapBiomes, Config::pings,
             Config::matchWaypointsToDimension, Config::guessBiomes,
         )
         staleDays = formatDays(edits.default(Config::staleDays))
@@ -406,9 +407,14 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(toggle(left, y, halves.width(0), "Other dimension XZ", Config::otherDimensionCoords,
             "On the world map, under the coordinates of the block under the mouse: the same block in the other dimension. " +
                 "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth)."))
-        addRenderableWidget(toggle(halves.x(1), y, halves.width(1) - GAP - PINGS_WIDTH, "Minimap tint", Config::minimapBiomes,
+        addRenderableWidget(toggle(halves.x(1), y, halves.width(1), "Other dimension arrow", Config::otherDimensionArrow,
+            "Your arrow on the full-screen map of the Nether while you are in the Overworld, and the other way round, " +
+                "where you are in that dimension's terms (an eighth, or eight times, as far out). Never on the End's map."))
+        y += ROW + GAP
+
+        addRenderableWidget(toggle(left, y, halves.width(0), "Minimap tint", Config::minimapBiomes,
             "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map."))
-        addRenderableWidget(toggle(left + WIDTH - PINGS_WIDTH, y, PINGS_WIDTH, "Pings", Config::pings,
+        addRenderableWidget(toggle(halves.x(1), y, halves.width(1), "Pings", Config::pings,
             "Show the spots players you trust ping, as a flashing beam. Trust someone in the player list."))
         y += ROW + GAP
 
@@ -561,20 +567,19 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             return
         }
         button(x, y, width, "Download…",
-            "Download from BlueMap into your own map, for the dimension its full-screen map is showing: " +
-                "only the chunks you have never explored, or everything. Each region of your map is backed up " +
-                "just before it is changed.") { confirmDownload() }
+            "Saves your changes and asks in chat, as the map's right-click Download BlueMap does: the region " +
+                "you are in or everything, only where your map has nothing or over it too. Each region of your " +
+                "map is backed up just before it is changed.") { saveAndOfferDownload() }
             // Downloads write into the map's own files: Xaero's World Map or JourneyMap.
             .active = Session.current != null && MapMods.adapter?.canDownload == true
     }
 
-    private fun confirmDownload() {
-        keepEdits()
-        val dimension = MapMods.adapter?.shownDimension()?.let(Ui::dimensionName) ?: "current"
-        minecraft.gui.setScreen(DownloadScreen(dimension) { said ->
-            if (said != null) message = Component.literal(said)
-            minecraft.gui.setScreen(this)
-        })
+    /** Saves as Done does, then, unless something stopped the save, asks in chat what to download ([DownloadOffer]). */
+    private fun saveAndOfferDownload() {
+        onClose()
+        if (minecraft.gui.screen() === this) return
+        val player = minecraft.player ?: return
+        DownloadOffer.offer(player.blockX, player.blockZ, null, "the 512-block region you are in")
     }
 
     /** A slider from [min] to [max] in steps of [step], reading [label] of the value. */
@@ -644,7 +649,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val draft = drafts[selected]
         addressBox?.let { draft.addresses = it.value }
         urlBox?.let { box ->
-            draft.url = withPort(box.value, draft.addresses)
+            val address = cleanUrl(box.value, draft.addresses)
+            draft.url = address.url
             if (box.value != draft.url) box.value = draft.url
         }
         for ((dimension, box) in mapBoxes) {
@@ -676,13 +682,15 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     /** Asks the BlueMap at the typed address which maps it has, and fills in the overworld if blank. */
     private fun findMaps() {
         val box = urlBox ?: return
-        val url = withPort(box.value, addressBox?.value ?: drafts[selected].addresses).trim()
-        if (url != box.value.trim()) box.value = url
+        val address = cleanUrl(box.value, addressBox?.value ?: drafts[selected].addresses)
+        val url = address.url
+        if (url != box.value) box.value = url
         if (url.isEmpty()) {
             show("Type the BlueMap address first: the page you open in a browser.")
             return
         }
-        show("Asking $url…")
+        address.problem?.let { return show("BlueMap address: $it") }
+        show((address.fixed?.let { "Fixed the address ($it). " } ?: "") + "Asking $url…")
         background("SkysMapExposer find maps", Thread.NORM_PRIORITY) {
             val result = runCatching { BlueMap(url).use { it.maps() } }
             minecraft.execute {
@@ -811,6 +819,19 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
     /**
+     * The BlueMap address typed, cleaned ([SettingsCheck.blueMapAddress]) after a bare port is
+     * given the server's name ([withPort]); says under the boxes what was fixed or what is wrong.
+     */
+    private fun cleanUrl(typed: String, addresses: String): SettingsCheck.Address {
+        val address = SettingsCheck.blueMapAddress(withPort(typed, addresses))
+        when {
+            address.problem != null -> show("BlueMap address: ${address.problem}")
+            address.fixed != null -> show("Fixed the BlueMap address: ${address.fixed}")
+        }
+        return if (address.problem == null) address else SettingsCheck.Address(typed.trim(), null, address.problem)
+    }
+
+    /**
      * [typed] as a BlueMap address: just a port ("25464" or ":25464") becomes
      * `http://<the server's first address>:<port>/`, as BlueMap usually runs on the same machine as
      * the game; anything else is left as typed.
@@ -831,7 +852,6 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     private companion object {
         const val WIDTH = 300
-        private const val PINGS_WIDTH = 60
         const val ROW = 20
         const val GAP = 2
         const val NEW = -1
