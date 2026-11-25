@@ -514,11 +514,13 @@ internal object JourneyMapEdits {
                 val name = backup.fileName.toString().removeSuffix(".none")
                 val match = REGION_FILE.matchEntire(name) ?: continue
                 val (rx, rz) = match.destructured.toList().map(String::toInt)
-                if (JourneyMapFiles.held(folder.parent, rx, rz)) {
-                    // Open in JourneyMap: put back in its memory, as it was changed.
-                    val holder = JourneyMapFiles.heldDay(folder.parent, dimension, rx, rz)
+                // Open in JourneyMap with its day picture: put back in its memory, as a download changes
+                // it. Held without its day picture, nothing of JourneyMap's is saved over the file, so
+                // the file is put back, as a download writes it then.
+                val holder = if (JourneyMapFiles.held(folder.parent, rx, rz)) JourneyMapFiles.heldDay(folder.parent, dimension, rx, rz) else null
+                if (holder != null) {
                     val pixels = JourneyMapFiles.backupPixels(backups.resolve(name))
-                    if (holder != null && pixels != null && JourneyMapFiles.replaceHeld(holder, pixels)) {
+                    if (pixels != null && JourneyMapFiles.replaceHeld(holder, pixels)) {
                         restored++
                         JourneyMapTerrain.changed(dimension, rx, rz)
                     } else {
