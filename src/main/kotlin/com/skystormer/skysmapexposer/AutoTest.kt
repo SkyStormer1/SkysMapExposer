@@ -30,6 +30,7 @@ import java.nio.file.Path
  * One step a line; `#` starts a comment:
  * - `wait <seconds>`
  * - `waitplayer <name>` waits until that player is on the server, to keep two test clients in step
+ * - `waitchat <text>` waits until a chat line containing that text has arrived
  * - `cmd <command>` runs a command as if typed in chat, this mod's client commands included
  * - `chat <text>` says something
  * - `look <yaw> <pitch>` turns you to look that way
@@ -60,11 +61,11 @@ import java.nio.file.Path
  * - `rightdown|rightdrag|rightup [<x> <y>]` the right mouse button on the open screen
  * - `join <world>` opens that singleplayer world, first making it (creative, peaceful) if needed
  * - `server <address>` joins that server
- * - `guiscale <n>` sets the GUI scale (0 auto)
+ * - `guiscale <n>` sets the GUI scale (0 auto); `window <width> <height>` sizes the window
  * - `waitworld` waits until you are in a world with no screen open
  * - `leave` saves and quits to the title screen, as the pause menu does
  * - `waittitle` waits until you are back on the title screen
- * - `heap` collects garbage and logs the memory in use, for checking that leaving frees it
+ * - `heap` collects garbage and logs the memory in use, for checking that leaving frees it; `fps` logs the frame rate, `fpslog on|off` logs it every second
  * - `quit` closes the game
  *
  * Saving the file again once it has finished runs it again.
@@ -86,6 +87,7 @@ object AutoTest {
         val file = file ?: return
         if (client.gui.overlay() != null) return // still loading the game or its resources
         val now = System.currentTimeMillis()
+        fpsSample(client, now)
         // Saving the file again runs it again, so steps can be changed without restarting the game.
         val changed = runCatching { Files.getLastModifiedTime(file).toMillis() }.getOrDefault(0L)
         if (!started || (steps == null && changed != loadedFrom)) {
@@ -113,6 +115,12 @@ object AutoTest {
                     if (ChatShare.others().none { it == rest }) {
                         queue.addFirst(step)
                         waitUntil = now + 1_000L
+                    }
+                }
+                "waitchat" -> {
+                    if (!chatHas(client, rest)) {
+                        queue.addFirst(step)
+                        waitUntil = now + 500L
                     }
                 }
                 "cmd" -> player.connection.sendCommand(rest.removePrefix("/"))
@@ -321,6 +329,14 @@ object AutoTest {
                     client.options.save()
                     client.resizeGui()
                 }
+                "window" -> {
+                    val (w, h) = rest.split(' ').map { it.toInt() }
+                    //? if >=26.3 {
+                    org.lwjgl.sdl.SDLVideo.SDL_SetWindowSize(client.window.handle(), w, h)
+                    //?} else {
+                    /*org.lwjgl.glfw.GLFW.glfwSetWindowSize(client.window.handle(), w, h)
+                    *///?}
+                }
                 // `server <address>`: joins that server, with its saved entry's settings where it has one.
                 "server" -> {
                     val list = net.minecraft.client.multiplayer.ServerList(client).apply { load() }
@@ -344,6 +360,14 @@ object AutoTest {
                     val runtime = Runtime.getRuntime()
                     Log.info("AutoTest: heap {} MB used of {} MB", (runtime.totalMemory() - runtime.freeMemory()) shr 20, runtime.maxMemory() shr 20)
                 }
+                "fps" -> Log.info("AutoTest: fps {}", client.fps)
+                "fpslog" -> {
+                    fpsLogging = rest != "off"
+                    fpsSecondStart = now
+                    fpsWorstNs = 0L
+                    fpsDips = 0
+                    if (!fpsLogging) Log.info("AutoTest: fpslog off")
+                }
                 "quit" -> client.stop()
                 else -> Log.warn("AutoTest: no such step '{}'", verb)
             }
@@ -353,6 +377,47 @@ object AutoTest {
     }
 
     /** The command behind the newest chat button reading [text], as clicking it would run it. */
+    // `fpslog on`: once a second, the frame rate, the longest frame seen (the last frame's time is
+    // read every tick, so a single long frame between ticks can be missed), whether the window has
+    // focus and the game's own frame limit and why (an unfocused game may be slowed on purpose, by the game or another mod), the screen open
+    // and any download, import or fill running, so a dip can be put next to what was happening.
+    private var fpsLogging = false
+    private var fpsSecondStart = 0L
+    private var fpsWorstNs = 0L
+    private var fpsDips = 0
+
+    private fun fpsSample(client: Minecraft, now: Long) {
+        if (!fpsLogging) return
+        // Counts as input, as a player at the keyboard gives: with none for a minute the game caps
+        // itself at 30 fps, after ten minutes at 10, which would read as lag.
+        client.framerateLimitTracker.onInputReceived()
+        fpsWorstNs = maxOf(fpsWorstNs, client.frameTimeNs)
+        if (now - fpsSecondStart < 1_000L) return
+        val fps = client.fps
+        val worstMs = fpsWorstNs / 1_000_000.0
+        val dip = fps < 60 || worstMs > 50.0
+        if (dip) fpsDips++
+        val jobs = listOfNotNull(
+            MapMods.adapter?.downloadStatus()?.let { "map: $it" },
+            com.skystormer.skysmapexposer.terrain.TerrainFill.status().takeIf { com.skystormer.skysmapexposer.terrain.TerrainFill.running }?.let { "fill: $it" },
+        ).joinToString("; ").ifEmpty { "-" }
+        Log.info(
+            "AutoTest: fpslog {} fps, worst frame {} ms, {} (limit {}, {}), screen {}, jobs {}{}",
+            fps, "%.1f".format(worstMs), if (client.isWindowActive) "focused" else "NOT focused",
+            client.framerateLimitTracker.framerateLimit, client.framerateLimitTracker.throttleReason,
+            client.gui.screen()?.javaClass?.simpleName ?: "none", jobs, if (dip) "  << DIP ($fpsDips so far)" else "",
+        )
+        fpsSecondStart = now
+        fpsWorstNs = 0L
+    }
+
+    /** Whether any chat line on record contains [text]. */
+    private fun chatHas(client: Minecraft, text: String): Boolean {
+        val field = ChatComponent::class.java.getDeclaredField("allMessages").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        return (field.get(client.gui.hud.chat) as List<GuiMessage>).any { text in it.content().string }
+    }
+
     private fun buttonCommand(client: Minecraft, text: String): String? {
         val field = ChatComponent::class.java.getDeclaredField("allMessages").apply { isAccessible = true }
         @Suppress("UNCHECKED_CAST")
