@@ -65,6 +65,9 @@ import java.util.ArrayList;
  * <p>Other dimension: under Xaero's readout of the block under the mouse, the same block's
  * coordinates in the other dimension ({@link OtherDimensionCoords}).
  *
+ * <p>Layers: the widgets, panels included, are drawn in a layer above everything Xaero drew on the
+ * map, and the right-click menu in one above them, so a panel always covers the map's text.
+ *
  * <p>Camera: {@link MapCamera}, so the player list can move the open map to someone. Clicks over
  * a panel go to it before Xaero's buttons ({@link PanelClicks}). And the
  * mouse wheel goes to the {@link MapBar} first when it is over it, as Xaero would otherwise zoom.
@@ -299,23 +302,42 @@ public abstract class GuiMapMixin implements MapCamera {
     }
 
     /**
-     * The other dimension's coordinates for the block under the mouse, one line under Xaero's own,
-     * in its style (Xaero puts its lines 10 apart). Only while Xaero shows the mouse's coordinates.
+     * Just before the screen draws its widgets: the other dimension's coordinates for the block under
+     * the mouse, one line under Xaero's own, in its style (Xaero puts its lines 10 apart), only while
+     * Xaero shows the mouse's coordinates; then a new layer, so the widgets (the panels among them)
+     * cover everything Xaero drew on the map. Within one layer the game draws all text after all
+     * shapes, so Xaero's readout and this line used to show through a panel over them.
      */
-    @Inject(method = "extractRenderState", at = @At("TAIL"), require = 0)
-    private void skysmapexposer$otherDimensionLine(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-        if (skysmapexposer$topLineY < 0 || HookErrors.isOff(HookErrors.OTHER_DIMENSION)) return;
-        try {
-            Screen screen = (Screen) (Object) this;
-            int y = skysmapexposer$topLineY + 10;
-            String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
-            if (line != null) {
-                MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
-                        screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
+    @Inject(
+            method = "extractRenderState",
+            at = @At(value = "INVOKE", target = "Lxaero/lib/client/gui/ScreenBase;extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V"),
+            require = 0
+    )
+    private void skysmapexposer$beforeWidgets(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+        if (skysmapexposer$topLineY >= 0 && !HookErrors.isOff(HookErrors.OTHER_DIMENSION)) {
+            try {
+                Screen screen = (Screen) (Object) this;
+                int y = skysmapexposer$topLineY + 10;
+                String line = OtherDimensionCoords.forWorldMap(mouseBlockPosX, mouseBlockPosZ);
+                if (line != null) {
+                    MapRenderHelper.drawCenteredStringWithBackground(graphics, Minecraft.getInstance().font, line,
+                            screen.width / 2, y, -1, 0f, 0f, 0f, 0.4f);
+                }
+            } catch (Throwable e) {
+                HookErrors.failed(HookErrors.OTHER_DIMENSION, e);
             }
-        } catch (Throwable e) {
-            HookErrors.failed(HookErrors.OTHER_DIMENSION, e);
         }
+        graphics.nextStratum();
+    }
+
+    /** Xaero's right-click menu in a layer of its own, over the panels, as it opens over everything else. */
+    @Inject(
+            method = "extractRenderState",
+            at = @At(value = "INVOKE", target = "Lxaero/map/gui/dropdown/rightclick/GuiRightClickMenu;extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V"),
+            require = 0
+    )
+    private void skysmapexposer$beforeMenu(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+        graphics.nextStratum();
     }
 
     /** Where a right-click menu opens, so a group of it can open in its place (XaeroMenus). */
