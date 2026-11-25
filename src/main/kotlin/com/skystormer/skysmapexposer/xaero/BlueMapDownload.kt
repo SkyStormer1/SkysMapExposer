@@ -122,6 +122,7 @@ object BlueMapDownload {
      */
     fun start(area: BlockArea?, unexploredOnly: Boolean = false): String {
         if (running) return "A download from BlueMap is already running"
+        if (Minecraft.getInstance().hasSingleplayerServer()) return SINGLE_PLAYER
         val session = Session.current ?: return "This server has no BlueMap set up"
         val processor = WorldMapSession.getCurrentSession()?.mapProcessor
             ?: return "Xaero's world map is not ready yet; open it once and try again"
@@ -156,7 +157,8 @@ object BlueMapDownload {
         regions: List<Triple<Int, Int, () -> XaeroWriter.Pixels?>>, dimensionId: String, layer: Int, from: String, unexploredOnly: Boolean,
         afterword: () -> String = { "" },
     ): String =
-        startLocal(regions, dimensionId, layer, unexploredOnly, "Adding $from's map", "Adding $from's map", "$from's map", afterword, null)
+        if (Minecraft.getInstance().hasSingleplayerServer()) SINGLE_PLAYER
+        else startLocal(regions, dimensionId, layer, unexploredOnly, "Adding $from's map", "Adding $from's map", "$from's map", afterword, null)
             ?.let { "Adding $from's map…" }
             ?: lastRefusal
 
@@ -465,6 +467,14 @@ object BlueMapDownload {
     }
 
     private const val TILE_CHUNKS = 64
+    /**
+     * In single player Xaero builds its map from the world's own save, and a region written here is
+     * dropped when it does, sometimes with what an earlier download put in it (measured: a region
+     * of 1,024 downloaded chunks saved as 4 after a second download into it). The overlay still
+     * draws BlueMap's terrain there; JourneyMap keeps downloads in single player too.
+     */
+    private const val SINGLE_PLAYER = "Downloads and shared maps go into Xaero's map only on a server: in single player Xaero " +
+        "rebuilds its map from your world's save and drops them. BlueMap's terrain still shows on the map while Terrain is on."
     private const val TILE_CHUNKS_PER_TICK = 8
     /** Time spent writing into your map per tick, so the game keeps its frame rate. */
     private const val WRITE_BUDGET = 4_000_000L
