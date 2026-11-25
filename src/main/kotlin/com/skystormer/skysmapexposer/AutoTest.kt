@@ -51,6 +51,8 @@ import java.nio.file.Path
  * - `close` closes whatever screen is open
  * - `menurows` / `menupick <text>` logs the rows of Xaero's open right-click menu, or picks the first with that text
  * - `editmenu` opens the right-click menu editor
+ * - `settings` opens the settings screen; `settingslog` logs the settings as they would be saved (servers left out)
+ * - `widgets` logs what every widget on the open screen says; `press <text>` clicks the first one starting with that
  * - `zoom in|out` zooms the open screen, as JourneyMap's full-screen map does
  * - `gotoplayer` centres the map on the first player BlueMap lists in your dimension
  * - `addshared blank|all` adds the map file opened last, as its chat button would
@@ -186,6 +188,23 @@ object AutoTest {
                         Log.info("AutoTest: picking row {}", i)
                         if (i >= 0) menu.javaClass.getMethod("selectId", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType).invoke(menu, i, false)
                     }
+                }
+                "settings" -> Ui.open(com.skystormer.skysmapexposer.gui.ConfigScreen(
+                    client.gui.screen() ?: if (client.level != null) net.minecraft.client.gui.screens.PauseScreen(true) else TitleScreen()))
+                "settingslog" -> Log.info("AutoTest: settings: {}", Config.toJson().apply { remove("servers") })
+                // `widgets`: every widget on the screen open, by what it says; `press <text>`: a left click in the
+                // middle of the first one whose text starts so, through the screen as a real click goes.
+                "widgets" -> Log.info("AutoTest: widgets: {}", client.gui.screen()?.children()?.filterIsInstance<net.minecraft.client.gui.components.AbstractWidget>()
+                    ?.joinToString(" | ") { it.message.string + if (it.active) "" else " (off)" })
+                "press" -> {
+                    val screen = client.gui.screen() ?: return Log.warn("AutoTest: no screen to press on")
+                    val widget = screen.children().filterIsInstance<net.minecraft.client.gui.components.AbstractWidget>()
+                        .firstOrNull { it.visible && it.active && it.message.string.startsWith(rest) } ?: return Log.warn("AutoTest: nothing reads '{}'", rest)
+                    val event = net.minecraft.client.input.MouseButtonEvent(widget.x + widget.width / 2.0, widget.y + widget.height / 2.0,
+                        net.minecraft.client.input.MouseButtonInfo(com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, 0))
+                    screen.mouseClicked(event, false)
+                    screen.mouseReleased(event)
+                    Log.info("AutoTest: pressed '{}', now on {}", widget.message.string, client.gui.screen()?.javaClass?.simpleName)
                 }
                 "editmenu" -> Ui.open(com.skystormer.skysmapexposer.gui.MenuEditScreen(client.gui.screen(), if (MapMods.xaeroWorldMap) MenuLayout.XAERO else MenuLayout.JOURNEYMAP))
                 "mywaypoints" -> Log.info("AutoTest: my waypoints: {}", MapMods.adapter?.myWaypoints()?.let { (d, w) -> "$d: " + w.joinToString { it.label + " [" + it.set + "]" } })

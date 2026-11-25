@@ -28,6 +28,7 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.CommonComponents
 import net.minecraft.network.chat.Component
 import kotlin.math.roundToInt
+import kotlin.reflect.KProperty0
 
 /**
  * Everything in `config/skysmapexposer.json`, without typing in chat or editing the file, on four
@@ -71,26 +72,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
     private enum class Page(val title: String) { MAP("Map"), SERVER("Server"), TILES("Tiles"), EXPERIMENTAL("Experimental") }
 
     private var page = Page.MAP
-    private var enabled = Config.enabled
-    private var showMarkers = Config.showMarkers
-    private var showOutlines = Config.showOutlines
-    private var showPlayers = Config.showPlayers
-    private var minimapPlayers = Config.minimapPlayers
+    /** The settings as changed here, put into effect by Done. */
+    private val edits = Config.edits()
+    /** Typed as text, so a half-typed number is kept until Done checks it. */
     private var staleDays = formatDays(Config.staleDays)
-    private var shrinkChunks = Config.minimapShrinkChunks
-    private var worldMapMarkerScale = Config.worldMapMarkerScale
-    private var playerHeadScale = Config.playerHeadScale
-    private var minimapHeadScale = Config.minimapHeadScale
-    private var minimapMarkerScale = Config.minimapMarkerScale
-    private var otherDimensionCoords = Config.otherDimensionCoords
-    private var minimapBiomes = Config.minimapBiomes
-    private var pings = Config.pings
-    private var matchWaypoints = Config.matchWaypointsToDimension
-    private var guessBiomes = Config.guessBiomes
-    private var prepareMap = Config.prepareMap
-    private var fullDownloadHours = Config.fullDownloadHours
-    private var seaFloorHires = Config.seaFloorHires
-    private var pingSound = Config.pingSound
     private var message: Component = Component.literal((Session.current?.let { MapExposerClient.textureMemory(it) + ". " } ?: "") + (MapMods.adapter?.summary() ?: ""))
     private var selected: Int = pickInitialServer() // after message, which it may replace
 
@@ -143,22 +128,13 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
     override fun resetToDefaults() {
         keepEdits()
-        enabled = true
-        showMarkers = true
-        showOutlines = true
-        showPlayers = true
-        minimapPlayers = Config.MinimapPlayers.FAR_ONLY
-        shrinkChunks = 32
-        worldMapMarkerScale = 1f
-        playerHeadScale = 1f
-        minimapHeadScale = 1f
-        minimapMarkerScale = 1f
-        otherDimensionCoords = true
-        minimapBiomes = true
-        pings = true
-        matchWaypoints = true
-        guessBiomes = true
-        staleDays = formatDays(7.0)
+        edits.reset(
+            Config::enabled, Config::showMarkers, Config::showOutlines, Config::showPlayers, Config::minimapPlayers,
+            Config::minimapShrinkChunks, Config::worldMapMarkerScale, Config::playerHeadScale, Config::minimapHeadScale,
+            Config::minimapMarkerScale, Config::otherDimensionCoords, Config::minimapBiomes, Config::pings,
+            Config::matchWaypointsToDimension, Config::guessBiomes,
+        )
+        staleDays = formatDays(edits.default(Config::staleDays))
     }
 
     override fun content(top: Int) {
@@ -211,9 +187,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             "These may get you warned, muted or kicked on some servers. Use them where you know the rules."
         ), font).setMaxWidth(WIDTH))
         y += font.lineHeight * 2 + GAP * 2
-        val floor = CycleButton.builder<Boolean>({ Component.literal(if (it) "High res" else "Low res") }, seaFloorHires)
+        val floor = CycleButton.builder<Boolean>({ Component.literal(if (it) "High res" else "Low res") }, edits[Config::seaFloorHires])
             .withValues(false, true)
-            .create(left, y, WIDTH, ROW, Component.literal("Sea floor")) { _, value -> seaFloorHires = value }
+            .create(left, y, WIDTH, ROW, Component.literal("Sea floor")) { _, value -> edits[Config::seaFloorHires] = value }
         floor.setTooltip(SafeTooltip.of(
             "Low res: the sea from BlueMap's flat pictures, which are one blue all over and quick to download. " +
                 "High res: close up on the world map, the sea floor under the water from BlueMap's 3D tiles, shaded the way " +
@@ -223,8 +199,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
                 "minute or so. Needs Terrain on."))
         addRenderableWidget(floor)
         y += ROW + GAP
-        addRenderableWidget(toggle(left, y, WIDTH, "Ping sound", pingSound,
-            "Play a bell when a ping from someone you trust arrives. Off, the beam still flashes and chat still says so.") { pingSound = it })
+        addRenderableWidget(toggle(left, y, WIDTH, "Ping sound", Config::pingSound,
+            "Play a bell when a ping from someone you trust arrives. Off, the beam still flashes and chat still says so."))
         y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
@@ -368,9 +344,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         var y = top
         val half = (WIDTH - GAP) / 2
         val session = Session.current
-        addRenderableWidget(toggle(left, y, half, "Prepare map", prepareMap,
+        addRenderableWidget(toggle(left, y, half, "Prepare map", Config::prepareMap,
             "After you join, download every tile BlueMap has, a few a second, and make it ready to draw, so the map is ready " +
-                "before you open it. Tiles you are looking at always come first.") { prepareMap = it })
+                "before you open it. Tiles you are looking at always come first."))
         val button = if (MapPrep.running) {
             Button.builder(Component.literal("Stop preparing")) { MapPrep.cancel(); prepareSaid = "Stopped; what is done stays."; rebuildWidgets() }
         } else {
@@ -385,10 +361,11 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
             .setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
         y += font.lineHeight * 2 + GAP * 2
 
-        val choices = (Config.FULL_DOWNLOAD_CHOICES + fullDownloadHours).distinct().sortedBy { if (it == 0) Int.MAX_VALUE else it }
-        val full = CycleButton.builder<Int>({ Component.literal(everyLabel(it)) }, fullDownloadHours)
+        val hours = edits[Config::fullDownloadHours]
+        val choices = (Config.FULL_DOWNLOAD_CHOICES + hours).distinct().sortedBy { if (it == 0) Int.MAX_VALUE else it }
+        val full = CycleButton.builder<Int>({ Component.literal(everyLabel(it)) }, hours)
             .withValues(choices)
-            .create(left, y, WIDTH, ROW, Component.literal("Full download")) { _, value -> fullDownloadHours = value }
+            .create(left, y, WIDTH, ROW, Component.literal("Full download")) { _, value -> edits[Config::fullDownloadHours] = value }
         full.setTooltip(SafeTooltip.of(
             "Every ${Config.tileCheckMinutes} minutes a tile on screen is only asked \"has it changed?\", and downloaded " +
                 "only if it has. This is how often each tile is downloaded whole anyway, in case a change was missed. " +
@@ -447,28 +424,28 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         val half = (WIDTH - GAP) / 2
         val quarter = (WIDTH - GAP * 3) / 4
 
-        addRenderableWidget(toggle(left, y, quarter, "Terrain", enabled, "Fill in your map with BlueMap's terrain.") { enabled = it })
-        addRenderableWidget(toggle(left + (quarter + GAP), y, quarter, "Markers", showMarkers, "Show BlueMap's markers (shops, banners…) on the world map and minimap.") { showMarkers = it })
-        addRenderableWidget(toggle(left + (quarter + GAP) * 2, y, quarter, "Borders", showOutlines, "Draw BlueMap's world border and zones on both maps.") { showOutlines = it })
-        addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", showPlayers, "Show other players BlueMap reports, in their own dimension.") { showPlayers = it })
+        addRenderableWidget(toggle(left, y, quarter, "Terrain", Config::enabled, "Fill in your map with BlueMap's terrain."))
+        addRenderableWidget(toggle(left + (quarter + GAP), y, quarter, "Markers", Config::showMarkers, "Show BlueMap's markers (shops, banners…) on the world map and minimap."))
+        addRenderableWidget(toggle(left + (quarter + GAP) * 2, y, quarter, "Borders", Config::showOutlines, "Draw BlueMap's world border and zones on both maps."))
+        addRenderableWidget(toggle(left + (quarter + GAP) * 3, y, quarter, "Players", Config::showPlayers, "Show other players BlueMap reports, in their own dimension."))
         y += ROW + GAP
 
-        addRenderableWidget(toggle(left, y, half, "Other dimension XZ", otherDimensionCoords,
+        addRenderableWidget(toggle(left, y, half, "Other dimension XZ", Config::otherDimensionCoords,
             "On the world map, under the coordinates of the block under the mouse: the same block in the other dimension. " +
-                "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth).") { otherDimensionCoords = it })
-        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP * 2 - PINGS_WIDTH, "Minimap tint", minimapBiomes,
-            "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map.") { minimapBiomes = it })
-        addRenderableWidget(toggle(left + WIDTH - PINGS_WIDTH, y, PINGS_WIDTH, "Pings", pings,
-            "Show the spots players you trust ping, as a flashing beam. Trust someone in the player list.") { pings = it })
+                "Viewing the Nether, the Overworld's (eight times as far); viewing the Overworld, the Nether's (an eighth)."))
+        addRenderableWidget(toggle(left + half + GAP, y, WIDTH - half - GAP * 2 - PINGS_WIDTH, "Minimap tint", Config::minimapBiomes,
+            "The biomes picked in the map panel's Terrain list are tinted on the minimap as well as the world map."))
+        addRenderableWidget(toggle(left + WIDTH - PINGS_WIDTH, y, PINGS_WIDTH, "Pings", Config::pings,
+            "Show the spots players you trust ping, as a flashing beam. Trust someone in the player list."))
         y += ROW + GAP
 
-        addRenderableWidget(toggle(left, y, half, "Waypoints follow map", matchWaypoints,
+        addRenderableWidget(toggle(left, y, half, "Waypoints follow map", Config::matchWaypointsToDimension,
             "The world map shows the waypoints of the dimension it is showing, not the one you are in. This switches on " +
-                "Xaero's own setting for it when you join a world; off leaves Xaero's setting as it is.") { matchWaypoints = it })
-        val minimapChoice = CycleButton.builder<Config.MinimapPlayers>({ Component.literal(it.label) }, minimapPlayers)
+                "Xaero's own setting for it when you join a world; off leaves Xaero's setting as it is."))
+        val minimapChoice = CycleButton.builder<Config.MinimapPlayers>({ Component.literal(it.label) }, edits[Config::minimapPlayers])
             .withValues(Config.MinimapPlayers.entries.toList())
             .displayOnlyValue()
-            .create(left + half + GAP, y, WIDTH - half - GAP, ROW, Component.literal("Minimap players")) { _, value -> minimapPlayers = value }
+            .create(left + half + GAP, y, WIDTH - half - GAP, ROW, Component.literal("Minimap players")) { _, value -> edits[Config::minimapPlayers] = value }
         minimapChoice.setTooltip(SafeTooltip.of(
             "Which players the minimap shows. BlueMap knows where everyone is, so a zoomed out minimap can keep them " +
                 "on screen after they leave your render distance. Out of range leaves the ones near you to Xaero's own " +
@@ -488,7 +465,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
         label(left + staleLabel + staleBoxWidth + 4, y, 26, "days")
         val sliderLeft = left + staleLabel + staleBoxWidth + 32
-        val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, shrinkChunks) { shrinkChunks = it }
+        val slider = ChunkSlider(sliderLeft, y, left + WIDTH - sliderLeft, edits[Config::minimapShrinkChunks]) { edits[Config::minimapShrinkChunks] = it }
         slider.setTooltip(SafeTooltip.of(
             "BlueMap markers show on the minimap only within this distance, smaller the further away they are. The world map still shows them all."
         ))
@@ -497,15 +474,15 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
 
         // Sizes: markers and players' heads, on the world map and on the minimap, each on its own.
         val sizeHalf = (WIDTH - GAP) / 2
-        addRenderableWidget(ScaleSlider(left, y, sizeHalf, "Map icons", worldMapMarkerScale,
-            "Size of BlueMap's markers on the world map.") { worldMapMarkerScale = it })
-        addRenderableWidget(ScaleSlider(left + sizeHalf + GAP, y, WIDTH - sizeHalf - GAP, "Map heads", playerHeadScale,
-            "Size of other players' heads on the world map and over a player you have locked on to. The same size on screen at any GUI scale.") { playerHeadScale = it })
+        addRenderableWidget(scaleSlider(left, y, sizeHalf, "Map icons", Config::worldMapMarkerScale,
+            "Size of BlueMap's markers on the world map."))
+        addRenderableWidget(scaleSlider(left + sizeHalf + GAP, y, WIDTH - sizeHalf - GAP, "Map heads", Config::playerHeadScale,
+            "Size of other players' heads on the world map and over a player you have locked on to. The same size on screen at any GUI scale."))
         y += ROW + GAP
-        addRenderableWidget(ScaleSlider(left, y, sizeHalf, "Minimap icons", minimapMarkerScale,
-            "Size of BlueMap's markers on the minimap. They still shrink with distance.") { minimapMarkerScale = it })
-        addRenderableWidget(ScaleSlider(left + sizeHalf + GAP, y, WIDTH - sizeHalf - GAP, "Minimap heads", minimapHeadScale,
-            "Size of other players' heads on the minimap.") { minimapHeadScale = it })
+        addRenderableWidget(scaleSlider(left, y, sizeHalf, "Minimap icons", Config::minimapMarkerScale,
+            "Size of BlueMap's markers on the minimap. They still shrink with distance."))
+        addRenderableWidget(scaleSlider(left + sizeHalf + GAP, y, WIDTH - sizeHalf - GAP, "Minimap heads", Config::minimapHeadScale,
+            "Size of other players' heads on the minimap."))
         y += ROW + GAP * 3
 
         val buttonHalf = (WIDTH - GAP) / 2
@@ -587,9 +564,9 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         )
         y += ROW + GAP
 
-        addRenderableWidget(toggle(left, y, WIDTH, "Downloads guess biomes", guessBiomes,
+        addRenderableWidget(toggle(left, y, WIDTH, "Downloads guess biomes", Config::guessBiomes,
             "When downloading, guess the biome of blocks you have never been to from BlueMap's colours, so grass, " +
-                "leaves and water come out the right shade. Overworld only.") { guessBiomes = it })
+                "leaves and water come out the right shade. Overworld only."))
         y += ROW + GAP
 
         messageWidget = MultiLineTextWidget(left, y + 1, message, font).setMaxWidth(WIDTH).setMaxRows(2).also { addRenderableWidget(it) }
@@ -705,6 +682,13 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         CycleButton.onOffBuilder(value).create(x, y, width, ROW, Component.literal(name)) { _, on -> onChange(on) }
             .also { it.setTooltip(SafeTooltip.of(explanation)) }
 
+    /** An on/off switch for one of [edits]. */
+    private fun toggle(x: Int, y: Int, width: Int, name: String, setting: KProperty0<Boolean>, explanation: String) =
+        toggle(x, y, width, name, edits[setting], explanation) { edits[setting] = it }
+
+    private fun scaleSlider(x: Int, y: Int, width: Int, name: String, setting: KProperty0<Float>, explanation: String) =
+        ScaleSlider(x, y, width, name, edits[setting], explanation) { edits[setting] = it }
+
     private fun label(x: Int, y: Int, width: Int, text: String) {
         addRenderableWidget(StringWidget(x, y + 6, width, font.lineHeight, Component.literal(text), font))
     }
@@ -804,9 +788,7 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
      * server list as it would be saved, so an untouched new entry is no change.
      */
     private fun state(): String = listOf(
-        enabled, showMarkers, showOutlines, showPlayers, minimapPlayers, staleDays.trim(), shrinkChunks, worldMapMarkerScale,
-        playerHeadScale, minimapHeadScale, minimapMarkerScale, otherDimensionCoords, minimapBiomes, pings, matchWaypoints, guessBiomes,
-        prepareMap, fullDownloadHours, seaFloorHires, pingSound, Config.fillOff.sorted(),
+        edits, staleDays.trim(), Config.fillOff.sorted(),
         drafts.filter { splitAddresses(it.addresses).isNotEmpty() || it.url.isNotBlank() }.map { d ->
             listOf(splitAddresses(d.addresses), d.url.trim(), d.maps.toSortedMap(), d.off.sorted(), d.coverOverworld.trim(), d.otherCover.toSortedMap())
         },
@@ -856,26 +838,8 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         }
         problem = null
         problemText = null
-        Config.enabled = enabled
-        Config.showMarkers = showMarkers
-        Config.showOutlines = showOutlines
-        Config.showPlayers = showPlayers
-        Config.minimapPlayers = minimapPlayers
-        Config.minimapShrinkChunks = shrinkChunks
-        Config.worldMapMarkerScale = worldMapMarkerScale
-        Config.playerHeadScale = playerHeadScale
-        Config.minimapHeadScale = minimapHeadScale
-        Config.minimapMarkerScale = minimapMarkerScale
-        Config.otherDimensionCoords = otherDimensionCoords
-        Config.minimapBiomes = minimapBiomes
-        Config.pings = pings
-        Config.matchWaypointsToDimension = matchWaypoints
-        Config.guessBiomes = guessBiomes
-        Config.prepareMap = prepareMap
-        Config.fullDownloadHours = fullDownloadHours
-        if (Config.seaFloorHires && !seaFloorHires) Session.current?.seaFloor?.clear()
-        Config.seaFloorHires = seaFloorHires
-        Config.pingSound = pingSound
+        if (Config.seaFloorHires && !edits[Config::seaFloorHires]) Session.current?.seaFloor?.clear()
+        edits.apply()
         staleDays.trim().toDoubleOrNull()?.takeIf { it >= 0 }?.let { Config.staleDays = it }
         Config.servers = drafts
             .filter { splitAddresses(it.addresses).isNotEmpty() && it.url.isNotBlank() }
