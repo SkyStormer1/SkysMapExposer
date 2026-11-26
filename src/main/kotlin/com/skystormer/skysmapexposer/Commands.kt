@@ -231,7 +231,7 @@ object Commands {
     /** Pings a block of the dimension you are in. */
     private fun ping(context: CommandContext<FabricClientCommandSource>): Int {
         val dimension = MapExposerClient.dimensionOf(context.source.level)
-        return Ui.reply(context, PlayerPings.send(dimension, IntegerArgumentType.getInteger(context, "x"), IntegerArgumentType.getInteger(context, "z")))
+        return Ui.reply(context, PlayerPings.sendFromMap(dimension, IntegerArgumentType.getInteger(context, "x"), IntegerArgumentType.getInteger(context, "z"), null))
     }
 
     /** Who you trust among those online. Anyone else stays trusted, but only shows here once they are on. */

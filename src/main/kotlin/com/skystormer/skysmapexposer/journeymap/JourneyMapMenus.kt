@@ -163,7 +163,7 @@ internal object JourneyMapMenus {
         }
         item(menu, "copy", "Copy coordinates") { block -> Ui.copy(block.x, block.y, block.z, dimension) }
         if (dimension != null && PlayerPings.recipients().isNotEmpty()) {
-            item(menu, "ping", "Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, block.y)) }
+            item(menu, "ping", "Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, mappedHeight(block))) }
         }
         val api = JourneyMapAdapter.api
         if (api != null) {
@@ -329,6 +329,16 @@ internal object JourneyMapMenus {
     }
 
     /** The block under the mouse on JourneyMap's full-screen map, as JourneyMap itself works it out. */
+    /**
+     * [block]'s height as JourneyMap knows it, or null where it has mapped nothing: there its block
+     * under the mouse carries a stand-in height, not the ground's.
+     */
+    private fun mappedHeight(block: BlockPos): Int? = try {
+        block.y.takeIf { journeymap.client.data.DataCache.INSTANCE.getChunkMD(block) != null }
+    } catch (e: LinkageError) {
+        null
+    }
+
     private fun blockAtMouse(map: IFullscreen): BlockPos? = try {
         (map as? Fullscreen)?.blockAtMouse
     } catch (e: LinkageError) {
