@@ -163,19 +163,18 @@ object PlayerPings {
     }
 
     /**
-     * Pings block ([x], [z]) right-clicked on the world map, at [mapY], the height the map shows,
-     * when it knows one; not the roof of a dimension with one, which is what a map of the Nether
-     * shows from outside it, and nowhere anyone could stand.
+     * Pings block ([x], [z]) right-clicked on the world map, at [mapY], the height the map shows
+     * there, when it knows one: in the Nether the cave floor on a map in cave mode, the roof on a
+     * map of the roof.
      */
     fun sendFromMap(dimension: String, x: Int, z: Int, mapY: Int?): String =
-        send(dimension, x, z, mapY?.takeIf { Minecraft.getInstance().level?.isOutsideBuildHeight(it) == false && !onRoof(dimension, it) } ?: surface(dimension, x, z))
-
-    private fun onRoof(dimension: String, y: Int): Boolean = y >= ROOF && SeaFloor.hasCeiling(dimension)
+        send(dimension, x, z, mapY?.takeIf { Minecraft.getInstance().level?.isOutsideBuildHeight(it) == false } ?: surface(dimension, x, z))
 
     /**
-     * The ground at ([x], [z]) if you are in [dimension] with that chunk loaded: its top block, or
-     * under a roof (the Nether) the highest floor below it. Otherwise where you stand in [dimension],
-     * or from another dimension [UNKNOWN_Y].
+     * The ground at ([x], [z]) when no map says the height (`/mapexposer ping`, or a map in cave
+     * mode that shows none), if you are in [dimension] with that chunk loaded: its top block, or
+     * under a roof (the Nether) the first floor at or below your eyes, the level a cave map shows
+     * around you. Otherwise where you stand in [dimension], or from another dimension [UNKNOWN_Y].
      */
     private fun surface(dimension: String, x: Int, z: Int): Int {
         val minecraft = Minecraft.getInstance()
@@ -184,8 +183,8 @@ object PlayerPings {
         val own = minecraft.player?.blockY?.minus(1)?.takeIf { here } ?: UNKNOWN_Y
         if (level == null || !here || !level.chunkSource.hasChunk(x shr 4, z shr 4)) return own
         if (!level.dimensionType().hasCeiling()) return level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, BlockPos(x, 0, z)).y - 1
-        // Down from under the roof to the first open space, then on down to what it stands on.
-        val pos = BlockPos.MutableBlockPos(x, ROOF - 1, z)
+        // Down from your eyes (never above the roof) to the first open space, then on down to what it stands on.
+        val pos = BlockPos.MutableBlockPos(x, minOf(ROOF - 1, own + 2), z)
         while (pos.y > level.minY && !level.getBlockState(pos).isAir) pos.move(0, -1, 0)
         while (pos.y > level.minY && level.getBlockState(pos).isAir) pos.move(0, -1, 0)
         return if (pos.y > level.minY) pos.y else own

@@ -163,7 +163,7 @@ internal object JourneyMapMenus {
         }
         item(menu, "copy", "Copy coordinates") { block -> Ui.copy(block.x, block.y, block.z, dimension) }
         if (dimension != null && PlayerPings.recipients().isNotEmpty()) {
-            item(menu, "ping", "Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, null)) }
+            item(menu, "ping", "Ping here") { block -> Ui.say(PlayerPings.sendFromMap(dimension, block.x, block.z, block.y)) }
         }
         val api = JourneyMapAdapter.api
         if (api != null) {
