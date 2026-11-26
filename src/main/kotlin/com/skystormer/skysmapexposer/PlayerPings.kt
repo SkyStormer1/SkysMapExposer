@@ -1,11 +1,15 @@
 package com.skystormer.skysmapexposer
 
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
+import net.minecraft.client.player.LocalPlayer
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.util.Util
+import net.minecraft.world.level.ClipContext
+import net.minecraft.world.level.Level
 import net.minecraft.world.level.levelgen.Heightmap
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.HitResult
@@ -152,14 +156,51 @@ object PlayerPings {
         return "Pinged ${to.joinToString()}"
     }
 
-    /** Pings the block you are looking at. Returns what to tell the player. */
-    fun sendLookedAt(): String {
+    /**
+     * Pings the block you are looking at. Returns what to tell the player, or null when the key is
+     * left to pick block: something within your reach ([Config.pingPastReach]); not for a command
+     * typed ([byKey] false), which always pings.
+     */
+    fun sendLookedAt(byKey: Boolean = true): String? {
         val minecraft = Minecraft.getInstance()
         val me = minecraft.player ?: return "Not in a world"
+        if (byKey && Config.pingPastReach && pickableInReach(minecraft, me)) return null
         val hit = me.pick(KEY_REACH, 1f, false)
         if (hit.type != HitResult.Type.BLOCK) return "Nothing to ping there; look at a block"
         val pos = (hit as BlockHitResult).blockPos
         return send(me.level().dimension().identifier().toString(), pos.x, pos.z, pos.y)
+    }
+
+    /**
+     * Whether pick block (the game's, or Litematica's for its schematic) has something within your
+     * reach to take: the game's own target, which it only finds within reach, or a block of
+     * Litematica's schematic world along your view as far as Litematica looks, your reach.
+     */
+    private fun pickableInReach(minecraft: Minecraft, me: LocalPlayer): Boolean {
+        if (minecraft.hitResult?.type.let { it != null && it != HitResult.Type.MISS }) return true
+        val schematic = try {
+            schematicWorld?.invoke(null) as? Level
+        } catch (e: ReflectiveOperationException) {
+            null
+        } ?: return false
+        val eye = me.getEyePosition(1f)
+        val end = eye.add(me.getViewVector(1f).scale(me.blockInteractionRange()))
+        return try {
+            schematic.clip(ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, me)).type == HitResult.Type.BLOCK
+        } catch (e: RuntimeException) {
+            false
+        }
+    }
+
+    /** Litematica's `SchematicWorldHandler.getSchematicWorld()`, when Litematica is installed; looked up by name, as it is optional. */
+    private val schematicWorld: java.lang.reflect.Method? by lazy {
+        if (!FabricLoader.getInstance().isModLoaded("litematica")) return@lazy null
+        try {
+            Class.forName("fi.dy.masa.litematica.world.SchematicWorldHandler").getMethod("getSchematicWorld")
+        } catch (e: ReflectiveOperationException) {
+            Log.warn("Litematica's schematic world could not be found; the ping key will not leave its blocks to pick block: {}", e.toString())
+            null
+        }
     }
 
     /**

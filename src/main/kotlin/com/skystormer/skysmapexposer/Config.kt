@@ -218,6 +218,13 @@ object Config {
     /** Whether a ping arriving plays a bell. */
     var pingSound by bool(true)
 
+    /**
+     * Whether the ping key does nothing while something you could pick is within reach: a block,
+     * a creature, or Litematica's schematic block. Bound to the middle mouse button, as pick block
+     * often is, the key then swaps blocks close up and pings only what is out of reach.
+     */
+    var pingPastReach by bool(true)
+
     /** The players whose pings you take and who get yours, by server address as [normalise] writes it. */
     val trusted: MutableMap<String, MutableSet<UUID>> = HashMap()
 

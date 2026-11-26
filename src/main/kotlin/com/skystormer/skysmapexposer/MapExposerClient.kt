@@ -149,7 +149,7 @@ object MapExposerClient : ClientModInitializer {
             ChatShare.tick()
             ChatCoords.tick()
             PlayerPings.tick()
-            while (pingKey.consumeClick()) Ui.say(PlayerPings.sendLookedAt())
+            while (pingKey.consumeClick()) PlayerPings.sendLookedAt()?.let(Ui::say)
             MapPrep.tick(Session.current)
             CaveNotice.tick(client)
             val session = Session.current ?: return@register

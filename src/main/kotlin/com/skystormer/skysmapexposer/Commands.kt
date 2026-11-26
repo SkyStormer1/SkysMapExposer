@@ -24,7 +24,7 @@ object Commands {
                 .then(ClientCommands.literal("players").executes(::players))
                 .then(
                     ClientCommands.literal("ping")
-                        .executes { Ui.reply(it, PlayerPings.sendLookedAt()) }
+                        .executes { Ui.reply(it, PlayerPings.sendLookedAt(byKey = false) ?: "") }
                         .then(ClientCommands.argument("x", IntegerArgumentType.integer())
                             .then(ClientCommands.argument("z", IntegerArgumentType.integer()).executes(::ping)))
                 )

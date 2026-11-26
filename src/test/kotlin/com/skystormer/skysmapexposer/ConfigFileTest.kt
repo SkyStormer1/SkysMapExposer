@@ -54,6 +54,7 @@ class ConfigFileTest {
           "minimapBiomes": false,
           "pings": false,
           "pingSound": false,
+          "pingPastReach": false,
           "trusted": { "mc.example.com": ["00000000-0000-0000-0000-000000000001"] },
           "pingTo": { "mc.example.com": ["00000000-0000-0000-0000-000000000001"] },
           "fillOff": ["Bobby", "Voxy"],
