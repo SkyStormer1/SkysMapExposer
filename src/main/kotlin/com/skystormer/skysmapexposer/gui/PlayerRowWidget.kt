@@ -34,12 +34,15 @@ class PlayerRowWidget(
     private val distance: String,
     private val nameColour: Int,
     private val columns: IntArray,
+    /** On a screen too narrow for one line: the name and distance above, the coordinates and dimension below. */
+    private val twoLines: Boolean = false,
 ) : AbstractWidget(x, y, width, height, Component.literal(name)) {
 
     override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         val font = Minecraft.getInstance().font
-        val textY = this.y + (height - font.lineHeight) / 2 + 1
         PinDrawing.face(graphics, uuid, this.x, this.y + (height - HEAD) / 2, HEAD)
+        if (twoLines) return drawTwoLines(graphics, font)
+        val textY = this.y + (height - font.lineHeight) / 2 + 1
 
         var left = this.x + HEAD + GAP
         graphics.text(font, clip(font, name, columns[0]), left, textY, nameColour, true)
@@ -48,6 +51,22 @@ class PlayerRowWidget(
 
         val text = clip(font, distance, columns[2])
         graphics.text(font, text, this.x + width - font.width(text), textY, DETAILS, true)
+    }
+
+    /** Each line its left text and, against the right-hand end, its right text; the left one gives way first. */
+    private fun drawTwoLines(graphics: GuiGraphicsExtractor, font: Font) {
+        val left = this.x + HEAD + GAP
+        val room = this.x + width - left
+        val far = distance.substringBefore(" · ")
+        val dimension = distance.substringAfter(" · ", "")
+        for ((line, texts) in listOf(Triple(name, far, nameColour), Triple(coordinates, dimension, DETAILS)).withIndex()) {
+            val (start, end, colour) = texts
+            val y = this.y + 1 + line * (font.lineHeight + 1)
+            val right = clip(font, end, room)
+            graphics.text(font, right, this.x + width - font.width(right), y, DETAILS, true)
+            val space = room - font.width(right) - if (right.isEmpty()) 0 else GAP
+            graphics.text(font, clip(font, start, space), left, y, colour, true)
+        }
     }
 
     override fun updateWidgetNarration(narration: NarrationElementOutput) {

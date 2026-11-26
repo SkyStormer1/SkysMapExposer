@@ -208,6 +208,7 @@ class PlayerListScreen(private val parent: Screen?) : Screen(Component.literal("
                 player.uuid, player.label, coordinates, distance,
                 if (locked) LOCKED else NAME,
                 columns,
+                twoLines = wanted > listWidth,
             )
             text.setTooltip(SafeTooltip.of(
                 "${player.label}\n$coordinates in ${Ui.dimensionName(entry.dimension) ?: entry.dimension}\n" +
