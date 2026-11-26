@@ -54,6 +54,7 @@ import java.nio.file.Path
  * - `editmenu` opens the right-click menu editor
  * - `settings` opens the settings screen; `settingslog` logs the settings as they would be saved (servers left out)
  * - `widgets` logs what every widget on the open screen says; `bounds` where each is; `press <text>` clicks the first one starting with that
+ * - `boxset <start>|<text>` puts <text> in the open screen's first text box whose text starts with <start>
  * - `zoom in|out` zooms the open screen, as JourneyMap's full-screen map does
  * - `gotoplayer` centres the map on the first player BlueMap lists in your dimension
  * - `addshared blank|all` adds the map file opened last, as its chat button would
@@ -359,6 +360,13 @@ object AutoTest {
                     repeat(2) { System.gc() }
                     val runtime = Runtime.getRuntime()
                     Log.info("AutoTest: heap {} MB used of {} MB", (runtime.totalMemory() - runtime.freeMemory()) shr 20, runtime.maxMemory() shr 20)
+                }
+                // `boxset <start>|<text>`: the open screen's first text box whose text starts with <start> gets <text>.
+                "boxset" -> {
+                    val (start, text) = rest.split('|', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+                    val box = client.gui.screen()?.children()?.filterIsInstance<net.minecraft.client.gui.components.EditBox>()
+                        ?.firstOrNull { it.value.startsWith(start) }
+                    if (box == null) Log.warn("AutoTest: no text box starting '{}'", start) else box.value = text
                 }
                 "fps" -> Log.info("AutoTest: fps {}", client.fps)
                 "fpslog" -> {
