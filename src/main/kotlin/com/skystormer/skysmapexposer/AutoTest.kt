@@ -54,6 +54,7 @@ import java.nio.file.Path
  * - `editmenu` opens the right-click menu editor
  * - `settings` opens the settings screen; `settingslog` logs the settings as they would be saved (servers left out)
  * - `widgets` logs what every widget on the open screen says; `bounds` where each is; `press <text>` clicks the first one starting with that
+ * - `pingkey` logs what the ping key would do; `litematica <file> <x> <y> <z>` places a schematic (Litematica installed)
  * - `boxset <start>|<text>` puts <text> in the open screen's first text box whose text starts with <start>
  * - `zoom in|out` zooms the open screen, as JourneyMap's full-screen map does
  * - `gotoplayer` centres the map on the first player BlueMap lists in your dimension
@@ -367,6 +368,25 @@ object AutoTest {
                     val box = client.gui.screen()?.children()?.filterIsInstance<net.minecraft.client.gui.components.EditBox>()
                         ?.firstOrNull { it.value.startsWith(start) }
                     if (box == null) Log.warn("AutoTest: no text box starting '{}'", start) else box.value = text
+                }
+                // `pingkey`: what the ping key would do now, without needing a key bound: ping, or leave it to pick block.
+                "pingkey" -> Log.info("AutoTest: ping key: {}", PlayerPings.sendLookedAt() ?: "left to pick block")
+                // `litematica <file> <x> <y> <z>`: places schematics/<file> with its corner there, as Litematica's own menu would.
+                "litematica" -> {
+                    val parts = rest.split(' ')
+                    val (x, y, z) = parts.takeLast(3).map { it.toInt() }
+                    val name = parts.dropLast(3).joinToString(" ")
+                    val schematic = Class.forName("fi.dy.masa.litematica.schematic.LitematicaSchematic")
+                        .getMethod("createFromFile", Path::class.java, String::class.java)
+                        .invoke(null, client.gameDirectory.toPath().resolve("schematics"), name) ?: error("Litematica could not read $name")
+                    val placementClass = Class.forName("fi.dy.masa.litematica.schematic.placement.SchematicPlacement")
+                    val placement = placementClass.getMethod(
+                        "createFor", schematic.javaClass, net.minecraft.core.BlockPos::class.java, String::class.java,
+                        Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,
+                    ).invoke(null, schematic, net.minecraft.core.BlockPos(x, y, z), name, true, true)
+                    val manager = Class.forName("fi.dy.masa.litematica.data.DataManager").getMethod("getSchematicPlacementManager").invoke(null)
+                    manager.javaClass.getMethod("addSchematicPlacement", placementClass, Boolean::class.javaPrimitiveType).invoke(manager, placement, true)
+                    Log.info("AutoTest: placed {} at {}, {}, {}", name, x, y, z)
                 }
                 "fps" -> Log.info("AutoTest: fps {}", client.fps)
                 "fpslog" -> {

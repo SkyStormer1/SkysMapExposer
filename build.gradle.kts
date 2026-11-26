@@ -64,13 +64,18 @@ dependencies {
     val localVoxy = rootProject.file(".gradle/voxy/voxy-${property("minecraft_version")}.jar")
     if (localVoxy.exists()) modCompileOnly(files(localVoxy)) else modCompileOnly("maven.modrinth:voxy:${property("voxy_version")}")
     modCompileOnly("maven.modrinth:distanthorizons:${property("distanthorizons_version")}")
-    // `-PfillMods=bobby,voxy,dh` loads those in the dev client too, to test the fill (Voxy needs Sodium).
-    val fillMods = findProperty("fillMods")?.toString()?.split(',')?.map { it.trim() }.orEmpty()
-    if ("bobby" in fillMods) modLocalRuntime("maven.modrinth:bobby:${property("bobby_version")}")
-    if ("dh" in fillMods) modLocalRuntime("maven.modrinth:distanthorizons:${property("distanthorizons_version")}")
-    if ("voxy" in fillMods) {
+    // `-PtestMods=bobby,voxy,dh,litematica` loads those in the dev client too: the fill's targets (Voxy
+    // needs Sodium), and Litematica (with MaLiLib), whose pick block the ping key gives way to.
+    val testMods = findProperty("testMods")?.toString()?.split(',')?.map { it.trim() }.orEmpty()
+    if ("bobby" in testMods) modLocalRuntime("maven.modrinth:bobby:${property("bobby_version")}")
+    if ("dh" in testMods) modLocalRuntime("maven.modrinth:distanthorizons:${property("distanthorizons_version")}")
+    if ("voxy" in testMods) {
         modLocalRuntime("maven.modrinth:voxy:${property("voxy_version")}")
         modLocalRuntime("maven.modrinth:sodium:${property("sodium_version")}")
+    }
+    if ("litematica" in testMods) {
+        modLocalRuntime("maven.modrinth:litematica:${property("litematica_version")}")
+        modLocalRuntime("maven.modrinth:malilib:${property("malilib_version")}")
     }
 
     compileOnly(files(nestedJar("maven.modrinth:xaeros-world-map:${property("xaero_worldmap_version")}", "META-INF/jars/xaerolib-", "xaerolib")))
