@@ -219,11 +219,12 @@ object Config {
     var pingSound by bool(true)
 
     /**
-     * Whether the ping key does nothing while something you could pick is within reach: a block,
-     * a creature, or Litematica's schematic block. Bound to the middle mouse button, as pick block
-     * often is, the key then swaps blocks close up and pings only what is out of reach.
+     * Whether the ping key needs pressing twice while something you could pick is within reach: a
+     * block, a creature, or Litematica's schematic block. Bound to the middle mouse button, as pick
+     * block often is, one press then only swaps blocks close up, a double press pings there too, and
+     * anything out of reach is pinged at once.
      */
-    var pingPastReach by bool(true)
+    var pingDoublePressNear by bool(true)
 
     /** The players whose pings you take and who get yours, by server address as [normalise] writes it. */
     val trusted: MutableMap<String, MutableSet<UUID>> = HashMap()

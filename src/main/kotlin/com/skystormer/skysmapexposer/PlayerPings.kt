@@ -36,6 +36,10 @@ object PlayerPings {
     private const val SHARE_NAME_LIMIT = 24
     /** Where a roofed dimension's roof starts, as the Nether's bedrock ceiling does at 123 to 127. */
     private const val ROOF = 120
+    /** How soon a second press of the ping key pings what is within reach. */
+    private const val DOUBLE_PRESS_MILLIS = 400L
+    /** When the ping key was last pressed with something within reach, left to pick block; 0 after a double press. */
+    private var lastNearPress = 0L
     /** The height of a ping in another dimension than yours with nothing better to go on. */
     private const val UNKNOWN_Y = 64
 
@@ -147,7 +151,7 @@ object PlayerPings {
     // ---- sending ----
 
     /** Pings block ([x], [z]) of [dimension]; [y] is a guess from what is loaded unless given. Returns what to tell the player. */
-    fun send(dimension: String, x: Int, z: Int, y: Int = surface(dimension, x, z)): String {
+    fun send(dimension: String, x: Int, z: Int, y: Int): String {
         val me = Minecraft.getInstance().player ?: return "Not in a world"
         val to = recipients()
         if (to.isEmpty()) return "Nobody you ping is online; pick who with Ping in the player list or /mapexposer pingto add <player>"
@@ -158,13 +162,19 @@ object PlayerPings {
 
     /**
      * Pings the block you are looking at. Returns what to tell the player, or null when the key is
-     * left to pick block: something within your reach ([Config.pingPastReach]); not for a command
-     * typed ([byKey] false), which always pings.
+     * left to pick block: something within your reach ([Config.pingDoublePressNear]), unless this is
+     * the second press within [DOUBLE_PRESS_MILLIS]; not for a command typed ([byKey] false), which
+     * always pings.
      */
     fun sendLookedAt(byKey: Boolean = true): String? {
         val minecraft = Minecraft.getInstance()
         val me = minecraft.player ?: return "Not in a world"
-        if (byKey && Config.pingPastReach && pickableInReach(minecraft, me)) return null
+        if (byKey && Config.pingDoublePressNear && pickableInReach(minecraft, me)) {
+            val now = Util.getMillis()
+            val second = now - lastNearPress <= DOUBLE_PRESS_MILLIS
+            lastNearPress = if (second) 0L else now
+            if (!second) return null
+        }
         val hit = me.pick(KEY_REACH, 1f, false)
         if (hit.type != HitResult.Type.BLOCK) return "Nothing to ping there; look at a block"
         val pos = (hit as BlockHitResult).blockPos
@@ -204,31 +214,63 @@ object PlayerPings {
     }
 
     /**
-     * Pings block ([x], [z]) right-clicked on the world map, at [mapY], the height the map shows
-     * there, when it knows one: in the Nether the cave floor on a map in cave mode, the roof on a
-     * map of the roof.
+     * Pings block ([x], [z]) of [dimension], from the map or `/mapexposer ping x z`, at the first height
+     * there is to go on: [mapY], the height the map shows there (in the Nether the roof on a map of
+     * the roof, the floor on a cave map); else the ground, where you are in that dimension with the
+     * chunk loaded ([loadedGround]); else BlueMap's height there, fetched first, as when the map has
+     * nothing drawn; else where you stand, or [UNKNOWN_Y]. Returns what to tell the player now.
      */
-    fun sendFromMap(dimension: String, x: Int, z: Int, mapY: Int?): String =
-        send(dimension, x, z, mapY?.takeIf { Minecraft.getInstance().level?.isOutsideBuildHeight(it) == false } ?: surface(dimension, x, z))
+    fun sendFromMap(dimension: String, x: Int, z: Int, mapY: Int?): String {
+        mapY?.takeIf { Minecraft.getInstance().level?.isOutsideBuildHeight(it) == false }?.let { return send(dimension, x, z, it) }
+        loadedGround(dimension, x, z)?.let { return send(dimension, x, z, it) }
+        val session = Session.current
+        val mapId = session?.server?.markersFor(dimension) ?: return send(dimension, x, z, guessedY(dimension))
+        background("SkysMapExposer ping height") {
+            val y = try {
+                blueMapHeight(session.blueMap, mapId, x, z)
+            } catch (e: Exception) {
+                Log.warn("Could not read BlueMap's height for a ping at {}, {}: {}", x, z, e.toString())
+                null
+            }
+            Minecraft.getInstance().execute { Ui.say(send(dimension, x, z, y ?: guessedY(dimension))) }
+        }
+        return "Finding the height there on BlueMap…"
+    }
+
+    /** BlueMap's ground height at block ([x], [z]) of map [mapId], from its finest tile; null where it has nothing. Off the client thread. */
+    private fun blueMapHeight(blueMap: BlueMap, mapId: String, x: Int, z: Int): Int? {
+        val size = blueMap.layout(mapId).tileSize
+        val tileX = Math.floorDiv(x, size)
+        val tileZ = Math.floorDiv(z, size)
+        val bytes = blueMap.tile(mapId, 1, tileX, tileZ) ?: return null
+        val tile = BlueMapPicture.decode(tileX, tileZ, size, bytes)
+        val i = (z - tileZ * size) * size + (x - tileX * size)
+        return if (tile.colour[i] == 0) null else tile.height[i].toInt()
+    }
 
     /**
-     * The ground at ([x], [z]) when no map says the height (`/mapexposer ping`, or a map in cave
-     * mode that shows none), if you are in [dimension] with that chunk loaded: its top block, or
+     * The ground at ([x], [z]) if you are in [dimension] with that chunk loaded: its top block, or
      * under a roof (the Nether) the first floor at or below your eyes, the level a cave map shows
-     * around you. Otherwise where you stand in [dimension], or from another dimension [UNKNOWN_Y].
+     * around you; null otherwise.
      */
-    private fun surface(dimension: String, x: Int, z: Int): Int {
+    private fun loadedGround(dimension: String, x: Int, z: Int): Int? {
         val minecraft = Minecraft.getInstance()
-        val level = minecraft.level
-        val here = level?.dimension()?.identifier()?.toString() == dimension
-        val own = minecraft.player?.blockY?.minus(1)?.takeIf { here } ?: UNKNOWN_Y
-        if (level == null || !here || !level.chunkSource.hasChunk(x shr 4, z shr 4)) return own
+        val level = minecraft.level ?: return null
+        val player = minecraft.player ?: return null
+        if (level.dimension().identifier().toString() != dimension || !level.chunkSource.hasChunk(x shr 4, z shr 4)) return null
         if (!level.dimensionType().hasCeiling()) return level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, BlockPos(x, 0, z)).y - 1
         // Down from your eyes (never above the roof) to the first open space, then on down to what it stands on.
-        val pos = BlockPos.MutableBlockPos(x, minOf(ROOF - 1, own + 2), z)
+        val pos = BlockPos.MutableBlockPos(x, minOf(ROOF - 1, player.blockY + 1), z)
         while (pos.y > level.minY && !level.getBlockState(pos).isAir) pos.move(0, -1, 0)
         while (pos.y > level.minY && level.getBlockState(pos).isAir) pos.move(0, -1, 0)
-        return if (pos.y > level.minY) pos.y else own
+        return pos.y.takeIf { it > level.minY }
+    }
+
+    /** With nothing to go on: what you stand on, in [dimension]; from another dimension [UNKNOWN_Y]. */
+    private fun guessedY(dimension: String): Int {
+        val minecraft = Minecraft.getInstance()
+        val here = minecraft.level?.dimension()?.identifier()?.toString() == dimension
+        return minecraft.player?.blockY?.minus(1)?.takeIf { here } ?: UNKNOWN_Y
     }
 
     // ---- receiving ----

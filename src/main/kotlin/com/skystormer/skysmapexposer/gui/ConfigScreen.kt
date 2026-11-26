@@ -191,9 +191,10 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         addRenderableWidget(toggle(left, y, WIDTH, "Ping sound", Config::pingSound,
             "Play a bell when a ping from someone you trust arrives. Off, the beam still flashes and chat still says so."))
         y += ROW + GAP
-        addRenderableWidget(toggle(left, y, WIDTH, "Ping key only past reach", Config::pingPastReach,
-            "The ping key does nothing while a block, a creature or a Litematica schematic block is within your reach, " +
-                "so it can share the middle mouse button with pick block: close up it swaps blocks, farther away it pings."))
+        addRenderableWidget(toggle(left, y, WIDTH, "Ping key: double-press up close", Config::pingDoublePressNear,
+            "While a block, a creature or a Litematica schematic block is within your reach, the ping key pings only on " +
+                "a double press, so it can share the middle mouse button with pick block: one press swaps blocks, two " +
+                "ping there. Out of reach, one press pings."))
         y += ROW + GAP * 3
         terrainFillRows(left, y)
     }
