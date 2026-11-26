@@ -19,6 +19,11 @@ import xaero.map.MapProcessor
 import xaero.map.WorldMapSession
 import xaero.map.region.MapRegion
 import java.nio.file.Path
+import java.util.BitSet
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * Downloading BlueMap into Xaero's own map: for a rectangle picked on the world map, or for
@@ -43,6 +48,11 @@ import java.nio.file.Path
  * A terrain file someone sent you ([TerrainFiles]) is written the same way, region by region with
  * a backup of each first ([startShared]); only where the pixels come from differs.
  *
+ * Filling only unexplored chunks, each region is looked at on the client thread before BlueMap's
+ * tiles for it are fetched ([Probe]): one your map already has everywhere is skipped, and only the
+ * tiles over its gaps are fetched for the rest, so starting a cancelled download again does not
+ * fetch what it already wrote.
+ *
  * What it shares with JourneyMap's edits (finding, ordering, handing over, skipped regions) is
  * [RegionJob]'s; what is here is how Xaero's regions are backed up, loaded, written and saved.
  */
@@ -55,6 +65,16 @@ object BlueMapDownload {
      * null while they are still being made elsewhere (a shared map's, read off the client thread).
      */
     private class Pending(val regionX: Int, val regionZ: Int, val pixels: (XaeroPalette) -> XaeroWriter.Pixels?)
+
+    /**
+     * A region about to have BlueMap's tiles fetched for it, which the client thread looks at first:
+     * [answer] is its gaps ([XaeroWriter.gaps]), empty when your map has it all, or null when it
+     * could not be looked at, and everything is fetched.
+     */
+    private class Probe(val regionX: Int, val regionZ: Int) {
+        val answer = CompletableFuture<BitSet?>()
+        var since = 0L
+    }
 
     private class Active(val pending: Pending) {
         var pixels: XaeroWriter.Pixels? = null
@@ -103,6 +123,12 @@ object BlueMapDownload {
         val guide: BiomeGuide? by lazy { if (Config.guessBiomes) BiomeGuide.forDimension(dimensionId) else null }
         /** Season dates: a chunk mapped before the season began is written over like one never mapped. */
         val age: MapAge? = MapAge.of(dimensionId, folder)
+        /** Regions waiting to be looked at before their tiles are fetched, and those being looked at. */
+        val probes = ConcurrentLinkedQueue<Probe>()
+        val probing = ArrayList<Probe>()
+        /** Regions your map already had everywhere, skipped before fetching anything ([Probe]), and what BlueMap was asked. */
+        @Volatile var alreadyMapped = 0
+        @Volatile var onBlueMap: RegionJob.Found? = null
         /** Where its copies come from and go back to, and the name of their folder. */
         val origin = MapBackup.Origin(dimensionId, layer, folder, MapBackup.server())
         val label = MapBackup.label(name, layer)
@@ -247,6 +273,7 @@ object BlueMapDownload {
     ) {
         job.message = "Asking BlueMap what it has…"
         val found = job.findOnBlueMap(job.blueMap!!, job.mapId!!, job.area) ?: return@findOff
+        job.onBlueMap = found
         val size = found.tileSize
         job.total = found.regions.size
         if (found.regions.isEmpty()) return@findOff fail(job, "BlueMap has nothing there to download")
@@ -257,10 +284,29 @@ object BlueMapDownload {
         // BlueMap's tiles, fetched once each while neighbouring regions need them. Only tiles
         // BlueMap has anything in are asked for.
         val source = LowresSource(size, hasSea = job.dimensionId == Config.OVERWORLD, found::tile)
-        for ((rx, rz) in found.regions) {
+        val regions = found.regions
+        // Only unexplored chunks: the client thread looks at each region a few ahead ([Probe]).
+        val asked = ArrayDeque<Probe>()
+        var nextAsked = 0
+        for ((rx, rz) in regions) {
             if (job.cancelled) break
+            val gaps = if (job.unexploredOnly) {
+                while (nextAsked < regions.size && asked.size < PROBE_AHEAD) {
+                    val (x, z) = regions[nextAsked++]
+                    asked.addLast(Probe(x, z).also(job.probes::add))
+                }
+                answer(job, asked.removeFirst())
+            } else null
+            if (job.cancelled) break
+            if (gaps != null && gaps.isEmpty) {
+                job.alreadyMapped++
+                job.done.incrementAndGet()
+                continue
+            }
             val a = job.area
-            val picture = BlueMapPicture.region(rx, rz, size, a?.minX, a?.minZ, a?.maxX, a?.maxZ) { tx, tz -> source.tile(tx, tz)?.tile }
+            val picture = BlueMapPicture.region(rx, rz, size, a?.minX, a?.minZ, a?.maxX, a?.maxZ) { tx, tz ->
+                if (gaps != null && !anyGapUnder(gaps, rx, rz, tx, tz, size)) null else source.tile(tx, tz)?.tile
+            }
             if (picture.count == 0) {
                 job.done.incrementAndGet()
                 continue
@@ -268,6 +314,31 @@ object BlueMapDownload {
             picture.guess = job.guide?.guess(source, rx, rz)
             if (!job.hand(Pending(rx, rz) { palette -> XaeroWriter.BlueMapPixels(picture, palette) })) break
         }
+    }
+
+    /** What the client thread found of [probe]'s region; null if cancelled first. Download thread. */
+    private fun answer(job: Job, probe: Probe): BitSet? {
+        while (!job.cancelled) {
+            try {
+                return probe.answer.get(200, TimeUnit.MILLISECONDS)
+            } catch (e: TimeoutException) {
+                // still waiting
+            }
+        }
+        return null
+    }
+
+    /** Whether any of [gaps] of region ([rx], [rz]) is under BlueMap tile ([tx], [tz]), [size] blocks a side. */
+    private fun anyGapUnder(gaps: BitSet, rx: Int, rz: Int, tx: Int, tz: Int, size: Int): Boolean {
+        val x0 = maxOf(tx * size, rx * BlueMapPicture.REGION)
+        val x1 = minOf(tx * size + size - 1, rx * BlueMapPicture.REGION + BlueMapPicture.REGION - 1)
+        val z0 = maxOf(tz * size, rz * BlueMapPicture.REGION)
+        val z1 = minOf(tz * size + size - 1, rz * BlueMapPicture.REGION + BlueMapPicture.REGION - 1)
+        if (x0 > x1 || z0 > z1) return false
+        for (cz in (z0 shr 4)..(z1 shr 4)) for (cx in (x0 shr 4)..(x1 shr 4)) {
+            if (gaps[(cz - rz * 32) * 32 + (cx - rx * 32)]) return true
+        }
+        return false
     }
 
     private fun fail(job: Job, why: String) {
@@ -313,6 +384,7 @@ object BlueMapDownload {
         if (!(job.cancelled && job.active == null)) {
             pausedFor(job, processor)?.let { job.message = it; return }
         }
+        probe(job, processor, now)
 
         val active = job.active ?: run {
             if (job.cancelled || job.saving.size >= MAX_SAVING) null
@@ -337,6 +409,35 @@ object BlueMapDownload {
     }
 
     private fun begin(job: Job, pending: Pending): Active = Active(pending).also { job.active = it }
+
+    /**
+     * Looks at the regions the download thread is about to fetch tiles for ([Probe]), a few at a
+     * time: Xaero loads each, and its gaps go back. One Xaero does not load in time gets everything
+     * fetched, as before.
+     */
+    private fun probe(job: Job, processor: MapProcessor, now: Long) {
+        while (job.probing.size < PROBES_AT_ONCE) job.probing.add(job.probes.poll()?.also { it.since = now } ?: break)
+        job.probing.removeAll { probe ->
+            if (job.cancelled) return@removeAll true.also { letGo(processor, job, probe) }
+            val region = XaeroWriter.loaded(processor, job.folder, probe.regionX, probe.regionZ, job.layer)
+            when {
+                region != null -> {
+                    val gaps = synchronized(region) { XaeroWriter.gaps(region, job.area, job.age) }
+                    XaeroWriter.release(region)
+                    probe.answer.complete(gaps)
+                    true
+                }
+                now - probe.since > PROBE_WAIT -> true.also { letGo(processor, job, probe) }
+                else -> false
+            }
+        }
+    }
+
+    /** Done with [probe] without an answer: everything is fetched, and Xaero need not keep its region in full. */
+    private fun letGo(processor: MapProcessor?, job: Job, probe: Probe) {
+        probe.answer.complete(null)
+        processor?.getLeafMapRegion(job.layer, probe.regionX, probe.regionZ, false)?.let(XaeroWriter::release)
+    }
 
     /** Why the job has to wait until the world map shows its map again, or null when it does. */
     private fun pausedFor(job: Job, processor: MapProcessor): String? {
@@ -438,6 +539,10 @@ object BlueMapDownload {
         job.ready.clear()
         job.later.clear()
         job.active = null
+        job.probes.clear()
+        val processor = WorldMapSession.getCurrentSession()?.mapProcessor
+        job.probing.forEach { letGo(processor, job, it) }
+        job.probing.clear()
         val chunks = t.newChunks + t.replacedChunks
         val took = job.took()
         val head = if (job.cancelled) "${job.title} stopped after $took" else if (job.session == null) "${job.title}: done in $took" else "Downloaded from BlueMap in $took"
@@ -451,9 +556,10 @@ object BlueMapDownload {
         } + job.afterword()
         Log.info(
             "{} finished{} in {}: {} new chunks, {} updated, {} pixels written, {} of yours kept as they matched, " +
-                "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped{}",
+                "{} unmapped chunks skipped for being only partly on BlueMap, {} cleared, {} regions skipped{}{}",
             job.title, if (job.cancelled) " (cancelled)" else "", took, t.newChunks, t.replacedChunks, t.written, t.kept, t.partialSkipped,
             t.cleared, skipped, if (skipped > 0) ": " + job.skipped.all().joinToString("; ") else "",
+            job.onBlueMap?.let { "; ${job.alreadyMapped} regions already mapped everywhere, ${it.fetched.get()} BlueMap tiles fetched" } ?: "",
         )
         Ui.say(job.message)
         // The action bar is gone in seconds: what was skipped, and the copies to undo it with, go to chat.
@@ -475,6 +581,10 @@ object BlueMapDownload {
      */
     private const val SINGLE_PLAYER = "Downloads and shared maps go into Xaero's map only on a server: in single player Xaero " +
         "rebuilds its map from your world's save and drops them. BlueMap's terrain still shows on the map while Terrain is on."
+    /** Regions looked at ahead of the one whose tiles are being fetched, and at once on the client thread. */
+    private const val PROBE_AHEAD = 4
+    private const val PROBES_AT_ONCE = 2
+    private const val PROBE_WAIT = 30_000L
     private const val TILE_CHUNKS_PER_TICK = 8
     /** Time spent writing into your map per tick, so the game keeps its frame rate. */
     private const val WRITE_BUDGET = 4_000_000L

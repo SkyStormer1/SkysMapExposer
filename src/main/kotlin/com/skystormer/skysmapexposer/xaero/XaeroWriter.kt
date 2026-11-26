@@ -223,6 +223,26 @@ object XaeroWriter {
     /** Whether Xaero has saved [region] since [finish]. */
     fun saved(region: MapRegion): Boolean = !region.isResaving
 
+    /**
+     * The chunks of [region] (index `z * 32 + x`) a download filling only unexplored chunks would
+     * write into: within [area] (all of the region when null), and not mapped, or mapped before the
+     * season ([age]). Empty when the region is mapped everywhere it would write. The caller holds
+     * the region's lock; client thread, as [MapAge] is.
+     */
+    fun gaps(region: MapRegion, area: com.skystormer.skysmapexposer.BlockArea?, age: MapAge?): java.util.BitSet {
+        val gaps = java.util.BitSet()
+        for (i in 0 until 1024) {
+            val cx = region.regionX * 32 + (i and 31)
+            val cz = region.regionZ * 32 + (i shr 5)
+            // A chunk only partly inside is never written into while unmapped ([writeTileChunk]).
+            if (area != null && !(area.contains(cx * 16, cz * 16) && area.contains(cx * 16 + 15, cz * 16 + 15))) continue
+            val tileChunk = region.getChunk((i and 31) shr 2, (i shr 5) shr 2)
+            val tile = tileChunk?.takeIf { it.loadState.toInt() == LOADED }?.getTile(i and 3, (i shr 5) and 3)
+            if (tile == null || !tile.isLoaded || age?.isOld(cx, cz) == true) gaps.set(i)
+        }
+        return gaps
+    }
+
     private fun writeTileChunk(
         processor: MapProcessor,
         region: MapRegion,
