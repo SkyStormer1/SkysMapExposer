@@ -74,6 +74,13 @@ object SettingsCheck {
         return Address(url, changes.takeIf { it.isNotEmpty() }?.joinToString(", "), null)
     }
 
+    /** The root of cleaned BlueMap address [url] (`http://host:port/`), or null when it already is one. */
+    fun rootOf(url: String): String? {
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return null
+        if (uri.host == null || uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") return null
+        return "${uri.scheme}://${uri.host}${if (uri.port >= 0) ":${uri.port}" else ""}/"
+    }
+
     /** The settings of one server that a session is built from, to compare before and after. */
     fun serverKey(server: Config.Server): String =
         listOf(server.addresses.map(Config::normalise).sorted(), server.url.trim(), server.maps.toSortedMap(), server.off.sorted(), server.coverBefore.toSortedMap()).toString()

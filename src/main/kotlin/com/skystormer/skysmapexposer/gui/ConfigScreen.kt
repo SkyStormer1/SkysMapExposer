@@ -692,15 +692,27 @@ class ConfigScreen(private val parent: Screen) : FramedScreen(Component.literal(
         address.problem?.let { return show("BlueMap address: $it") }
         show((address.fixed?.let { "Fixed the address ($it). " } ?: "") + "Asking $url…")
         background("SkysMapExposer find maps", Thread.NORM_PRIORITY) {
-            val result = runCatching { BlueMap(url).use { it.maps() } }
+            // A path after the address can be where BlueMap lives (behind a web server at /map/), or
+            // left over from a browser; with no BlueMap there, the address's root is tried as well.
+            val root = SettingsCheck.rootOf(url)
+            var found = url
+            val result = runCatching { BlueMap(url).use { it.maps() } }.recoverCatching { first ->
+                if (root == null) throw first
+                runCatching { BlueMap(root).use { it.maps() } }.getOrElse { throw first }.also { found = root }
+            }
             minecraft.execute {
+                if (found != url) {
+                    box.value = found
+                    drafts[selected].url = found
+                }
                 result.onSuccess { maps ->
                     // Each dimension's box, if empty, gets the map whose id or name says it is that dimension's.
                     for ((dimension, _) in DIMENSIONS) {
                         val box = mapBoxes[dimension] ?: continue
                         if (box.value.isBlank()) guessMap(dimension, maps)?.let { box.value = it }
                     }
-                    show("Maps here: " + maps.joinToString(", ") { (id, name) -> "$id ($name)" })
+                    show((if (found != url) "No BlueMap at $url, so its root is used. " else "") +
+                        "Maps here: " + maps.joinToString(", ") { (id, name) -> "$id ($name)" })
                 }
                 result.onFailure { show("Could not reach BlueMap at $url: ${it.message ?: it.javaClass.simpleName}") }
             }
